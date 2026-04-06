@@ -124,10 +124,11 @@ function buildHUD(scene) {
     hud.color       = '#b8d8ff';
     hud.fontSize    = 15;
     hud.fontFamily  = 'monospace';
+    hud.horizontalAlignment     = BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_RIGHT;
+    hud.verticalAlignment       = BABYLON.GUI.Control.VERTICAL_ALIGNMENT_TOP;
     hud.textHorizontalAlignment = BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_LEFT;
-    hud.textVerticalAlignment   = BABYLON.GUI.Control.VERTICAL_ALIGNMENT_TOP;
-    hud.left        = '14px';
-    hud.top         = '14px';
+    hud.paddingRight = '14px';
+    hud.paddingTop   = '14px';
     hud.resizeToFit = true;
     ui.addControl(hud);
 
@@ -256,7 +257,7 @@ window.addEventListener('DOMContentLoaded', () => {
         // Backflip from a right-facing skier = clockwise in side view
         // = negative rotation.z in Babylon.js (right-hand rule, camera looking +Z)
         state.flipAngle           += omega * dt;
-        character.root.rotation.z  = -state.flipAngle;
+        character.root.rotation.z  = state.flipAngle;
 
         // ── Spin stub ────────────────────────────────────────────────────
         // In 3D, this would drive rotation.y on the root.
