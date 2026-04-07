@@ -5,15 +5,15 @@
 // proportional to a real athlete — ratios are what matter for physics).
 const SEGMENTS = [
     { name: 'torso',     w: 0.30, h: 0.55, d: 0.28, mass: 22.0, color: [0.12, 0.56, 1.00] },
-    { name: 'head',      w: 0.22, h: 0.24, d: 0.24, mass:  6.0, color: [0.95, 0.95, 0.95] },
+    { name: 'head',      w: 0.22, h: 0.24, d: 0.24, mass:  6.0, color: [0.90, 0.30, 0.02] },
     { name: 'upperArmL', w: 0.11, h: 0.30, d: 0.11, mass:  2.5, color: [0.12, 0.56, 1.00] },
     { name: 'upperArmR', w: 0.11, h: 0.30, d: 0.11, mass:  2.5, color: [0.12, 0.56, 1.00] },
     { name: 'lowerArmL', w: 0.09, h: 0.25, d: 0.09, mass:  1.5, color: [0.12, 0.56, 1.00] },
     { name: 'lowerArmR', w: 0.09, h: 0.25, d: 0.09, mass:  1.5, color: [0.12, 0.56, 1.00] },
     { name: 'upperLegL', w: 0.13, h: 0.36, d: 0.18, mass:  7.0, color: [0.10, 0.10, 0.38] },
     { name: 'upperLegR', w: 0.13, h: 0.36, d: 0.18, mass:  7.0, color: [0.10, 0.10, 0.38] },
-    { name: 'lowerLegL', w: 0.11, h: 0.36, d: 0.14, mass:  5.0, color: [0.08, 0.08, 0.08] },
-    { name: 'lowerLegR', w: 0.11, h: 0.36, d: 0.14, mass:  5.0, color: [0.08, 0.08, 0.08] },
+    { name: 'lowerLegL', w: 0.11, h: 0.36, d: 0.14, mass:  5.0, color: [0.12, 0.12, 0.55] },
+    { name: 'lowerLegR', w: 0.11, h: 0.36, d: 0.14, mass:  5.0, color: [0.12, 0.12, 0.55] },
     // Skis: long (≈ leg length), thin, flat — centered under each foot
     { name: 'skiL',      w: 0.08, h: 0.03, d: 1.20, mass:  2.0, color: [0.05, 0.10, 0.40] },
     { name: 'skiR',      w: 0.08, h: 0.03, d: 1.20, mass:  2.0, color: [0.05, 0.10, 0.40] },
@@ -53,10 +53,10 @@ const POSE_UNTUCKED = {
     // All rx=0, dz=0 — segments hang straight down, arms at sides
     torso:     { x:  0.000, y:  0.000, rx:  0.00, rz:  0.00, dz:  0.00 },
     head:      { x:  0.000, y:  0.400, rx:  0.00, rz:  0.00, dz:  0.00 },
-    upperArmL: { x: -0.205, y:  0.000, rx:  0.00, rz:  0.00, dz:  0.00 },
-    upperArmR: { x:  0.205, y:  0.000, rx:  0.00, rz:  0.00, dz:  0.00 },
-    lowerArmL: { x: -0.205, y: -0.275, rx:  0.00, rz:  0.00, dz:  0.00 },
-    lowerArmR: { x:  0.205, y: -0.275, rx:  0.00, rz:  0.00, dz:  0.00 },
+    upperArmL: { x: -0.205, y:  0.300, rx:  0.00, rz:  0.00, dz:  0.00 },
+    upperArmR: { x:  0.205, y:  0.300, rx:  0.00, rz:  0.00, dz:  0.00 },
+    lowerArmL: { x: -0.205, y:  0.575, rx:  0.00, rz:  0.00, dz:  0.00 },
+    lowerArmR: { x:  0.205, y:  0.575, rx:  0.00, rz:  0.00, dz:  0.00 },
     upperLegL: { x: -0.075, y: -0.455, rx:  0.00, rz:  0.00, dz:  0.00 },
     upperLegR: { x:  0.075, y: -0.455, rx:  0.00, rz:  0.00, dz:  0.00 },
     lowerLegL: { x: -0.075, y: -0.815, rx:  0.00, rz:  0.00, dz:  0.00 },
@@ -81,6 +81,23 @@ const POSE_TUCKED = {
     // Skis track feet: foot moves to ~y=-0.396 at same rx as lower leg
     skiL:      { x: -0.075, y: -0.410, rx: -0.55, rz:  0.00, dz:  0.00 },
     skiR:      { x:  0.075, y: -0.410, rx: -0.55, rz:  0.00, dz:  0.00 },
+};
+
+// Arm sweep: two-phase animation.
+// Phase 1 (armDrop 0→0.5): raised → swung out in front (horizontal forward)
+// Phase 2 (armDrop 0.5→1): in front → hanging at side
+// Character faces -Z, so dz negative = in front of body.
+const POSE_ARMS_FORWARD = {
+    upperArmL: { x: -0.205, y:  0.150, rx: -1.57, rz:  0.00, dz: -0.15 },
+    upperArmR: { x:  0.205, y:  0.150, rx: -1.57, rz:  0.00, dz: -0.15 },
+    lowerArmL: { x: -0.205, y:  0.150, rx: -1.57, rz:  0.00, dz: -0.40 },
+    lowerArmR: { x:  0.205, y:  0.150, rx: -1.57, rz:  0.00, dz: -0.40 },
+};
+const POSE_ARMS_DROPPED = {
+    upperArmL: { x: -0.205, y:  0.000, rx:  0.00, rz:  0.00, dz:  0.00 },
+    upperArmR: { x:  0.205, y:  0.000, rx:  0.00, rz:  0.00, dz:  0.00 },
+    lowerArmL: { x: -0.205, y: -0.275, rx:  0.00, rz:  0.00, dz:  0.00 },
+    lowerArmR: { x:  0.205, y: -0.275, rx:  0.00, rz:  0.00, dz:  0.00 },
 };
 
 // ── Physics helpers ────────────────────────────────────────────────────────
@@ -111,37 +128,165 @@ function buildCharacter(scene) {
     const meshes = {};
 
     for (const seg of SEGMENTS) {
-        const mesh = BABYLON.MeshBuilder.CreateBox(seg.name, {
-            width:  seg.w,
-            height: seg.h,
-            depth:  seg.d,
-        }, scene);
+        const n = seg.name;
+        let mesh;
+
+        if (n === 'head') {
+            // Sphere for the helmet
+            mesh = BABYLON.MeshBuilder.CreateSphere(n, {
+                diameter: seg.h,
+                segments: 12,
+            }, scene);
+        } else if (n === 'torso') {
+            // Tapered cylinder — wider at shoulders, narrower at hips
+            mesh = BABYLON.MeshBuilder.CreateCylinder(n, {
+                diameterTop:    seg.w,
+                diameterBottom: seg.w * 0.68,
+                height:         seg.h,
+                tessellation:   12,
+            }, scene);
+        } else if (n === 'skiL' || n === 'skiR') {
+            // Skis remain flat boxes
+            mesh = BABYLON.MeshBuilder.CreateBox(n, {
+                width:  seg.w,
+                height: seg.h,
+                depth:  seg.d,
+            }, scene);
+        } else {
+            // All limb segments — rounded cylinders
+            const diam = (seg.w + seg.d) / 2;
+            mesh = BABYLON.MeshBuilder.CreateCylinder(n, {
+                diameter:     diam,
+                height:       seg.h,
+                tessellation: 8,
+            }, scene);
+        }
 
         mesh.parent = root;
 
-        const mat = new BABYLON.StandardMaterial(seg.name + '_mat', scene);
-        mat.diffuseColor = new BABYLON.Color3(seg.color[0], seg.color[1], seg.color[2]);
+        const mat = new BABYLON.StandardMaterial(n + '_mat', scene);
+        mat.diffuseColor  = new BABYLON.Color3(seg.color[0], seg.color[1], seg.color[2]);
+        mat.specularColor = new BABYLON.Color3(0.35, 0.35, 0.35);
+        mat.specularPower = 32;
         mesh.material = mat;
 
-        meshes[seg.name] = mesh;
+        meshes[n] = mesh;
+
+        // ── Per-segment detail meshes ────────────────────────────────────
+        if (n === 'head') {
+            // Goggle visor band on the front of the helmet (camera faces +Z)
+            const visor = BABYLON.MeshBuilder.CreateBox('visor', {
+                width:  seg.h * 0.70,
+                height: seg.h * 0.22,
+                depth:  seg.h * 0.18,
+            }, scene);
+            visor.parent = mesh;
+            visor.position.set(0, 0.01, -seg.h * 0.44);
+            const vMat = new BABYLON.StandardMaterial('visor_mat', scene);
+            vMat.diffuseColor  = new BABYLON.Color3(0.04, 0.04, 0.04);
+            vMat.specularColor = new BABYLON.Color3(0.7, 0.75, 0.9);
+            vMat.specularPower = 80;
+            visor.material = vMat;
+        }
+
+        if (n === 'lowerArmL' || n === 'lowerArmR') {
+            // Glove sphere at the wrist end — position updated dynamically in applyPose
+            const hand = BABYLON.MeshBuilder.CreateSphere(n + '_glove', {
+                diameter: (seg.w + seg.d) / 2 * 1.5,
+                segments: 6,
+            }, scene);
+            hand.parent = mesh;
+            hand.position.set(0, -seg.h * 0.5, 0); // default: wrist at bottom (hanging)
+            const hMat = new BABYLON.StandardMaterial(n + '_glove_mat', scene);
+            hMat.diffuseColor  = new BABYLON.Color3(0.06, 0.06, 0.06);
+            hMat.specularColor = new BABYLON.Color3(0.25, 0.25, 0.25);
+            hand.material = hMat;
+            // Store so applyPose can reposition per frame
+            meshes[n === 'lowerArmL' ? 'gloveL' : 'gloveR'] = { mesh: hand, halfH: seg.h * 0.5 };
+        }
+
+        if (n === 'lowerLegL' || n === 'lowerLegR') {
+            // Ski boot block at the base of each shin
+            const boot = BABYLON.MeshBuilder.CreateBox(n + '_boot', {
+                width:  seg.w * 1.6,
+                height: seg.h * 0.32,
+                depth:  seg.d * 1.3,
+            }, scene);
+            boot.parent = mesh;
+            boot.position.set(0, -seg.h * 0.34, 0);
+            const bMat = new BABYLON.StandardMaterial(n + '_boot_mat', scene);
+            bMat.diffuseColor  = new BABYLON.Color3(0.55, 0.08, 0.08);
+            bMat.specularColor = new BABYLON.Color3(0.45, 0.25, 0.25);
+            bMat.specularPower = 28;
+            boot.material = bMat;
+        }
     }
 
     return { root, meshes };
 }
 
+// Two-phase arm sweep helper.
+// t 0→0.5: raised → swung forward in front of body
+// t 0.5→1: from in front → hanging at side
+function armSweep(name, up, t) {
+    const fw = POSE_ARMS_FORWARD[name];
+    const dp = POSE_ARMS_DROPPED[name];
+    if (t <= 0.5) {
+        const s = t * 2;
+        return {
+            x:  lerp(up.x,  fw.x,  s),
+            y:  lerp(up.y,  fw.y,  s),
+            rx: lerp(up.rx, fw.rx, s),
+            rz: lerp(up.rz, fw.rz, s),
+            dz: lerp(up.dz, fw.dz, s),
+        };
+    } else {
+        const s = (t - 0.5) * 2;
+        return {
+            x:  lerp(fw.x,  dp.x,  s),
+            y:  lerp(fw.y,  dp.y,  s),
+            rx: lerp(fw.rx, dp.rx, s),
+            rz: lerp(fw.rz, dp.rz, s),
+            dz: lerp(fw.dz, dp.dz, s),
+        };
+    }
+}
+
 // ── Pose applicator ────────────────────────────────────────────────────────
-// Linearly interpolates each segment between the untucked and tucked poses.
-// Tuck folds in the YZ plane (knees forward toward chest) matching the X-axis backflip.
-function applyPose(meshes, tuck) {
+// tuck:     0 = fully extended, 1 = fully tucked
+// armDropL: 0 = left arm raised, 1 = left arm dropped to side
+// armDropR: 0 = right arm raised, 1 = right arm dropped to side
+function applyPose(meshes, tuck, armDropL, armDropR) {
     for (const seg of SEGMENTS) {
         const mesh = meshes[seg.name];
         const up   = POSE_UNTUCKED[seg.name];
         const tk   = POSE_TUCKED[seg.name];
-        mesh.position.x = lerp(up.x,  tk.x,  tuck);
-        mesh.position.y = lerp(up.y,  tk.y,  tuck);
-        mesh.position.z = (BASE_Z[seg.name] || 0) + lerp(up.dz, tk.dz, tuck);
-        mesh.rotation.x = lerp(up.rx, tk.rx, tuck);
-        mesh.rotation.z = lerp(up.rz, tk.rz, tuck);
+        let ex = up;
+
+        if (seg.name === 'upperArmL' || seg.name === 'lowerArmL') {
+            ex = armSweep(seg.name, up, armDropL);
+        } else if (seg.name === 'upperArmR' || seg.name === 'lowerArmR') {
+            ex = armSweep(seg.name, up, armDropR);
+        }
+
+        mesh.position.x = lerp(ex.x,  tk.x,  tuck);
+        mesh.position.y = lerp(ex.y,  tk.y,  tuck);
+        mesh.position.z = (BASE_Z[seg.name] || 0) + lerp(ex.dz, tk.dz, tuck);
+        mesh.rotation.x = lerp(ex.rx, tk.rx, tuck);
+        mesh.rotation.z = lerp(ex.rz, tk.rz, tuck);
+    }
+
+    // ── Reposition gloves to always sit at the wrist ───────────────────────
+    // When arm is raised (armDrop=0) the wrist is at the TOP of lowerArm (+h/2).
+    // When arm is dropped (armDrop=1) the wrist is at the BOTTOM (-h/2).
+    // During tuck the arms fold forward; keep glove at bottom in that case.
+    if (meshes.gloveL) {
+        const effectiveDrop = Math.max(armDropL, tuck);
+        meshes.gloveL.mesh.position.y = lerp(meshes.gloveL.halfH, -meshes.gloveL.halfH, effectiveDrop);
+    }
+    if (meshes.gloveR) {
+        const effectiveDrop = Math.max(armDropR, tuck);
+        meshes.gloveR.mesh.position.y = lerp(meshes.gloveR.halfH, -meshes.gloveR.halfH, effectiveDrop);
     }
 }
 
@@ -165,10 +310,8 @@ function buildHUD(scene) {
     hint.color      = '#445566';
     hint.fontSize   = 13;
     hint.fontFamily = 'monospace';
-    hint.textHorizontalAlignment = BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_CENTER;
-    hint.textVerticalAlignment   = BABYLON.GUI.Control.VERTICAL_ALIGNMENT_BOTTOM;
     hint.top        = '-14px';
-    hint.text       = 'SPACE: tuck     ← / →: spin (Phase 2)     drag: orbit camera';
+    hint.text       = 'SPACE: tuck     ← then →: left twist     → then ←: right twist     drag: orbit';
     ui.addControl(hint);
 
     return hud;
@@ -187,7 +330,7 @@ window.addEventListener('DOMContentLoaded', () => {
     // ArcRotateCamera orbits the origin on left-click drag / touch drag.
     // Orthographic mode keeps the character the same size at all angles.
     const camera = new BABYLON.ArcRotateCamera('cam',
-        0,              // alpha: camera on the +X side — looking at character's right side
+        Math.PI / 2,    // alpha: camera on the +Z side — looking at character's front
         Math.PI / 2,    // beta:  horizon level
         10,             // radius
         BABYLON.Vector3.Zero(), scene);
@@ -219,7 +362,7 @@ window.addEventListener('DOMContentLoaded', () => {
 
     // ── Character ─────────────────────────────────────────────────────────────
     const character = buildCharacter(scene);
-    applyPose(character.meshes, 0); // start fully extended
+    applyPose(character.meshes, 0, 0, 0); // start fully extended, arms raised
 
     // ── Physics state ─────────────────────────────────────────────────────────
     //
@@ -234,60 +377,65 @@ window.addEventListener('DOMContentLoaded', () => {
     const MAX_OMEGA = 9.75;            // rad/s cap — limits tucked flip speed
     const I0 = computeI(0);            // I at tuck = 0 (fully extended)
 
+    const SPIN_SPEED    = Math.PI * 2.0; // rad/s ~= 1.0 full twist/second
+    const ARM_DROP_RATE = 4.0;            // arm transitions in ~0.25 s
+
     const state = {
         L_flip:     I0 * TARGET_OMEGA_UNTUCKED,
         flipAngle:  0.0,
         tuckAmount: 0.0,
         tuckTarget: 0.0,
-        twistRate:  0,    // twists per flip; increments on each keydown, resets on keyup
-        spinAngle:  0.0,  // integrated incrementally to avoid discontinuous jumps
-        snapTarget: null, // set on key release to nearest half-twist; null = not snapping
+        spinAngle:  0.0,  // current spin angle (rad)
+        spinTarget: 0.0,  // target spin; each tap adds ±2π
+        armDropL:   0.0,  // 0 = raised, 1 = dropped to side
+        armDropR:   0.0,
     };
 
-    const SNAP_SPEED = Math.PI * 4; // rad/s — snaps within ~0.25 s
-
-    let rightPresses = 0;
-    let leftPresses  = 0;
-    let rightDown    = false; // track whether key is already held
-    let leftDown     = false;
+    let leftDown  = false;
+    let rightDown = false;
 
     // Initialise rotationQuaternion so Babylon doesn't mix with euler rotation.
     character.root.rotationQuaternion = BABYLON.Quaternion.Identity();
 
 
     // ── Input ─────────────────────────────────────────────────────────────────
-    // SPACE  — tuck while held, open when released
-    // ← / → — arm drop to initiate spin (stub, no visual in 2D side view)
+    // SPACE   — tuck while held, open on release
+    // ← then → — left arm drop triggers a full left (CCW) twist
+    // → then ← — right arm drop triggers a full right (CW) twist
+    //
+    // The first key press drops that arm (visual cue / wind-up).
+    // Pressing the opposite key while the first is still held fires the twist.
     window.addEventListener('keydown', e => {
         if (e.code === 'Space') {
             e.preventDefault();
             state.tuckTarget = 1.0;
         }
         if (e.code === 'ArrowUp' || e.code === 'ArrowDown') {
-            e.preventDefault(); // prevent camera pan
-        }
-        if (e.code === 'ArrowLeft') {
             e.preventDefault();
-            if (!leftDown) { leftDown = true; leftPresses++; state.twistRate = -(leftPresses * 1.1); }
         }
-        if (e.code === 'ArrowRight') {
+        if (e.code === 'ArrowLeft' && !leftDown) {
             e.preventDefault();
-            if (!rightDown) { rightDown = true; rightPresses++; state.twistRate = rightPresses * 1.1; }
+            leftDown = true;
+            if (rightDown) {
+                // → already held: right-arm wind-up → fire right (CW) twist
+                state.spinTarget -= Math.PI * 2;
+            }
+            // else: just drop left arm as wind-up; wait for → to fire
+        }
+        if (e.code === 'ArrowRight' && !rightDown) {
+            e.preventDefault();
+            rightDown = true;
+            if (leftDown) {
+                // ← already held: left-arm wind-up → fire left twist
+                state.spinTarget += Math.PI * 2;
+            }
+            // else: just drop right arm as wind-up; wait for ← to fire
         }
     });
     window.addEventListener('keyup', e => {
-        if (e.code === 'Space') state.tuckTarget = 0.0;
-        if (e.code === 'ArrowLeft' && leftDown) {
-            leftDown = false;
-            state.twistRate = 0;
-            // Snap to nearest half-twist (multiple of π)
-            state.snapTarget = Math.round(state.spinAngle / Math.PI) * Math.PI;
-        }
-        if (e.code === 'ArrowRight' && rightDown) {
-            rightDown = false;
-            state.twistRate = 0;
-            state.snapTarget = Math.round(state.spinAngle / Math.PI) * Math.PI;
-        }
+        if (e.code === 'Space')      state.tuckTarget = 0.0;
+        if (e.code === 'ArrowLeft')  leftDown  = false;
+        if (e.code === 'ArrowRight') rightDown = false;
     });
 
     // ── HUD ───────────────────────────────────────────────────────────────────
@@ -306,44 +454,38 @@ window.addEventListener('DOMContentLoaded', () => {
         const step = TUCK_RATE * dt;
         state.tuckAmount += (Math.abs(diff) <= step) ? diff : Math.sign(diff) * step;
 
-        // ── Apply body pose ────────────────────────────────────────────────
-        applyPose(character.meshes, state.tuckAmount);
-
         // ── Angular momentum conservation: ω = L / I ──────────────────────
-        // L_flip is permanently fixed. I varies with tuck. ω follows from both.
         const I     = computeI(state.tuckAmount);
         const omega = Math.min(state.L_flip / I, MAX_OMEGA);
-
-        const prevFlips = Math.floor(state.flipAngle / (Math.PI * 2));
         state.flipAngle += omega * dt;
-        const newFlips  = Math.floor(state.flipAngle / (Math.PI * 2));
 
-        // Reset press counters every time a full flip completes
-        if (newFlips > prevFlips) {
-            rightPresses = 0;
-            leftPresses  = 0;
+        // ── Spin toward queued target ──────────────────────────────────────
+        const spinDiff = state.spinTarget - state.spinAngle;
+        if (Math.abs(spinDiff) > 0.001) {
+            const spinStep = SPIN_SPEED * dt;
+            state.spinAngle += (Math.abs(spinDiff) <= spinStep)
+                ? spinDiff
+                : Math.sign(spinDiff) * spinStep;
         }
 
-        // Integrate spin or snap to nearest half-twist after release
-        if (state.twistRate !== 0) {
-            state.spinAngle += state.twistRate * omega * dt;
-            state.snapTarget = null; // cancel any pending snap while actively spinning
-        } else if (state.snapTarget !== null) {
-            const snapDiff = state.snapTarget - state.spinAngle;
-            const snapStep = SNAP_SPEED * dt;
-            if (Math.abs(snapDiff) <= snapStep) {
-                state.spinAngle = state.snapTarget;
-                state.snapTarget = null;
-            } else {
-                state.spinAngle += Math.sign(snapDiff) * snapStep;
-            }
-        }
+        // ── Arm drop: drop during wind-up (key held) or active spin ──────────
+        const spinRemaining = state.spinTarget - state.spinAngle;
+        // Left arm drops when: left key is held (wind-up) OR left twist in progress
+        const armLTarget = (leftDown && !rightDown) || spinRemaining >  0.05 ? 1.0 : 0.0;
+        // Right arm drops when: right key is held (wind-up) OR right twist in progress
+        const armRTarget = (rightDown && !leftDown) || spinRemaining < -0.05 ? 1.0 : 0.0;
+        const armStep = ARM_DROP_RATE * dt;
+        const dL = armLTarget - state.armDropL;
+        const dR = armRTarget - state.armDropR;
+        state.armDropL += Math.abs(dL) <= armStep ? dL : Math.sign(dL) * armStep;
+        state.armDropR += Math.abs(dR) <= armStep ? dR : Math.sign(dR) * armStep;
 
-        const spinAngle = state.spinAngle;
+        // ── Apply body pose ────────────────────────────────────────────────
+        applyPose(character.meshes, state.tuckAmount, state.armDropL, state.armDropR);
 
         // qFlip * qSpin — spin in body-local space (always head-to-feet axis)
         const qFlip = BABYLON.Quaternion.RotationAxis(BABYLON.Axis.X, state.flipAngle);
-        const qSpin = BABYLON.Quaternion.RotationAxis(BABYLON.Axis.Y, spinAngle);
+        const qSpin = BABYLON.Quaternion.RotationAxis(BABYLON.Axis.Y, state.spinAngle);
         character.root.rotationQuaternion = qFlip.multiply(qSpin);
 
         // ── HUD ───────────────────────────────────────────────────────────
@@ -356,8 +498,8 @@ window.addEventListener('DOMContentLoaded', () => {
             `Rotations : ${rotations.toFixed(2)}`,
             `Tuck      : ${(state.tuckAmount * 100).toFixed(0)}%`,
             '─── SPIN ──────────────────────────',
-            `Twist rate : ${state.twistRate}/flip`,
-            `Spin angle : ${(state.twistRate * rotations).toFixed(2)} rev`,
+            `Spin angle : ${(state.spinAngle  / (Math.PI * 2)).toFixed(2)} rev`,
+            `Spin target: ${(state.spinTarget / (Math.PI * 2)).toFixed(2)} rev`,
         ].join('\n');
     });
 
