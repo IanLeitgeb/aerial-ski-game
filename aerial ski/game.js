@@ -327,7 +327,8 @@ function buildHUD(scene) {
 const FOOT_OFFSET   = 1.025;
 const SLOPE_ANGLE   = 22 * Math.PI / 180;
 const KICKER_ANGLE  = 55 * Math.PI / 180;
-const LANDING_ANGLE = 30 * Math.PI / 180;
+const LANDING_ANGLE = 40 * Math.PI / 180;
+const LANDING_DROP  = 3.5; // extra vertical drop of landing zone
 const KICKER_Z      = 22;
 const KICKER_END_Z  = 24.5;
 
@@ -338,7 +339,7 @@ function terrainRootY(z) {
         const baseY = -KICKER_Z * Math.tan(SLOPE_ANGLE);
         return baseY + (z - KICKER_Z) * Math.tan(KICKER_ANGLE);
     }
-    const landingBase = -KICKER_Z * Math.tan(SLOPE_ANGLE);
+    const landingBase = -KICKER_Z * Math.tan(SLOPE_ANGLE) - LANDING_DROP;
     return landingBase - (z - KICKER_END_Z) * Math.tan(LANDING_ANGLE);
 }
 
@@ -463,6 +464,8 @@ window.addEventListener('DOMContentLoaded', () => {
         posZ:       2.0,  // Z position (start on the slope)
         vz:         0.0,  // Z velocity — frictionless, only gravity along slope
         grounded:   true,
+        crashed:    false, // true when landed badly
+        crashAngle: 0.0,  // target flip angle to animate toward after crash
     };
 
     let leftDown        = false;
@@ -499,12 +502,12 @@ window.addEventListener('DOMContentLoaded', () => {
     window.addEventListener('keydown', e => {
         if (e.code === 'Space') {
             e.preventDefault();
-            state.tuckTarget = 1.0;
+            if (!state.crashed) state.tuckTarget = 1.0;
         }
         if (e.code === 'ArrowUp' || e.code === 'ArrowDown') {
             e.preventDefault();
         }
-        if (e.code === 'ArrowLeft' && !leftDown) {
+        if (e.code === 'ArrowLeft' && !leftDown && !state.crashed) {
             e.preventDefault();
             leftDown = true;
             if (rightDown && !doubleMode) {
@@ -515,7 +518,7 @@ window.addEventListener('DOMContentLoaded', () => {
             }
             // else: drop left arm as wind-up, wait for →
         }
-        if (e.code === 'ArrowRight' && !rightDown) {
+        if (e.code === 'ArrowRight' && !rightDown && !state.crashed) {
             e.preventDefault();
             rightDown = true;
             if (leftDown && !doubleMode) {
@@ -553,9 +556,11 @@ window.addEventListener('DOMContentLoaded', () => {
         if (dt <= 0 || dt > 0.1) return;         // skip stalls / first frame
 
         // ── Smooth tuck transition ─────────────────────────────────────────
+        if (!state.crashed) {
         const diff = state.tuckTarget - state.tuckAmount;
         const step = TUCK_RATE * dt;
         state.tuckAmount += (Math.abs(diff) <= step) ? diff : Math.sign(diff) * step;
+        }
 
         // ── Terrain physics (frictionless) ────────────────────────────────
         if (state.grounded) {
@@ -577,14 +582,31 @@ window.addEventListener('DOMContentLoaded', () => {
             state.posZ  += state.vz * dt;
             const surY   = terrainRootY(state.posZ);
             if (state.rootY <= surY) {
+                const TWO_PI  = Math.PI * 2;
+                const norm    = ((state.flipAngle % TWO_PI) + TWO_PI) % TWO_PI;
+                const LAND_TOL = Math.PI / 4; // 45° — clean landing window
+                const goodLanding = norm < LAND_TOL || norm > TWO_PI - LAND_TOL;
+
                 state.rootY      = surY;
                 state.vy         = 0;
                 state.grounded   = true;
-                state.flipAngle  = 0;
                 state.spinAngle  = 0;
                 state.spinTarget = 0;
-                state.tuckTarget = 0;   // force open on landing
-                state.tuckAmount = 0;   // snap feet to ground immediately
+                state.tuckTarget = 0;
+                state.tuckAmount = 0;
+
+                if (goodLanding) {
+                    state.crashed   = false;
+                    state.flipAngle = 0;
+                    // preserve vz so skier glides away down the landing slope
+                } else {
+                    state.crashed = true;
+                    state.vz      = 0; // stop sliding on crash
+                    // Snap toward nearest lying-flat angle:
+                    // norm < π  → back leading → land on back  (π)
+                    // norm >= π → front leading → land on stomach (3π/2 → face down)
+                    state.crashAngle = norm < Math.PI ? Math.PI : Math.PI * 1.5;
+                }
             }
         }
         character.root.position.y = state.rootY;
@@ -595,6 +617,14 @@ window.addEventListener('DOMContentLoaded', () => {
         const omega = Math.min(state.L_flip / I, MAX_OMEGA);
         if (!state.grounded) {
             state.flipAngle += omega * dt;
+        }
+        // ── Crash: animate flip angle toward lying-flat position ───────────
+        if (state.crashed) {
+            const diff = state.crashAngle - state.flipAngle;
+            // normalise to [-π, π] so we always take the short arc
+            const normDiff = ((diff + Math.PI) % (Math.PI * 2)) - Math.PI;
+            const step = 6.0 * dt;
+            state.flipAngle += Math.abs(normDiff) <= step ? normDiff : Math.sign(normDiff) * step;
         }
 
         // ── Spin ──────────────────────────────────────────────────────────
@@ -617,9 +647,9 @@ window.addEventListener('DOMContentLoaded', () => {
 
         // ── Arm drop: wind-up, active spin, or double mode ─────────────────
         const spinRemaining = state.spinTarget - state.spinAngle;
-        // Both arms drop in double mode; otherwise only the active-side arm drops
-        const armLTarget = (leftDown && !rightDown) || doubleMode || spinRemaining >  0.05 ? 1.0 : 0.0;
-        const armRTarget = (rightDown && !leftDown) || doubleMode || spinRemaining < -0.05 ? 1.0 : 0.0;
+        // Both arms drop in double mode, on crash, or on active-side wind-up
+        const armLTarget = state.crashed || (leftDown && !rightDown) || doubleMode || spinRemaining >  0.05 ? 1.0 : 0.0;
+        const armRTarget = state.crashed || (rightDown && !leftDown) || doubleMode || spinRemaining < -0.05 ? 1.0 : 0.0;
         const armStep = ARM_DROP_RATE * dt;
         const dL = armLTarget - state.armDropL;
         const dR = armRTarget - state.armDropR;
@@ -641,8 +671,11 @@ window.addEventListener('DOMContentLoaded', () => {
             if (state.posZ >= 0 && state.posZ < KICKER_Z)                    tilt = -SLOPE_ANGLE;
             else if (state.posZ >= KICKER_Z && state.posZ <= KICKER_END_Z)   tilt = KICKER_ANGLE;
             else if (state.posZ > KICKER_END_Z)                               tilt = -LANDING_ANGLE;
-            const qTilt = BABYLON.Quaternion.RotationAxis(BABYLON.Axis.X, tilt);
-            character.root.rotationQuaternion = qFace.multiply(qTilt);
+            const qTilt  = BABYLON.Quaternion.RotationAxis(BABYLON.Axis.X, tilt);
+            const qCrash = state.crashed
+                ? BABYLON.Quaternion.RotationAxis(BABYLON.Axis.X, state.flipAngle)
+                : BABYLON.Quaternion.Identity();
+            character.root.rotationQuaternion = qFace.multiply(qTilt).multiply(qCrash);
         } else {
             // qFlip * qSpin — spin in body-local space (head-to-feet axis)
             const qFlip = BABYLON.Quaternion.RotationAxis(BABYLON.Axis.X, state.flipAngle);
