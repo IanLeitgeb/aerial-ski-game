@@ -231,6 +231,7 @@ window.addEventListener('DOMContentLoaded', () => {
     //        Stub only in Phase 1 — tracked in state, shown in HUD, not animated.
     //
     const TARGET_OMEGA_UNTUCKED = 4.5; // rad/s at full extension
+    const MAX_OMEGA = 9.75;            // rad/s cap — limits tucked flip speed
     const I0 = computeI(0);            // I at tuck = 0 (fully extended)
 
     const state = {
@@ -238,11 +239,17 @@ window.addEventListener('DOMContentLoaded', () => {
         flipAngle:  0.0,
         tuckAmount: 0.0,
         tuckTarget: 0.0,
-        spinAngle:  0.0,
-        spinTarget: 0.0,  // each tap adds ±2π; spinAngle chases this
+        twistRate:  0,    // twists per flip; increments on each keydown, resets on keyup
+        spinAngle:  0.0,  // integrated incrementally to avoid discontinuous jumps
+        snapTarget: null, // set on key release to nearest half-twist; null = not snapping
     };
 
-    const SPIN_SPEED = Math.PI * 2.5; // rad/s — one full twist in ~0.4 s
+    const SNAP_SPEED = Math.PI * 4; // rad/s — snaps within ~0.25 s
+
+    let rightPresses = 0;
+    let leftPresses  = 0;
+    let rightDown    = false; // track whether key is already held
+    let leftDown     = false;
 
     // Initialise rotationQuaternion so Babylon doesn't mix with euler rotation.
     character.root.rotationQuaternion = BABYLON.Quaternion.Identity();
@@ -259,18 +266,28 @@ window.addEventListener('DOMContentLoaded', () => {
         if (e.code === 'ArrowUp' || e.code === 'ArrowDown') {
             e.preventDefault(); // prevent camera pan
         }
-        // Each tap adds one full twist to the target
         if (e.code === 'ArrowLeft') {
             e.preventDefault();
-            state.spinTarget -= Math.PI * 2;
+            if (!leftDown) { leftDown = true; leftPresses++; state.twistRate = -(leftPresses * 1.1); }
         }
         if (e.code === 'ArrowRight') {
             e.preventDefault();
-            state.spinTarget += Math.PI * 2;
+            if (!rightDown) { rightDown = true; rightPresses++; state.twistRate = rightPresses * 1.1; }
         }
     });
     window.addEventListener('keyup', e => {
         if (e.code === 'Space') state.tuckTarget = 0.0;
+        if (e.code === 'ArrowLeft' && leftDown) {
+            leftDown = false;
+            state.twistRate = 0;
+            // Snap to nearest half-twist (multiple of π)
+            state.snapTarget = Math.round(state.spinAngle / Math.PI) * Math.PI;
+        }
+        if (e.code === 'ArrowRight' && rightDown) {
+            rightDown = false;
+            state.twistRate = 0;
+            state.snapTarget = Math.round(state.spinAngle / Math.PI) * Math.PI;
+        }
     });
 
     // ── HUD ───────────────────────────────────────────────────────────────────
@@ -278,7 +295,7 @@ window.addEventListener('DOMContentLoaded', () => {
 
     // ── Physics / render loop ─────────────────────────────────────────────────
     // Tuck transitions over 1/TUCK_RATE seconds (0.2 s)
-    const TUCK_RATE = 5.0;
+    const TUCK_RATE = 2.5;
 
     scene.registerBeforeRender(() => {
         const dt = engine.getDeltaTime() / 1000; // seconds
@@ -295,20 +312,38 @@ window.addEventListener('DOMContentLoaded', () => {
         // ── Angular momentum conservation: ω = L / I ──────────────────────
         // L_flip is permanently fixed. I varies with tuck. ω follows from both.
         const I     = computeI(state.tuckAmount);
-        const omega = state.L_flip / I;
+        const omega = Math.min(state.L_flip / I, MAX_OMEGA);
 
+        const prevFlips = Math.floor(state.flipAngle / (Math.PI * 2));
         state.flipAngle += omega * dt;
+        const newFlips  = Math.floor(state.flipAngle / (Math.PI * 2));
 
-        // Drive spinAngle toward spinTarget at SPIN_SPEED
-        const spinDiff = state.spinTarget - state.spinAngle;
-        const spinStep = SPIN_SPEED * dt;
-        state.spinAngle += (Math.abs(spinDiff) <= spinStep)
-            ? spinDiff
-            : Math.sign(spinDiff) * spinStep;
+        // Reset press counters every time a full flip completes
+        if (newFlips > prevFlips) {
+            rightPresses = 0;
+            leftPresses  = 0;
+        }
+
+        // Integrate spin or snap to nearest half-twist after release
+        if (state.twistRate !== 0) {
+            state.spinAngle += state.twistRate * omega * dt;
+            state.snapTarget = null; // cancel any pending snap while actively spinning
+        } else if (state.snapTarget !== null) {
+            const snapDiff = state.snapTarget - state.spinAngle;
+            const snapStep = SNAP_SPEED * dt;
+            if (Math.abs(snapDiff) <= snapStep) {
+                state.spinAngle = state.snapTarget;
+                state.snapTarget = null;
+            } else {
+                state.spinAngle += Math.sign(snapDiff) * snapStep;
+            }
+        }
+
+        const spinAngle = state.spinAngle;
 
         // qFlip * qSpin — spin in body-local space (always head-to-feet axis)
         const qFlip = BABYLON.Quaternion.RotationAxis(BABYLON.Axis.X, state.flipAngle);
-        const qSpin = BABYLON.Quaternion.RotationAxis(BABYLON.Axis.Y, state.spinAngle);
+        const qSpin = BABYLON.Quaternion.RotationAxis(BABYLON.Axis.Y, spinAngle);
         character.root.rotationQuaternion = qFlip.multiply(qSpin);
 
         // ── HUD ───────────────────────────────────────────────────────────
@@ -321,8 +356,8 @@ window.addEventListener('DOMContentLoaded', () => {
             `Rotations : ${rotations.toFixed(2)}`,
             `Tuck      : ${(state.tuckAmount * 100).toFixed(0)}%`,
             '─── SPIN ──────────────────────────',
-            `Twists    : ${(state.spinAngle  / (2 * Math.PI)).toFixed(2)}`,
-            `Target    : ${(state.spinTarget / (2 * Math.PI)).toFixed(0)}`,
+            `Twist rate : ${state.twistRate}/flip`,
+            `Spin angle : ${(state.twistRate * rotations).toFixed(2)} rev`,
         ].join('\n');
     });
 
