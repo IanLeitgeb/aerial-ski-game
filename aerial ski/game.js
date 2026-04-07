@@ -331,23 +331,33 @@ const LANDING_ANGLE = 40 * Math.PI / 180;
 const LANDING_DROP  = 3.5; // extra vertical drop of landing zone
 const KICKER_Z      = 22;
 const KICKER_END_Z  = 24.5;
+const OUTRUN_Z      = KICKER_END_Z + 50; // landing slope ends here, flat outrun begins
+const FLAT_Z        = KICKER_Z - 9.0; // flat table starts before kicker
+const _worldParam   = new URLSearchParams(location.search).get('world') || 'normal';
+const SLOPE_START_Z = _worldParam === 'triple' ? -19.8 : -11.3; // top of inrun (+8.5 for triple)
 
 function terrainRootY(z) {
-    if (z < 0) return 0; // flat start
-    if (z < KICKER_Z) return -z * Math.tan(SLOPE_ANGLE);
+    if (z < SLOPE_START_Z) return -SLOPE_START_Z * Math.tan(SLOPE_ANGLE); // flat top
+    if (z < FLAT_Z) return -z * Math.tan(SLOPE_ANGLE);
+    const tableY = -FLAT_Z * Math.tan(SLOPE_ANGLE); // height of flat table
+    if (z < KICKER_Z) return tableY; // flat table
     if (z <= KICKER_END_Z) {
-        const baseY = -KICKER_Z * Math.tan(SLOPE_ANGLE);
-        return baseY + (z - KICKER_Z) * Math.tan(KICKER_ANGLE);
+        return tableY + (z - KICKER_Z) * Math.tan(KICKER_ANGLE); // kicker rises from table
     }
-    const landingBase = -KICKER_Z * Math.tan(SLOPE_ANGLE) - LANDING_DROP;
-    return landingBase - (z - KICKER_END_Z) * Math.tan(LANDING_ANGLE);
+    const kickerTopY = tableY + (KICKER_END_Z - KICKER_Z) * Math.tan(KICKER_ANGLE);
+    const landingBaseY = kickerTopY - LANDING_DROP;
+    if (z <= OUTRUN_Z) return landingBaseY - (z - KICKER_END_Z) * Math.tan(LANDING_ANGLE);
+    return landingBaseY - (OUTRUN_Z - KICKER_END_Z) * Math.tan(LANDING_ANGLE); // flat outrun
 }
 
 function terrainAccelZ(z) {
     const g = 14.0;
-    if (z >= 0 && z < KICKER_Z)      return g * Math.sin(SLOPE_ANGLE);
+    if (z >= SLOPE_START_Z && z < FLAT_Z)   return g * Math.sin(SLOPE_ANGLE);
+    if (z < SLOPE_START_Z)                   return 0; // flat top
+    if (z >= FLAT_Z && z < KICKER_Z)      return 0; // flat table
     if (z >= KICKER_Z && z <= KICKER_END_Z) return -g * Math.sin(KICKER_ANGLE);
-    if (z > KICKER_END_Z) return g * Math.sin(LANDING_ANGLE);
+    if (z > KICKER_END_Z && z <= OUTRUN_Z) return g * Math.sin(LANDING_ANGLE);
+    if (z > OUTRUN_Z) return -4.0; // flat outrun — friction decelerates to stop
     return 0;
 }
 
@@ -402,12 +412,30 @@ window.addEventListener('DOMContentLoaded', () => {
     const snowMat = new BABYLON.StandardMaterial('snowMat', scene);
     snowMat.diffuseColor = new BABYLON.Color3(0.92, 0.97, 1.0);
 
-    // Main slope
+    // Main slope (SLOPE_START_Z to FLAT_Z)
     const slopeBox = BABYLON.MeshBuilder.CreateBox('slope',
-        { width: 10, height: 1.2, depth: KICKER_Z / Math.cos(SLOPE_ANGLE) }, scene);
+        { width: 10, height: 1.2, depth: (FLAT_Z - SLOPE_START_Z) / Math.cos(SLOPE_ANGLE) }, scene);
     slopeBox.rotation.x = SLOPE_ANGLE;
-    slopeBox.position.set(0, terrainRootY(KICKER_Z / 2) - FOOT_OFFSET - 0.6, KICKER_Z / 2);
+    slopeBox.position.set(0, terrainRootY((SLOPE_START_Z + FLAT_Z) / 2) - FOOT_OFFSET - 0.6, (SLOPE_START_Z + FLAT_Z) / 2);
     slopeBox.material = snowMat;
+
+    // Transition wedge — smooths corner between slope and flat table (visual only)
+    const TRANS_LEN   = 2.0; // world-units long
+    const TRANS_ANGLE = SLOPE_ANGLE / 2;
+    const transOffset = -1.25; // shift away from kicker
+    const transMidZ   = FLAT_Z + transOffset + TRANS_LEN / 2;
+    const transBox = BABYLON.MeshBuilder.CreateBox('transition',
+        { width: 10, height: 1.2, depth: TRANS_LEN / Math.cos(TRANS_ANGLE) }, scene);
+    transBox.rotation.x = TRANS_ANGLE;
+    transBox.position.set(0, terrainRootY(FLAT_Z) - FOOT_OFFSET - 0.6 / Math.cos(TRANS_ANGLE) + 0.15, transMidZ);
+    transBox.material = snowMat;
+
+    // Flat table before kicker (~20 ft)
+    const flatTableMidZ = (FLAT_Z + KICKER_Z) / 2;
+    const flatTableBox = BABYLON.MeshBuilder.CreateBox('flatTable',
+        { width: 10, height: 1.2, depth: KICKER_Z - FLAT_Z }, scene);
+    flatTableBox.position.set(0, terrainRootY(flatTableMidZ) - FOOT_OFFSET - 0.6, flatTableMidZ);
+    flatTableBox.material = snowMat;
 
     // Kicker
     const kickerBox = BABYLON.MeshBuilder.CreateBox('kicker',
@@ -418,18 +446,38 @@ window.addEventListener('DOMContentLoaded', () => {
         (KICKER_Z + KICKER_END_Z) / 2);
     kickerBox.material = snowMat;
 
+    // Kicker transition wedge — smooths corner between flat table and kicker (visual only)
+    const KTRANS_LEN   = 2.0;
+    const KTRANS_ANGLE = KICKER_ANGLE / 2;
+    const ktransOffset = -0.8; // adjust to align visually
+    const ktransMidZ   = KICKER_Z + ktransOffset + KTRANS_LEN / 2;
+    const ktransBox = BABYLON.MeshBuilder.CreateBox('kickerTransition',
+        { width: 10, height: 1.2, depth: KTRANS_LEN / Math.cos(KTRANS_ANGLE) }, scene);
+    ktransBox.rotation.x = -KTRANS_ANGLE;
+    ktransBox.position.set(0, terrainRootY(KICKER_Z) - FOOT_OFFSET - 0.6 / Math.cos(KTRANS_ANGLE) + 0.4, ktransMidZ);
+    ktransBox.material = snowMat;
+
     // Sloped landing zone
-    const landingMidZ = KICKER_END_Z + 30;
+    const landingMidZ = (KICKER_END_Z + OUTRUN_Z) / 2;
+    const landingDepth = OUTRUN_Z - KICKER_END_Z;
     const landingBox = BABYLON.MeshBuilder.CreateBox('landing',
-        { width: 10, height: 1.2, depth: 60 / Math.cos(LANDING_ANGLE) }, scene);
+        { width: 10, height: 1.2, depth: landingDepth / Math.cos(LANDING_ANGLE) }, scene);
     landingBox.rotation.x = LANDING_ANGLE;
-    landingBox.position.set(0, terrainRootY(landingMidZ) - FOOT_OFFSET - 0.6, landingMidZ);
+    landingBox.position.set(0, terrainRootY(landingMidZ) - FOOT_OFFSET - 0.6 / Math.cos(LANDING_ANGLE), landingMidZ);
     landingBox.material = snowMat;
+
+    // Flat outrun (30 units long)
+    const OUTRUN_LEN  = 90;
+    const outrunMidZ  = OUTRUN_Z + OUTRUN_LEN / 2;
+    const outrunBox = BABYLON.MeshBuilder.CreateBox('outrun',
+        { width: 10, height: 1.2, depth: OUTRUN_LEN }, scene);
+    outrunBox.position.set(0, terrainRootY(OUTRUN_Z) - FOOT_OFFSET - 0.6, outrunMidZ);
+    outrunBox.material = snowMat;
 
     // Flat start area (behind slope start)
     const startBox = BABYLON.MeshBuilder.CreateBox('start',
         { width: 10, height: 1.2, depth: 20 }, scene);
-    startBox.position.set(0, -FOOT_OFFSET - 0.6, -10);
+    startBox.position.set(0, -FOOT_OFFSET - 0.6, SLOPE_START_Z - 9);
     startBox.material = snowMat;
 
     // ── Physics state ─────────────────────────────────────────────────────────
@@ -441,7 +489,7 @@ window.addEventListener('DOMContentLoaded', () => {
     // SPIN:  Separate rotation axis (Y). Can be initiated mid-air via arm drops.
     //        Stub only in Phase 1 — tracked in state, shown in HUD, not animated.
     //
-    const TARGET_OMEGA_UNTUCKED = 4.5; // rad/s at full extension
+    const TARGET_OMEGA_UNTUCKED = 4.5 * (_worldParam === 'triple' ? 1.3 : 1.0); // rad/s at full extension
     const MAX_OMEGA = 9.75;            // rad/s cap — limits tucked flip speed
     const I0 = computeI(0);            // I at tuck = 0 (fully extended)
 
@@ -461,15 +509,17 @@ window.addEventListener('DOMContentLoaded', () => {
         armDropR:   0.0,
         rootY:      0.0,  // world Y of character root
         vy:         0.0,  // vertical velocity (world-units/s)
-        posZ:       2.0,  // Z position (start on the slope)
+        posZ:       SLOPE_START_Z + 2.0, // start near top of inrun
         vz:         0.0,  // Z velocity — frictionless, only gravity along slope
         grounded:   true,
         crashed:    false, // true when landed badly
         crashAngle: 0.0,  // target flip angle to animate toward after crash
+        stopped:    false, // true once vz reaches 0 on outrun
     };
 
     let leftDown        = false;
     let rightDown       = false;
+    let paused          = false;
     let doubleMode      = false; // both keys held → continuous 2x speed spin
     let secondKeyTimer  = null;  // timeout handle; fires after hold threshold
     const DOUBLE_HOLD_MS = 180;  // ms — hold second key longer than this = double mode
@@ -500,6 +550,8 @@ window.addEventListener('DOMContentLoaded', () => {
     }
 
     window.addEventListener('keydown', e => {
+        if (e.code === 'KeyP') { paused = !paused; return; }
+        if (paused) return;
         if (e.code === 'Space') {
             e.preventDefault();
             if (!state.crashed) state.tuckTarget = 1.0;
@@ -544,16 +596,16 @@ window.addEventListener('DOMContentLoaded', () => {
         }
     });
 
+    // ── Billboard (shown when skier stops on outrun) ─────────────────────────
     // ── HUD ───────────────────────────────────────────────────────────────────
     const hud = buildHUD(scene);
+    const TUCK_RATE = 3.0;
 
     // ── Physics / render loop ─────────────────────────────────────────────────
     // Tuck transitions over 1/TUCK_RATE seconds (0.17 s)
-    const TUCK_RATE = 3.0;
-
     scene.registerBeforeRender(() => {
         const dt = engine.getDeltaTime() / 1000; // seconds
-        if (dt <= 0 || dt > 0.1) return;         // skip stalls / first frame
+        if (paused || dt <= 0 || dt > 0.1) return; // skip when paused / stalled
 
         // ── Smooth tuck transition ─────────────────────────────────────────
         if (!state.crashed) {
@@ -566,6 +618,7 @@ window.addEventListener('DOMContentLoaded', () => {
         if (state.grounded) {
             const prevZ = state.posZ;
             state.vz   += terrainAccelZ(state.posZ) * dt;
+            if (state.posZ > OUTRUN_Z && state.vz < 0) state.vz = 0; // stop at rest
             state.posZ += state.vz * dt;
             // Only launch when actually crossing the kicker tip (not after landing past it)
             if (prevZ <= KICKER_END_Z && state.posZ > KICKER_END_Z) {
@@ -590,6 +643,8 @@ window.addEventListener('DOMContentLoaded', () => {
                 state.rootY      = surY;
                 state.vy         = 0;
                 state.grounded   = true;
+                // capture spin before zeroing
+                const capturedSpin = state.spinAngle;
                 state.spinAngle  = 0;
                 state.spinTarget = 0;
                 state.tuckTarget = 0;
@@ -659,18 +714,17 @@ window.addEventListener('DOMContentLoaded', () => {
         // ── Apply body pose ────────────────────────────────────────────────
         applyPose(character.meshes, state.tuckAmount, state.armDropL, state.armDropR);
 
-        // ── Camera follow ──────────────────────────────────────────────────
-        camera.target.y = state.rootY;
-        camera.target.z = state.posZ;
-
         // ── Character rotation ─────────────────────────────────────────────
         // qFace turns the character to face +Z (downhill direction).
         const qFace = BABYLON.Quaternion.RotationAxis(BABYLON.Axis.Y, Math.PI);
         if (state.grounded) {
             let tilt = 0;
-            if (state.posZ >= 0 && state.posZ < KICKER_Z)                    tilt = -SLOPE_ANGLE;
+            if (state.posZ >= SLOPE_START_Z && state.posZ < FLAT_Z)           tilt = -SLOPE_ANGLE;
+            else if (state.posZ < SLOPE_START_Z)                               tilt = 0;
+            else if (state.posZ >= FLAT_Z && state.posZ < KICKER_Z)          tilt = 0;
             else if (state.posZ >= KICKER_Z && state.posZ <= KICKER_END_Z)   tilt = KICKER_ANGLE;
-            else if (state.posZ > KICKER_END_Z)                               tilt = -LANDING_ANGLE;
+            else if (state.posZ > KICKER_END_Z && state.posZ <= OUTRUN_Z) tilt = -LANDING_ANGLE;
+            else if (state.posZ > OUTRUN_Z)                               tilt = 0; // flat outrun
             const qTilt  = BABYLON.Quaternion.RotationAxis(BABYLON.Axis.X, tilt);
             const qCrash = state.crashed
                 ? BABYLON.Quaternion.RotationAxis(BABYLON.Axis.X, state.flipAngle)
@@ -682,6 +736,10 @@ window.addEventListener('DOMContentLoaded', () => {
             const qSpin = BABYLON.Quaternion.RotationAxis(BABYLON.Axis.Y, state.spinAngle);
             character.root.rotationQuaternion = qFace.multiply(qFlip).multiply(qSpin);
         }
+
+        // ── Camera follow ──────────────────────────────────────────────────────────────
+        camera.target.y = state.rootY;
+        camera.target.z = state.posZ;
 
         // ── HUD ───────────────────────────────────────────────────────────
         const rotations = state.flipAngle / (2 * Math.PI);

@@ -8,10 +8,42 @@
         * { margin: 0; padding: 0; box-sizing: border-box; }
         html, body { width: 100%; height: 100%; overflow: hidden; background: #000; }
         #renderCanvas { width: 100%; height: 100%; display: block; touch-action: none; }
+        #worldMenu { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); z-index: 10; font-family: sans-serif; }
+        #worldBtn { background: #1a2a3a; color: #b8d8ff; border: 1px solid #445566; padding: 5px 14px; cursor: pointer; font-size: 13px; border-radius: 4px; letter-spacing: 0.03em; }
+        #worldBtn:hover { background: #243648; }
+        #worldList { display: none; position: absolute; left: 0; right: 0; background: #1a2a3a; border: 1px solid #445566; border-top: none; border-radius: 0 0 4px 4px; }
+        #worldList div { padding: 6px 14px; color: #b8d8ff; cursor: pointer; font-size: 13px; }
+        #worldList div:hover { background: #243648; }
+        #worldList div.active { color: #fff; font-weight: bold; }
     </style>
 </head>
 <body>
     <canvas id="renderCanvas"></canvas>
+    <div id="worldMenu">
+        <button id="worldBtn">⛷ <span id="worldLabel">Normal</span> ▾</button>
+        <div id="worldList">
+            <div onclick="location.href='?world=normal'">Normal</div>
+            <div onclick="location.href='?world=triple'">Triple</div>
+        </div>
+    </div>
+    <script>
+        (function() {
+            var wp = new URLSearchParams(location.search).get('world') || 'normal';
+            document.addEventListener('DOMContentLoaded', function() {
+                document.getElementById('worldLabel').textContent = wp.charAt(0).toUpperCase() + wp.slice(1);
+                var items = document.querySelectorAll('#worldList div');
+                items.forEach(function(el) { if (el.textContent.toLowerCase() === wp) el.classList.add('active'); });
+                document.getElementById('worldBtn').addEventListener('click', function() {
+                    var list = document.getElementById('worldList');
+                    list.style.display = list.style.display === 'block' ? 'none' : 'block';
+                });
+                document.addEventListener('click', function(e) {
+                    if (!document.getElementById('worldMenu').contains(e.target))
+                        document.getElementById('worldList').style.display = 'none';
+                });
+            });
+        })();
+    </script>
     <script src="https://cdn.babylonjs.com/babylon.js"></script>
     <script src="https://cdn.babylonjs.com/gui/babylon.gui.min.js"></script>
     <script src="game.js"></script>
