@@ -14,6 +14,9 @@ const SEGMENTS = [
     { name: 'upperLegR', w: 0.13, h: 0.36, d: 0.18, mass:  7.0, color: [0.10, 0.10, 0.38] },
     { name: 'lowerLegL', w: 0.11, h: 0.36, d: 0.14, mass:  5.0, color: [0.08, 0.08, 0.08] },
     { name: 'lowerLegR', w: 0.11, h: 0.36, d: 0.14, mass:  5.0, color: [0.08, 0.08, 0.08] },
+    // Skis: long (≈ leg length), thin, flat — centered under each foot
+    { name: 'skiL',      w: 0.08, h: 0.03, d: 1.20, mass:  2.0, color: [0.05, 0.10, 0.40] },
+    { name: 'skiR',      w: 0.08, h: 0.03, d: 1.20, mass:  2.0, color: [0.05, 0.10, 0.40] },
 ];
 
 // ── Poses ─────────────────────────────────────────────────────────────────
@@ -31,6 +34,7 @@ const BASE_Z = {
     lowerArmL:  0.07, lowerArmR: -0.07,
     upperLegL:  0.07, upperLegR: -0.07,
     lowerLegL:  0.07, lowerLegR: -0.07,
+    skiL:       0.07, skiR:      -0.07,
 };
 
 // Segment chain geometry (all heights for reference):
@@ -57,6 +61,9 @@ const POSE_UNTUCKED = {
     upperLegR: { x:  0.075, y: -0.455, rx:  0.00, rz:  0.00, dz:  0.00 },
     lowerLegL: { x: -0.075, y: -0.815, rx:  0.00, rz:  0.00, dz:  0.00 },
     lowerLegR: { x:  0.075, y: -0.815, rx:  0.00, rz:  0.00, dz:  0.00 },
+    // Skis centered under feet: foot bottom = -0.995, ski center = -0.995 - h/2 = -1.010
+    skiL:      { x: -0.075, y: -1.010, rx:  0.00, rz:  0.00, dz:  0.00 },
+    skiR:      { x:  0.075, y: -1.010, rx:  0.00, rz:  0.00, dz:  0.00 },
 };
 
 const POSE_TUCKED = {
@@ -71,6 +78,9 @@ const POSE_TUCKED = {
     upperLegR: { x:  0.075, y: -0.140, rx: -1.20, rz:  0.00, dz: -0.20 },
     lowerLegL: { x: -0.075, y: -0.230, rx: -0.55, rz:  0.00, dz: -0.10 },  // shins fold in
     lowerLegR: { x:  0.075, y: -0.230, rx: -0.55, rz:  0.00, dz: -0.10 },
+    // Skis track feet: foot moves to ~y=-0.396 at same rx as lower leg
+    skiL:      { x: -0.075, y: -0.410, rx: -0.55, rz:  0.00, dz:  0.00 },
+    skiR:      { x:  0.075, y: -0.410, rx: -0.55, rz:  0.00, dz:  0.00 },
 };
 
 // ── Physics helpers ────────────────────────────────────────────────────────
@@ -183,6 +193,7 @@ window.addEventListener('DOMContentLoaded', () => {
         BABYLON.Vector3.Zero(), scene);
 
     camera.attachControl(canvas, true);
+    camera.inputs.removeByType('ArcRotateCameraKeyboardMoveInput');
     camera.lowerBetaLimit   = 0.05;          // prevent flipping under the scene
     camera.upperBetaLimit   = Math.PI - 0.05;
     camera.lowerRadiusLimit = 10;            // lock zoom — meaningless in ortho
@@ -219,20 +230,23 @@ window.addEventListener('DOMContentLoaded', () => {
     // SPIN:  Separate rotation axis (Y). Can be initiated mid-air via arm drops.
     //        Stub only in Phase 1 — tracked in state, shown in HUD, not animated.
     //
-    const TARGET_OMEGA_UNTUCKED = 3.0; // rad/s at full extension (~0.48 rot/s)
+    const TARGET_OMEGA_UNTUCKED = 4.5; // rad/s at full extension
     const I0 = computeI(0);            // I at tuck = 0 (fully extended)
 
     const state = {
-        // Flip (backflip, always clockwise from side view)
-        L_flip:     I0 * TARGET_OMEGA_UNTUCKED, // conserved for entire flight
-        flipAngle:  0.0,                         // integrated angle (radians)
-        tuckAmount: 0.0,                         // current tuck [0..1]
-        tuckTarget: 0.0,                         // desired tuck [0..1]
-
-        // Spin — Phase 1 stub
-        L_spin:     0.0,
-        omega_spin: 0.0,
+        L_flip:     I0 * TARGET_OMEGA_UNTUCKED,
+        flipAngle:  0.0,
+        tuckAmount: 0.0,
+        tuckTarget: 0.0,
+        spinAngle:  0.0,
+        spinTarget: 0.0,  // each tap adds ±2π; spinAngle chases this
     };
+
+    const SPIN_SPEED = Math.PI * 2.5; // rad/s — one full twist in ~0.4 s
+
+    // Initialise rotationQuaternion so Babylon doesn't mix with euler rotation.
+    character.root.rotationQuaternion = BABYLON.Quaternion.Identity();
+
 
     // ── Input ─────────────────────────────────────────────────────────────────
     // SPACE  — tuck while held, open when released
@@ -242,16 +256,17 @@ window.addEventListener('DOMContentLoaded', () => {
             e.preventDefault();
             state.tuckTarget = 1.0;
         }
-        // Arm drop: can only initiate spin once (realistic — you drop the arm, L_spin is set)
-        if (e.code === 'ArrowLeft' && state.L_spin === 0) {
-            e.preventDefault();
-            const I_arm = 1.2; // approximate moment-of-inertia contribution of one arm
-            state.L_spin = -I_arm * 3.0; // negative = left spin
+        if (e.code === 'ArrowUp' || e.code === 'ArrowDown') {
+            e.preventDefault(); // prevent camera pan
         }
-        if (e.code === 'ArrowRight' && state.L_spin === 0) {
+        // Each tap adds one full twist to the target
+        if (e.code === 'ArrowLeft') {
             e.preventDefault();
-            const I_arm = 1.2;
-            state.L_spin = I_arm * 3.0;  // positive = right spin
+            state.spinTarget -= Math.PI * 2;
+        }
+        if (e.code === 'ArrowRight') {
+            e.preventDefault();
+            state.spinTarget += Math.PI * 2;
         }
     });
     window.addEventListener('keyup', e => {
@@ -282,17 +297,19 @@ window.addEventListener('DOMContentLoaded', () => {
         const I     = computeI(state.tuckAmount);
         const omega = state.L_flip / I;
 
-        // ── Integrate flip angle ───────────────────────────────────────────
-        // Backflip = rotation around the shoulder-to-shoulder axis (X).
-        // rotation.x spins in the YZ plane, which is what the side-view camera sees.
-        state.flipAngle           += omega * dt;
-        character.root.rotation.x  = state.flipAngle;
+        state.flipAngle += omega * dt;
 
-        // ── Spin stub ────────────────────────────────────────────────────
-        // In 3D, this would drive rotation.y on the root.
-        // I_spin is fixed here; real arm-drop mechanics will be added in Phase 2.
-        const I_spin_current = 0.8; // placeholder
-        state.omega_spin = (state.L_spin !== 0) ? (state.L_spin / I_spin_current) : 0;
+        // Drive spinAngle toward spinTarget at SPIN_SPEED
+        const spinDiff = state.spinTarget - state.spinAngle;
+        const spinStep = SPIN_SPEED * dt;
+        state.spinAngle += (Math.abs(spinDiff) <= spinStep)
+            ? spinDiff
+            : Math.sign(spinDiff) * spinStep;
+
+        // qFlip * qSpin — spin in body-local space (always head-to-feet axis)
+        const qFlip = BABYLON.Quaternion.RotationAxis(BABYLON.Axis.X, state.flipAngle);
+        const qSpin = BABYLON.Quaternion.RotationAxis(BABYLON.Axis.Y, state.spinAngle);
+        character.root.rotationQuaternion = qFlip.multiply(qSpin);
 
         // ── HUD ───────────────────────────────────────────────────────────
         const rotations = state.flipAngle / (2 * Math.PI);
@@ -303,9 +320,9 @@ window.addEventListener('DOMContentLoaded', () => {
             `ω_flip    : ${omega.toFixed(3)} rad/s`,
             `Rotations : ${rotations.toFixed(2)}`,
             `Tuck      : ${(state.tuckAmount * 100).toFixed(0)}%`,
-            '─── SPIN (stub — Phase 2) ─────────',
-            `L_spin    : ${state.L_spin.toFixed(3)}`,
-            `ω_spin    : ${state.omega_spin.toFixed(3)} rad/s`,
+            '─── SPIN ──────────────────────────',
+            `Twists    : ${(state.spinAngle  / (2 * Math.PI)).toFixed(2)}`,
+            `Target    : ${(state.spinTarget / (2 * Math.PI)).toFixed(0)}`,
         ].join('\n');
     });
 
