@@ -387,24 +387,42 @@ window.addEventListener('DOMContentLoaded', () => {
         tuckTarget: 0.0,
         spinAngle:  0.0,  // current spin angle (rad)
         spinTarget: 0.0,  // target spin; each tap adds ±2π
+        doubleDir:  1,    // +1 = left twist, -1 = right twist (used in double mode)
         armDropL:   0.0,  // 0 = raised, 1 = dropped to side
         armDropR:   0.0,
     };
 
-    let leftDown  = false;
-    let rightDown = false;
+    let leftDown        = false;
+    let rightDown       = false;
+    let doubleMode      = false; // both keys held → continuous 2x speed spin
+    let secondKeyTimer  = null;  // timeout handle; fires after hold threshold
+    const DOUBLE_HOLD_MS = 180;  // ms — hold second key longer than this = double mode
 
     // Initialise rotationQuaternion so Babylon doesn't mix with euler rotation.
     character.root.rotationQuaternion = BABYLON.Quaternion.Identity();
 
 
     // ── Input ─────────────────────────────────────────────────────────────────
-    // SPACE   — tuck while held, open on release
-    // ← then → — left arm drop triggers a full left (CCW) twist
-    // → then ← — right arm drop triggers a full right (CW) twist
+    // SPACE        — tuck while held, open on release
+    // ← then tap → — single left twist at normal speed
+    // → then tap ← — single right twist at normal speed
+    // ← then hold → — double mode: 2× speed left twist while both held
+    // → then hold ← — double mode: 2× speed right twist while both held
     //
-    // The first key press drops that arm (visual cue / wind-up).
-    // Pressing the opposite key while the first is still held fires the twist.
+    // Tap vs hold is distinguished by a timer: if the second key is still down
+    // after DOUBLE_HOLD_MS, double mode activates; if released before, it was
+    // a single-twist tap.
+    function enterDoubleMode(dir) {
+        secondKeyTimer = null;
+        doubleMode = true;
+        state.doubleDir = dir;
+    }
+    function exitDoubleMode() {
+        if (secondKeyTimer !== null) { clearTimeout(secondKeyTimer); secondKeyTimer = null; }
+        doubleMode = false;
+        state.spinTarget = Math.round(state.spinAngle / (Math.PI * 2)) * Math.PI * 2;
+    }
+
     window.addEventListener('keydown', e => {
         if (e.code === 'Space') {
             e.preventDefault();
@@ -416,26 +434,38 @@ window.addEventListener('DOMContentLoaded', () => {
         if (e.code === 'ArrowLeft' && !leftDown) {
             e.preventDefault();
             leftDown = true;
-            if (rightDown) {
-                // → already held: right-arm wind-up → fire right (CW) twist
+            if (rightDown && !doubleMode) {
+                // → already held: fire one right twist immediately, start hold timer
                 state.spinTarget -= Math.PI * 2;
+                state.doubleDir = -1;
+                secondKeyTimer = setTimeout(() => enterDoubleMode(-1), DOUBLE_HOLD_MS);
             }
-            // else: just drop left arm as wind-up; wait for → to fire
+            // else: drop left arm as wind-up, wait for →
         }
         if (e.code === 'ArrowRight' && !rightDown) {
             e.preventDefault();
             rightDown = true;
-            if (leftDown) {
-                // ← already held: left-arm wind-up → fire left twist
+            if (leftDown && !doubleMode) {
+                // ← already held: fire one left twist immediately, start hold timer
                 state.spinTarget += Math.PI * 2;
+                state.doubleDir = 1;
+                secondKeyTimer = setTimeout(() => enterDoubleMode(1), DOUBLE_HOLD_MS);
             }
-            // else: just drop right arm as wind-up; wait for ← to fire
+            // else: drop right arm as wind-up, wait for ←
         }
     });
     window.addEventListener('keyup', e => {
-        if (e.code === 'Space')      state.tuckTarget = 0.0;
-        if (e.code === 'ArrowLeft')  leftDown  = false;
-        if (e.code === 'ArrowRight') rightDown = false;
+        if (e.code === 'Space') state.tuckTarget = 0.0;
+        if (e.code === 'ArrowLeft' && leftDown) {
+            leftDown = false;
+            if (doubleMode) exitDoubleMode();
+            else if (secondKeyTimer !== null) { clearTimeout(secondKeyTimer); secondKeyTimer = null; }
+        }
+        if (e.code === 'ArrowRight' && rightDown) {
+            rightDown = false;
+            if (doubleMode) exitDoubleMode();
+            else if (secondKeyTimer !== null) { clearTimeout(secondKeyTimer); secondKeyTimer = null; }
+        }
     });
 
     // ── HUD ───────────────────────────────────────────────────────────────────
@@ -459,21 +489,27 @@ window.addEventListener('DOMContentLoaded', () => {
         const omega = Math.min(state.L_flip / I, MAX_OMEGA);
         state.flipAngle += omega * dt;
 
-        // ── Spin toward queued target ──────────────────────────────────────
-        const spinDiff = state.spinTarget - state.spinAngle;
-        if (Math.abs(spinDiff) > 0.001) {
-            const spinStep = SPIN_SPEED * dt;
-            state.spinAngle += (Math.abs(spinDiff) <= spinStep)
-                ? spinDiff
-                : Math.sign(spinDiff) * spinStep;
+        // ── Spin ──────────────────────────────────────────────────────────
+        if (doubleMode) {
+            // Continuous spin at 2× speed while both keys held
+            state.spinAngle += state.doubleDir * SPIN_SPEED * 2 * dt;
+            // Keep spinTarget just ahead so arm-drop logic stays active
+            state.spinTarget = state.spinAngle + state.doubleDir * 0.01;
+        } else {
+            const spinDiff = state.spinTarget - state.spinAngle;
+            if (Math.abs(spinDiff) > 0.001) {
+                const spinStep = SPIN_SPEED * dt;
+                state.spinAngle += (Math.abs(spinDiff) <= spinStep)
+                    ? spinDiff
+                    : Math.sign(spinDiff) * spinStep;
+            }
         }
 
-        // ── Arm drop: drop during wind-up (key held) or active spin ──────────
+        // ── Arm drop: wind-up, active spin, or double mode ─────────────────
         const spinRemaining = state.spinTarget - state.spinAngle;
-        // Left arm drops when: left key is held (wind-up) OR left twist in progress
-        const armLTarget = (leftDown && !rightDown) || spinRemaining >  0.05 ? 1.0 : 0.0;
-        // Right arm drops when: right key is held (wind-up) OR right twist in progress
-        const armRTarget = (rightDown && !leftDown) || spinRemaining < -0.05 ? 1.0 : 0.0;
+        // Both arms drop in double mode; otherwise only the active-side arm drops
+        const armLTarget = (leftDown && !rightDown) || doubleMode || spinRemaining >  0.05 ? 1.0 : 0.0;
+        const armRTarget = (rightDown && !leftDown) || doubleMode || spinRemaining < -0.05 ? 1.0 : 0.0;
         const armStep = ARM_DROP_RATE * dt;
         const dL = armLTarget - state.armDropL;
         const dR = armRTarget - state.armDropR;
