@@ -298,10 +298,10 @@ function buildHUD(scene) {
     hud.color       = '#b8d8ff';
     hud.fontSize    = 15;
     hud.fontFamily  = 'monospace';
-    hud.horizontalAlignment     = BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_RIGHT;
+    hud.horizontalAlignment     = BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_LEFT;
     hud.verticalAlignment       = BABYLON.GUI.Control.VERTICAL_ALIGNMENT_TOP;
     hud.textHorizontalAlignment = BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_LEFT;
-    hud.paddingRight = '14px';
+    hud.paddingLeft  = '14px';
     hud.paddingTop   = '14px';
     hud.resizeToFit = true;
     ui.addControl(hud);
@@ -310,11 +310,44 @@ function buildHUD(scene) {
     hint.color      = '#445566';
     hint.fontSize   = 13;
     hint.fontFamily = 'monospace';
-    hint.top        = '-14px';
-    hint.text       = 'SPACE: tuck     ← then →: left twist     → then ←: right twist     drag: orbit';
+    hint.textHorizontalAlignment = BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_RIGHT;
+    hint.horizontalAlignment     = BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_RIGHT;
+    hint.verticalAlignment       = BABYLON.GUI.Control.VERTICAL_ALIGNMENT_TOP;
+    hint.paddingRight = '14px';
+    hint.paddingTop   = '14px';
+    hint.text       = 'SPACE: tuck\n← then →: left twist\n→ then ←: right twist\ndrag: orbit';
+    hint.resizeToFit = true;
     ui.addControl(hint);
 
     return hud;
+}
+
+// ── Terrain ───────────────────────────────────────────────────────────────────
+// Character moves in the +Z direction. Camera views from -X side (right-to-left = downhill).
+const FOOT_OFFSET   = 1.025;
+const SLOPE_ANGLE   = 22 * Math.PI / 180;
+const KICKER_ANGLE  = 55 * Math.PI / 180;
+const LANDING_ANGLE = 30 * Math.PI / 180;
+const KICKER_Z      = 22;
+const KICKER_END_Z  = 24.5;
+
+function terrainRootY(z) {
+    if (z < 0) return 0; // flat start
+    if (z < KICKER_Z) return -z * Math.tan(SLOPE_ANGLE);
+    if (z <= KICKER_END_Z) {
+        const baseY = -KICKER_Z * Math.tan(SLOPE_ANGLE);
+        return baseY + (z - KICKER_Z) * Math.tan(KICKER_ANGLE);
+    }
+    const landingBase = -KICKER_Z * Math.tan(SLOPE_ANGLE);
+    return landingBase - (z - KICKER_END_Z) * Math.tan(LANDING_ANGLE);
+}
+
+function terrainAccelZ(z) {
+    const g = 14.0;
+    if (z >= 0 && z < KICKER_Z)      return g * Math.sin(SLOPE_ANGLE);
+    if (z >= KICKER_Z && z <= KICKER_END_Z) return -g * Math.sin(KICKER_ANGLE);
+    if (z > KICKER_END_Z) return g * Math.sin(LANDING_ANGLE);
+    return 0;
 }
 
 // ── Entry point ────────────────────────────────────────────────────────────
@@ -324,13 +357,13 @@ window.addEventListener('DOMContentLoaded', () => {
 
     // ── Scene ───────────────────────────────────────────────────────────────
     const scene = new BABYLON.Scene(engine);
-    scene.clearColor = new BABYLON.Color4(1, 1, 1, 1);
+    scene.clearColor = new BABYLON.Color4(0.53, 0.81, 0.98, 1);
 
     // ── Orbiting orthographic camera ─────────────────────────────────────────
     // ArcRotateCamera orbits the origin on left-click drag / touch drag.
     // Orthographic mode keeps the character the same size at all angles.
     const camera = new BABYLON.ArcRotateCamera('cam',
-        Math.PI / 2,    // alpha: camera on the +Z side — looking at character's front
+        Math.PI,        // alpha: camera on the -X side — side view of slope
         Math.PI / 2,    // beta:  horizon level
         10,             // radius
         BABYLON.Vector3.Zero(), scene);
@@ -364,6 +397,40 @@ window.addEventListener('DOMContentLoaded', () => {
     const character = buildCharacter(scene);
     applyPose(character.meshes, 0, 0, 0); // start fully extended, arms raised
 
+    // ── Terrain meshes (visual — physics uses terrainRootY()) ────────────────────
+    const snowMat = new BABYLON.StandardMaterial('snowMat', scene);
+    snowMat.diffuseColor = new BABYLON.Color3(0.92, 0.97, 1.0);
+
+    // Main slope
+    const slopeBox = BABYLON.MeshBuilder.CreateBox('slope',
+        { width: 10, height: 1.2, depth: KICKER_Z / Math.cos(SLOPE_ANGLE) }, scene);
+    slopeBox.rotation.x = SLOPE_ANGLE;
+    slopeBox.position.set(0, terrainRootY(KICKER_Z / 2) - FOOT_OFFSET - 0.6, KICKER_Z / 2);
+    slopeBox.material = snowMat;
+
+    // Kicker
+    const kickerBox = BABYLON.MeshBuilder.CreateBox('kicker',
+        { width: 10, height: 1.2, depth: (KICKER_END_Z - KICKER_Z) / Math.cos(KICKER_ANGLE) }, scene);
+    kickerBox.rotation.x = -KICKER_ANGLE;
+    kickerBox.position.set(0,
+        terrainRootY((KICKER_Z + KICKER_END_Z) / 2) - FOOT_OFFSET - 0.6,
+        (KICKER_Z + KICKER_END_Z) / 2);
+    kickerBox.material = snowMat;
+
+    // Sloped landing zone
+    const landingMidZ = KICKER_END_Z + 30;
+    const landingBox = BABYLON.MeshBuilder.CreateBox('landing',
+        { width: 10, height: 1.2, depth: 60 / Math.cos(LANDING_ANGLE) }, scene);
+    landingBox.rotation.x = LANDING_ANGLE;
+    landingBox.position.set(0, terrainRootY(landingMidZ) - FOOT_OFFSET - 0.6, landingMidZ);
+    landingBox.material = snowMat;
+
+    // Flat start area (behind slope start)
+    const startBox = BABYLON.MeshBuilder.CreateBox('start',
+        { width: 10, height: 1.2, depth: 20 }, scene);
+    startBox.position.set(0, -FOOT_OFFSET - 0.6, -10);
+    startBox.material = snowMat;
+
     // ── Physics state ─────────────────────────────────────────────────────────
     //
     // FLIP:  L_flip = I · ω is set at takeoff and NEVER changes in the air.
@@ -379,6 +446,7 @@ window.addEventListener('DOMContentLoaded', () => {
 
     const SPIN_SPEED    = Math.PI * 2.0; // rad/s ~= 1.0 full twist/second
     const ARM_DROP_RATE = 4.0;            // arm transitions in ~0.25 s
+    const GRAVITY       = 14.0;           // world-units / s²
 
     const state = {
         L_flip:     I0 * TARGET_OMEGA_UNTUCKED,
@@ -390,6 +458,11 @@ window.addEventListener('DOMContentLoaded', () => {
         doubleDir:  1,    // +1 = left twist, -1 = right twist (used in double mode)
         armDropL:   0.0,  // 0 = raised, 1 = dropped to side
         armDropR:   0.0,
+        rootY:      0.0,  // world Y of character root
+        vy:         0.0,  // vertical velocity (world-units/s)
+        posZ:       2.0,  // Z position (start on the slope)
+        vz:         0.0,  // Z velocity — frictionless, only gravity along slope
+        grounded:   true,
     };
 
     let leftDown        = false;
@@ -472,8 +545,8 @@ window.addEventListener('DOMContentLoaded', () => {
     const hud = buildHUD(scene);
 
     // ── Physics / render loop ─────────────────────────────────────────────────
-    // Tuck transitions over 1/TUCK_RATE seconds (0.2 s)
-    const TUCK_RATE = 2.5;
+    // Tuck transitions over 1/TUCK_RATE seconds (0.17 s)
+    const TUCK_RATE = 3.0;
 
     scene.registerBeforeRender(() => {
         const dt = engine.getDeltaTime() / 1000; // seconds
@@ -484,24 +557,61 @@ window.addEventListener('DOMContentLoaded', () => {
         const step = TUCK_RATE * dt;
         state.tuckAmount += (Math.abs(diff) <= step) ? diff : Math.sign(diff) * step;
 
+        // ── Terrain physics (frictionless) ────────────────────────────────
+        if (state.grounded) {
+            const prevZ = state.posZ;
+            state.vz   += terrainAccelZ(state.posZ) * dt;
+            state.posZ += state.vz * dt;
+            // Only launch when actually crossing the kicker tip (not after landing past it)
+            if (prevZ <= KICKER_END_Z && state.posZ > KICKER_END_Z) {
+                state.vy       = state.vz * Math.sin(KICKER_ANGLE);
+                state.vz       = state.vz * Math.cos(KICKER_ANGLE);
+                state.rootY    = terrainRootY(KICKER_END_Z);
+                state.grounded = false;
+            } else {
+                state.rootY = terrainRootY(state.posZ);
+            }
+        } else {
+            state.vy    -= GRAVITY * dt;
+            state.rootY += state.vy * dt;
+            state.posZ  += state.vz * dt;
+            const surY   = terrainRootY(state.posZ);
+            if (state.rootY <= surY) {
+                state.rootY      = surY;
+                state.vy         = 0;
+                state.grounded   = true;
+                state.flipAngle  = 0;
+                state.spinAngle  = 0;
+                state.spinTarget = 0;
+                state.tuckTarget = 0;   // force open on landing
+                state.tuckAmount = 0;   // snap feet to ground immediately
+            }
+        }
+        character.root.position.y = state.rootY;
+        character.root.position.z = state.posZ;
+
         // ── Angular momentum conservation: ω = L / I ──────────────────────
         const I     = computeI(state.tuckAmount);
         const omega = Math.min(state.L_flip / I, MAX_OMEGA);
-        state.flipAngle += omega * dt;
+        if (!state.grounded) {
+            state.flipAngle += omega * dt;
+        }
 
         // ── Spin ──────────────────────────────────────────────────────────
-        if (doubleMode) {
-            // Continuous spin at 2× speed while both keys held
-            state.spinAngle += state.doubleDir * SPIN_SPEED * 2 * dt;
-            // Keep spinTarget just ahead so arm-drop logic stays active
-            state.spinTarget = state.spinAngle + state.doubleDir * 0.01;
-        } else {
-            const spinDiff = state.spinTarget - state.spinAngle;
-            if (Math.abs(spinDiff) > 0.001) {
-                const spinStep = SPIN_SPEED * dt;
-                state.spinAngle += (Math.abs(spinDiff) <= spinStep)
-                    ? spinDiff
-                    : Math.sign(spinDiff) * spinStep;
+        if (!state.grounded) {
+            if (doubleMode) {
+                // Continuous spin at 2× speed while both keys held
+                state.spinAngle += state.doubleDir * SPIN_SPEED * 2 * dt;
+                // Keep spinTarget just ahead so arm-drop logic stays active
+                state.spinTarget = state.spinAngle + state.doubleDir * 0.01;
+            } else {
+                const spinDiff = state.spinTarget - state.spinAngle;
+                if (Math.abs(spinDiff) > 0.001) {
+                    const spinStep = SPIN_SPEED * dt;
+                    state.spinAngle += (Math.abs(spinDiff) <= spinStep)
+                        ? spinDiff
+                        : Math.sign(spinDiff) * spinStep;
+                }
             }
         }
 
@@ -519,10 +629,26 @@ window.addEventListener('DOMContentLoaded', () => {
         // ── Apply body pose ────────────────────────────────────────────────
         applyPose(character.meshes, state.tuckAmount, state.armDropL, state.armDropR);
 
-        // qFlip * qSpin — spin in body-local space (always head-to-feet axis)
-        const qFlip = BABYLON.Quaternion.RotationAxis(BABYLON.Axis.X, state.flipAngle);
-        const qSpin = BABYLON.Quaternion.RotationAxis(BABYLON.Axis.Y, state.spinAngle);
-        character.root.rotationQuaternion = qFlip.multiply(qSpin);
+        // ── Camera follow ──────────────────────────────────────────────────
+        camera.target.y = state.rootY;
+        camera.target.z = state.posZ;
+
+        // ── Character rotation ─────────────────────────────────────────────
+        // qFace turns the character to face +Z (downhill direction).
+        const qFace = BABYLON.Quaternion.RotationAxis(BABYLON.Axis.Y, Math.PI);
+        if (state.grounded) {
+            let tilt = 0;
+            if (state.posZ >= 0 && state.posZ < KICKER_Z)                    tilt = -SLOPE_ANGLE;
+            else if (state.posZ >= KICKER_Z && state.posZ <= KICKER_END_Z)   tilt = KICKER_ANGLE;
+            else if (state.posZ > KICKER_END_Z)                               tilt = -LANDING_ANGLE;
+            const qTilt = BABYLON.Quaternion.RotationAxis(BABYLON.Axis.X, tilt);
+            character.root.rotationQuaternion = qFace.multiply(qTilt);
+        } else {
+            // qFlip * qSpin — spin in body-local space (head-to-feet axis)
+            const qFlip = BABYLON.Quaternion.RotationAxis(BABYLON.Axis.X, state.flipAngle);
+            const qSpin = BABYLON.Quaternion.RotationAxis(BABYLON.Axis.Y, state.spinAngle);
+            character.root.rotationQuaternion = qFace.multiply(qFlip).multiply(qSpin);
+        }
 
         // ── HUD ───────────────────────────────────────────────────────────
         const rotations = state.flipAngle / (2 * Math.PI);
