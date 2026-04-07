@@ -4,16 +4,16 @@
 // Each segment has a name, box size (w × h × d), and mass (arbitrary units,
 // proportional to a real athlete — ratios are what matter for physics).
 const SEGMENTS = [
-    { name: 'torso',     w: 0.30, h: 0.55, d: 0.12, mass: 22.0, color: [0.12, 0.56, 1.00] },
-    { name: 'head',      w: 0.24, h: 0.24, d: 0.12, mass:  6.0, color: [0.95, 0.95, 0.95] },
-    { name: 'upperArmL', w: 0.11, h: 0.30, d: 0.10, mass:  2.5, color: [0.12, 0.56, 1.00] },
-    { name: 'upperArmR', w: 0.11, h: 0.30, d: 0.10, mass:  2.5, color: [0.12, 0.56, 1.00] },
-    { name: 'lowerArmL', w: 0.09, h: 0.25, d: 0.10, mass:  1.5, color: [0.12, 0.56, 1.00] },
-    { name: 'lowerArmR', w: 0.09, h: 0.25, d: 0.10, mass:  1.5, color: [0.12, 0.56, 1.00] },
-    { name: 'upperLegL', w: 0.13, h: 0.36, d: 0.12, mass:  7.0, color: [0.10, 0.10, 0.38] },
-    { name: 'upperLegR', w: 0.13, h: 0.36, d: 0.12, mass:  7.0, color: [0.10, 0.10, 0.38] },
-    { name: 'lowerLegL', w: 0.11, h: 0.36, d: 0.12, mass:  5.0, color: [0.08, 0.08, 0.08] },
-    { name: 'lowerLegR', w: 0.11, h: 0.36, d: 0.12, mass:  5.0, color: [0.08, 0.08, 0.08] },
+    { name: 'torso',     w: 0.30, h: 0.55, d: 0.28, mass: 22.0, color: [0.12, 0.56, 1.00] },
+    { name: 'head',      w: 0.22, h: 0.24, d: 0.24, mass:  6.0, color: [0.95, 0.95, 0.95] },
+    { name: 'upperArmL', w: 0.11, h: 0.30, d: 0.11, mass:  2.5, color: [0.12, 0.56, 1.00] },
+    { name: 'upperArmR', w: 0.11, h: 0.30, d: 0.11, mass:  2.5, color: [0.12, 0.56, 1.00] },
+    { name: 'lowerArmL', w: 0.09, h: 0.25, d: 0.09, mass:  1.5, color: [0.12, 0.56, 1.00] },
+    { name: 'lowerArmR', w: 0.09, h: 0.25, d: 0.09, mass:  1.5, color: [0.12, 0.56, 1.00] },
+    { name: 'upperLegL', w: 0.13, h: 0.36, d: 0.18, mass:  7.0, color: [0.10, 0.10, 0.38] },
+    { name: 'upperLegR', w: 0.13, h: 0.36, d: 0.18, mass:  7.0, color: [0.10, 0.10, 0.38] },
+    { name: 'lowerLegL', w: 0.11, h: 0.36, d: 0.14, mass:  5.0, color: [0.08, 0.08, 0.08] },
+    { name: 'lowerLegR', w: 0.11, h: 0.36, d: 0.14, mass:  5.0, color: [0.08, 0.08, 0.08] },
 ];
 
 // ── Poses ─────────────────────────────────────────────────────────────────
@@ -23,50 +23,72 @@ const SEGMENTS = [
 //
 // Root is at center of mass ≈ just above the hips / center of torso.
 
+// Base Z offsets — separate L/R segments to avoid depth-buffer fighting.
+// These are constant and never changed by pose animation.
+const BASE_Z = {
+    torso: 0, head: 0,
+    upperArmL:  0.07, upperArmR: -0.07,
+    lowerArmL:  0.07, lowerArmR: -0.07,
+    upperLegL:  0.07, upperLegR: -0.07,
+    lowerLegL:  0.07, lowerLegR: -0.07,
+};
+
+// Segment chain geometry (all heights for reference):
+//   torso h=0.55  → top y=+0.275, bottom y=-0.275
+//   head  h=0.24  → center y = 0.275 + 0.005(neck) + 0.12 = 0.40
+//   shoulder y = 0.15 (mid-upper torso)
+//   upperArm h=0.30 → shoulder=top, center = 0.15-0.15 = 0.00, elbow = -0.15
+//   lowerArm h=0.25 → elbow=top,   center = -0.15-0.125 = -0.275, wrist = -0.40
+//   hip y = -0.275 (bottom of torso)
+//   upperLeg h=0.36 → hip=top,  center = -0.275-0.18 = -0.455, knee = -0.635
+//   lowerLeg h=0.36 → knee=top, center = -0.635-0.18 = -0.815, foot = -0.995
+// x offset arms = ±0.205, legs = ±0.075. dz = forward/back delta from BASE_Z.
+// Backflip tuck folds in the YZ plane: knees come forward (+dz) up toward chest.
+
 const POSE_UNTUCKED = {
-    torso:     { x:  0.00, y:  0.00, rz:  0.00 },
-    head:      { x:  0.00, y:  0.42, rz:  0.00 },
-    upperArmL: { x: -0.21, y:  0.12, rz:  0.20 },   // arms slightly away from body
-    upperArmR: { x:  0.21, y:  0.12, rz: -0.20 },
-    lowerArmL: { x: -0.21, y: -0.18, rz:  0.10 },
-    lowerArmR: { x:  0.21, y: -0.18, rz: -0.10 },
-    upperLegL: { x: -0.10, y: -0.46, rz:  0.00 },   // legs hanging straight down
-    upperLegR: { x:  0.10, y: -0.46, rz:  0.00 },
-    lowerLegL: { x: -0.10, y: -0.86, rz:  0.00 },
-    lowerLegR: { x:  0.10, y: -0.86, rz:  0.00 },
+    // All rx=0, dz=0 — segments hang straight down, arms at sides
+    torso:     { x:  0.000, y:  0.000, rx:  0.00, rz:  0.00, dz:  0.00 },
+    head:      { x:  0.000, y:  0.400, rx:  0.00, rz:  0.00, dz:  0.00 },
+    upperArmL: { x: -0.205, y:  0.000, rx:  0.00, rz:  0.00, dz:  0.00 },
+    upperArmR: { x:  0.205, y:  0.000, rx:  0.00, rz:  0.00, dz:  0.00 },
+    lowerArmL: { x: -0.205, y: -0.275, rx:  0.00, rz:  0.00, dz:  0.00 },
+    lowerArmR: { x:  0.205, y: -0.275, rx:  0.00, rz:  0.00, dz:  0.00 },
+    upperLegL: { x: -0.075, y: -0.455, rx:  0.00, rz:  0.00, dz:  0.00 },
+    upperLegR: { x:  0.075, y: -0.455, rx:  0.00, rz:  0.00, dz:  0.00 },
+    lowerLegL: { x: -0.075, y: -0.815, rx:  0.00, rz:  0.00, dz:  0.00 },
+    lowerLegR: { x:  0.075, y: -0.815, rx:  0.00, rz:  0.00, dz:  0.00 },
 };
 
 const POSE_TUCKED = {
-    torso:     { x:  0.00, y:  0.00, rz:  0.40 },   // torso curls forward
-    head:      { x: -0.04, y:  0.25, rz:  0.60 },   // head tucks toward knees
-    upperArmL: { x: -0.15, y: -0.28, rz:  1.30 },   // arms wrap around shins
-    upperArmR: { x:  0.15, y: -0.28, rz: -1.30 },
-    lowerArmL: { x: -0.12, y: -0.52, rz:  1.40 },
-    lowerArmR: { x:  0.12, y: -0.52, rz: -1.40 },
-    upperLegL: { x: -0.05, y: -0.12, rz: -1.30 },   // thighs pulled up to chest
-    upperLegR: { x:  0.05, y: -0.12, rz:  1.30 },
-    lowerLegL: { x: -0.18, y: -0.32, rz: -0.80 },   // shins fold inward
-    lowerLegR: { x:  0.18, y: -0.32, rz:  0.80 },
+    // Knees lift forward (-dz) and up toward chest — tuck in the YZ plane
+    torso:     { x:  0.000, y:  0.000, rx:  0.35, rz:  0.00, dz:  0.00 },  // torso curls forward
+    head:      { x:  0.000, y:  0.340, rx:  0.45, rz:  0.00, dz: -0.06 },  // chin toward knees
+    upperArmL: { x: -0.160, y: -0.180, rx: -1.00, rz:  0.20, dz: -0.18 },  // arms reach forward to grab shins
+    upperArmR: { x:  0.160, y: -0.180, rx: -1.00, rz: -0.20, dz: -0.18 },
+    lowerArmL: { x: -0.100, y: -0.280, rx: -1.00, rz:  0.20, dz: -0.26 },
+    lowerArmR: { x:  0.100, y: -0.280, rx: -1.00, rz: -0.20, dz: -0.26 },
+    upperLegL: { x: -0.075, y: -0.140, rx: -1.20, rz:  0.00, dz: -0.20 },  // thighs up and forward
+    upperLegR: { x:  0.075, y: -0.140, rx: -1.20, rz:  0.00, dz: -0.20 },
+    lowerLegL: { x: -0.075, y: -0.230, rx: -0.55, rz:  0.00, dz: -0.10 },  // shins fold in
+    lowerLegR: { x:  0.075, y: -0.230, rx: -0.55, rz:  0.00, dz: -0.10 },
 };
 
 // ── Physics helpers ────────────────────────────────────────────────────────
 function lerp(a, b, t) { return a + (b - a) * t; }
 
-// Moment of inertia about the flip axis (Z) for a given tuck amount [0..1].
-//   I = Σ [ m_i · r_i²  +  m_i · (w_i² + h_i²) / 12 ]
-//   First term: point-mass at CoM distance from root.
-//   Second term: self-inertia of each rectangular segment (constant, adds realistic baseline).
+// Moment of inertia about the flip axis (X, shoulder-to-shoulder).
+// Distance from X axis = sqrt(y² + z²), so I = Σ [ m_i·(y_i²+z_i²) + m_i·(h_i²+d_i²)/12 ]
 function computeI(tuck) {
     let I = 0;
     for (const seg of SEGMENTS) {
         const up = POSE_UNTUCKED[seg.name];
         const tk = POSE_TUCKED[seg.name];
-        const x = lerp(up.x, tk.x, tuck);
-        const y = lerp(up.y, tk.y, tuck);
-        // Distance² from rotation axis
-        I += seg.mass * (x * x + y * y);
-        // Segment self-inertia (does not change with position, provides floor)
-        I += seg.mass * (seg.w * seg.w + seg.h * seg.h) / 12;
+        const y  = lerp(up.y,  tk.y,  tuck);
+        const dz = lerp(up.dz, tk.dz, tuck);
+        const z  = (BASE_Z[seg.name] || 0) + dz;
+        I += seg.mass * (y * y + z * z);
+        // Self-inertia of box around X axis: m*(h² + d²)/12
+        I += seg.mass * (seg.h * seg.h + seg.d * seg.d) / 12;
     }
     return Math.max(I, 0.5); // prevent division by zero
 }
@@ -87,11 +109,6 @@ function buildCharacter(scene) {
 
         mesh.parent = root;
 
-        // Small Z offset separates L/R segments to avoid depth-buffer fighting.
-        // The orthographic side view camera looks along Z so this is invisible.
-        if (seg.name.endsWith('L')) mesh.position.z =  0.07;
-        if (seg.name.endsWith('R')) mesh.position.z = -0.07;
-
         const mat = new BABYLON.StandardMaterial(seg.name + '_mat', scene);
         mat.diffuseColor = new BABYLON.Color3(seg.color[0], seg.color[1], seg.color[2]);
         mesh.material = mat;
@@ -104,14 +121,16 @@ function buildCharacter(scene) {
 
 // ── Pose applicator ────────────────────────────────────────────────────────
 // Linearly interpolates each segment between the untucked and tucked poses.
+// Tuck folds in the YZ plane (knees forward toward chest) matching the X-axis backflip.
 function applyPose(meshes, tuck) {
     for (const seg of SEGMENTS) {
         const mesh = meshes[seg.name];
         const up   = POSE_UNTUCKED[seg.name];
         const tk   = POSE_TUCKED[seg.name];
-        mesh.position.x = lerp(up.x, tk.x, tuck);
-        mesh.position.y = lerp(up.y, tk.y, tuck);
-        // position.z is set once in buildCharacter and never changed here
+        mesh.position.x = lerp(up.x,  tk.x,  tuck);
+        mesh.position.y = lerp(up.y,  tk.y,  tuck);
+        mesh.position.z = (BASE_Z[seg.name] || 0) + lerp(up.dz, tk.dz, tuck);
+        mesh.rotation.x = lerp(up.rx, tk.rx, tuck);
         mesh.rotation.z = lerp(up.rz, tk.rz, tuck);
     }
 }
@@ -139,7 +158,7 @@ function buildHUD(scene) {
     hint.textHorizontalAlignment = BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_CENTER;
     hint.textVerticalAlignment   = BABYLON.GUI.Control.VERTICAL_ALIGNMENT_BOTTOM;
     hint.top        = '-14px';
-    hint.text       = 'SPACE hold: tuck / release: open     ← / →: arm drop spin (Phase 2)';
+    hint.text       = 'SPACE: tuck     ← / →: spin (Phase 2)     drag: orbit camera';
     ui.addControl(hint);
 
     return hud;
@@ -152,12 +171,22 @@ window.addEventListener('DOMContentLoaded', () => {
 
     // ── Scene ───────────────────────────────────────────────────────────────
     const scene = new BABYLON.Scene(engine);
-    scene.clearColor = new BABYLON.Color4(0.05, 0.08, 0.16, 1); // deep night sky
+    scene.clearColor = new BABYLON.Color4(1, 1, 1, 1);
 
-    // ── Orthographic camera — side view looking along +Z ────────────────────
-    // Camera at z = -10 looking toward origin; character lives in the XY plane.
-    const camera = new BABYLON.FreeCamera('cam', new BABYLON.Vector3(0, 0, -10), scene);
-    camera.setTarget(BABYLON.Vector3.Zero());
+    // ── Orbiting orthographic camera ─────────────────────────────────────────
+    // ArcRotateCamera orbits the origin on left-click drag / touch drag.
+    // Orthographic mode keeps the character the same size at all angles.
+    const camera = new BABYLON.ArcRotateCamera('cam',
+        0,              // alpha: camera on the +X side — looking at character's right side
+        Math.PI / 2,    // beta:  horizon level
+        10,             // radius
+        BABYLON.Vector3.Zero(), scene);
+
+    camera.attachControl(canvas, true);
+    camera.lowerBetaLimit   = 0.05;          // prevent flipping under the scene
+    camera.upperBetaLimit   = Math.PI - 0.05;
+    camera.lowerRadiusLimit = 10;            // lock zoom — meaningless in ortho
+    camera.upperRadiusLimit = 10;
     camera.mode = BABYLON.Camera.ORTHOGRAPHIC_CAMERA;
 
     function setOrtho() {
@@ -254,10 +283,10 @@ window.addEventListener('DOMContentLoaded', () => {
         const omega = state.L_flip / I;
 
         // ── Integrate flip angle ───────────────────────────────────────────
-        // Backflip from a right-facing skier = clockwise in side view
-        // = negative rotation.z in Babylon.js (right-hand rule, camera looking +Z)
+        // Backflip = rotation around the shoulder-to-shoulder axis (X).
+        // rotation.x spins in the YZ plane, which is what the side-view camera sees.
         state.flipAngle           += omega * dt;
-        character.root.rotation.z  = state.flipAngle;
+        character.root.rotation.x  = state.flipAngle;
 
         // ── Spin stub ────────────────────────────────────────────────────
         // In 3D, this would drive rotation.y on the root.
