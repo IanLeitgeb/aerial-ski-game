@@ -480,6 +480,41 @@ window.addEventListener('DOMContentLoaded', () => {
     startBox.position.set(0, -FOOT_OFFSET - 0.6, SLOPE_START_Z - 9);
     startBox.material = snowMat;
 
+    // ── Background trees ──────────────────────────────────────────────────────
+    const trunkMat = new BABYLON.StandardMaterial('trunkMat', scene);
+    trunkMat.diffuseColor = new BABYLON.Color3(0.38, 0.24, 0.14);
+    const foliageMat = new BABYLON.StandardMaterial('foliageMat', scene);
+    foliageMat.diffuseColor = new BABYLON.Color3(0.13, 0.38, 0.18);
+
+    const treeBaseY = terrainRootY(OUTRUN_Z) - FOOT_OFFSET;
+    const treePositions = [
+        { z: OUTRUN_Z + 5,  x: 3.5, scale: 1.0 },
+        { z: OUTRUN_Z + 15, x: 4.5, scale: 1.3 },
+        { z: OUTRUN_Z + 28, x: 3.0, scale: 0.9 },
+        { z: OUTRUN_Z + 40, x: 5.0, scale: 1.2 },
+        { z: OUTRUN_Z + 52, x: 3.8, scale: 1.1 },
+        { z: OUTRUN_Z + 63, x: 4.2, scale: 1.4 },
+        { z: OUTRUN_Z + 74, x: 3.2, scale: 0.85 },
+        { z: KICKER_END_Z + 10, x: 4.0, scale: 1.0 },
+        { z: KICKER_END_Z + 22, x: 5.2, scale: 1.2 },
+    ];
+    treePositions.forEach(function(t, i) {
+        const trunkH = 0.7 * t.scale;
+        const trunkR = 0.12 * t.scale;
+        const foliageH = 1.8 * t.scale;
+        const foliageR = 0.65 * t.scale;
+
+        const trunk = BABYLON.MeshBuilder.CreateCylinder('tree_trunk_' + i,
+            { height: trunkH, diameter: trunkR * 2, tessellation: 6 }, scene);
+        trunk.position.set(t.x, treeBaseY + trunkH / 2, t.z);
+        trunk.material = trunkMat;
+
+        const foliage = BABYLON.MeshBuilder.CreateCylinder('tree_foliage_' + i,
+            { height: foliageH, diameterTop: 0, diameterBottom: foliageR * 2, tessellation: 7 }, scene);
+        foliage.position.set(t.x, treeBaseY + trunkH + foliageH / 2, t.z);
+        foliage.material = foliageMat;
+    });
+
     // ── Physics state ─────────────────────────────────────────────────────────
     //
     // FLIP:  L_flip = I · ω is set at takeoff and NEVER changes in the air.
@@ -519,6 +554,8 @@ window.addEventListener('DOMContentLoaded', () => {
 
     let leftDown        = false;
     let rightDown       = false;
+    let tPoseDown       = false;
+    let tPoseAmount     = 0;
     let paused          = false;
     let doubleMode      = false; // both keys held → continuous 2x speed spin
     let secondKeyTimer  = null;  // timeout handle; fires after hold threshold
@@ -559,6 +596,9 @@ window.addEventListener('DOMContentLoaded', () => {
         if (e.code === 'ArrowUp' || e.code === 'ArrowDown') {
             e.preventDefault();
         }
+        if (e.code === 'ArrowDown') {
+            tPoseDown = true;
+        }
         if (e.code === 'ArrowLeft' && !leftDown && !state.crashed) {
             e.preventDefault();
             leftDown = true;
@@ -583,6 +623,7 @@ window.addEventListener('DOMContentLoaded', () => {
         }
     });
     window.addEventListener('keyup', e => {
+        if (e.code === 'ArrowDown') tPoseDown = false;
         if (e.code === 'Space') state.tuckTarget = 0.0;
         if (e.code === 'ArrowLeft' && leftDown) {
             leftDown = false;
@@ -702,9 +743,10 @@ window.addEventListener('DOMContentLoaded', () => {
 
         // ── Arm drop: wind-up, active spin, or double mode ─────────────────
         const spinRemaining = state.spinTarget - state.spinAngle;
-        // Both arms drop in double mode, on crash, or on active-side wind-up
-        const armLTarget = state.crashed || (leftDown && !rightDown) || doubleMode || spinRemaining >  0.05 ? 1.0 : 0.0;
-        const armRTarget = state.crashed || (rightDown && !leftDown) || doubleMode || spinRemaining < -0.05 ? 1.0 : 0.0;
+        // Spin-driven arm drop only applies in the air; on the ground only manual key-hold matters
+        const spinDrivesArm = !state.grounded;
+        const armLTarget = state.crashed || (leftDown && !rightDown) || doubleMode || (spinDrivesArm && spinRemaining >  0.05) ? 1.0 : 0.0;
+        const armRTarget = state.crashed || (rightDown && !leftDown) || doubleMode || (spinDrivesArm && spinRemaining < -0.05) ? 1.0 : 0.0;
         const armStep = ARM_DROP_RATE * dt;
         const dL = armLTarget - state.armDropL;
         const dR = armRTarget - state.armDropR;
@@ -713,6 +755,34 @@ window.addEventListener('DOMContentLoaded', () => {
 
         // ── Apply body pose ────────────────────────────────────────────────
         applyPose(character.meshes, state.tuckAmount, state.armDropL, state.armDropR);
+
+        // ── T-pose blend (ArrowDown) ───────────────────────────────────────
+        const T_RATE = 5.0;
+        tPoseAmount += ((tPoseDown ? 1 : 0) - tPoseAmount) * Math.min(1, T_RATE * dt);
+        if (tPoseAmount > 0.001) {
+            const ms = character.meshes;
+            // Lower arm / hand leads; upper arm follows behind
+            const tH = Math.min(1.0, tPoseAmount * 1.7); // hand leads
+            const tA = tPoseAmount;                        // upper arm follows
+            // Arc: hand sweeps up through an arc on the way out to the side
+            const arcH = Math.sin(tH * Math.PI) * 0.45;
+            const arcA = Math.sin(tA * Math.PI) * 0.20;
+
+            ms['upperArmL'].rotation.z = lerp(ms['upperArmL'].rotation.z, -Math.PI / 2, tA);
+            ms['upperArmR'].rotation.z = lerp(ms['upperArmR'].rotation.z,  Math.PI / 2, tA);
+            ms['upperArmL'].position.x = lerp(ms['upperArmL'].position.x, -0.355, tA);
+            ms['upperArmR'].position.x = lerp(ms['upperArmR'].position.x,  0.355, tA);
+            ms['upperArmL'].position.y = lerp(ms['upperArmL'].position.y,  0.150, tA) + arcA;
+            ms['upperArmR'].position.y = lerp(ms['upperArmR'].position.y,  0.150, tA) + arcA;
+
+            ms['lowerArmL'].rotation.z = lerp(ms['lowerArmL'].rotation.z, -Math.PI / 2, tH);
+            ms['lowerArmR'].rotation.z = lerp(ms['lowerArmR'].rotation.z,  Math.PI / 2, tH);
+            ms['lowerArmL'].position.x = lerp(ms['lowerArmL'].position.x, -0.630, tH);
+            ms['lowerArmR'].position.x = lerp(ms['lowerArmR'].position.x,  0.630, tH);
+            ms['lowerArmL'].position.y = lerp(ms['lowerArmL'].position.y,  0.150, tH) + arcH;
+            ms['lowerArmR'].position.y = lerp(ms['lowerArmR'].position.y,  0.150, tH) + arcH;
+            // Gloves are children of lowerArm and rotate with it automatically
+        }
 
         // ── Character rotation ─────────────────────────────────────────────
         // qFace turns the character to face +Z (downhill direction).
