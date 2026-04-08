@@ -22,13 +22,15 @@
     <div id="worldMenu">
         <button id="worldBtn">⛷ <span id="worldLabel">Normal</span> ▾</button>
         <div id="worldList">
-            <div onclick="location.href='?world=normal'">Normal</div>
+            <div onclick="location.href='?world=single'">Single</div>
+            <div onclick="location.href='?world=double'">Double</div>
             <div onclick="location.href='?world=triple'">Triple</div>
+            <div onclick="location.href='?world=quad'">Quad</div>
         </div>
     </div>
     <script>
         (function() {
-            var wp = new URLSearchParams(location.search).get('world') || 'normal';
+            var wp = new URLSearchParams(location.search).get('world') || 'double';
             document.addEventListener('DOMContentLoaded', function() {
                 document.getElementById('worldLabel').textContent = wp.charAt(0).toUpperCase() + wp.slice(1);
                 var items = document.querySelectorAll('#worldList div');

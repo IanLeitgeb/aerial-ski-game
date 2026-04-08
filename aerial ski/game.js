@@ -333,8 +333,8 @@ const KICKER_Z      = 22;
 const KICKER_END_Z  = 24.5;
 const OUTRUN_Z      = KICKER_END_Z + 50; // landing slope ends here, flat outrun begins
 const FLAT_Z        = KICKER_Z - 9.0; // flat table starts before kicker
-const _worldParam   = new URLSearchParams(location.search).get('world') || 'normal';
-const SLOPE_START_Z = _worldParam === 'triple' ? -19.8 : -11.3; // top of inrun (+8.5 for triple)
+const _worldParam   = new URLSearchParams(location.search).get('world') || 'double';
+const SLOPE_START_Z = _worldParam === 'quad' ? -33.8 : _worldParam === 'triple' ? -19.8 : _worldParam === 'single' ? -4.3 : -11.3;
 
 function terrainRootY(z) {
     if (z < SLOPE_START_Z) return -SLOPE_START_Z * Math.tan(SLOPE_ANGLE); // flat top
@@ -489,11 +489,11 @@ window.addEventListener('DOMContentLoaded', () => {
     // SPIN:  Separate rotation axis (Y). Can be initiated mid-air via arm drops.
     //        Stub only in Phase 1 — tracked in state, shown in HUD, not animated.
     //
-    const TARGET_OMEGA_UNTUCKED = 4.5 * (_worldParam === 'triple' ? 1.3 : 1.0); // rad/s at full extension
+    const TARGET_OMEGA_UNTUCKED = 4.5 * (_worldParam === 'quad' ? 1.404 : _worldParam === 'triple' ? 1.3 : _worldParam === 'single' ? 0.59 : 1.0); // rad/s at full extension
     const MAX_OMEGA = 9.75;            // rad/s cap — limits tucked flip speed
     const I0 = computeI(0);            // I at tuck = 0 (fully extended)
 
-    const SPIN_SPEED    = Math.PI * 2.0; // rad/s ~= 1.0 full twist/second
+    const SPIN_SPEED    = Math.PI * 2.0 * (_worldParam === 'quad' ? 1.3 : _worldParam === 'triple' ? 1.3 : _worldParam === 'single' ? 0.68 : 1.0); // rad/s ~= 1.0 full twist/second
     const ARM_DROP_RATE = 4.0;            // arm transitions in ~0.25 s
     const GRAVITY       = 14.0;           // world-units / s²
 
