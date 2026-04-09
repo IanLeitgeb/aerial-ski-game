@@ -99,6 +99,14 @@ const POSE_ARMS_DROPPED = {
     lowerArmL: { x: -0.205, y: -0.275, rx:  0.00, rz:  0.00, dz:  0.00 },
     lowerArmR: { x:  0.205, y: -0.275, rx:  0.00, rz:  0.00, dz:  0.00 },
 };
+// Arms angled 50° forward from vertical, straight (no elbow bend).
+// rx = -50° = -0.873 rad. Shoulder at y=0.15, arm points forward-down.
+const POSE_ARMS_50DEG = {
+    upperArmL: { x: -0.205, y:  0.054, rx: -0.873, rz:  0.00, dz: -0.115 },
+    upperArmR: { x:  0.205, y:  0.054, rx: -0.873, rz:  0.00, dz: -0.115 },
+    lowerArmL: { x: -0.205, y: -0.123, rx: -0.873, rz:  0.00, dz: -0.326 },
+    lowerArmR: { x:  0.205, y: -0.123, rx: -0.873, rz:  0.00, dz: -0.326 },
+};
 
 // ── Physics helpers ────────────────────────────────────────────────────────
 function lerp(a, b, t) { return a + (b - a) * t; }
@@ -256,7 +264,8 @@ function armSweep(name, up, t) {
 // tuck:     0 = fully extended, 1 = fully tucked
 // armDropL: 0 = left arm raised, 1 = left arm dropped to side
 // armDropR: 0 = right arm raised, 1 = right arm dropped to side
-function applyPose(meshes, tuck, armDropL, armDropR) {
+// armSnap:  0-1, blends arms toward POSE_ARMS_50DEG (overrides armDrop for arm segments)
+function applyPose(meshes, tuck, armDropL, armDropR, armSnap) {
     for (const seg of SEGMENTS) {
         const mesh = meshes[seg.name];
         const up   = POSE_UNTUCKED[seg.name];
@@ -265,8 +274,20 @@ function applyPose(meshes, tuck, armDropL, armDropR) {
 
         if (seg.name === 'upperArmL' || seg.name === 'lowerArmL') {
             ex = armSweep(seg.name, up, armDropL);
+            if (armSnap > 0) {
+                const sn = POSE_ARMS_50DEG[seg.name];
+                ex = { x: lerp(ex.x, sn.x, armSnap), y: lerp(ex.y, sn.y, armSnap),
+                       rx: lerp(ex.rx, sn.rx, armSnap), rz: lerp(ex.rz, sn.rz, armSnap),
+                       dz: lerp(ex.dz, sn.dz, armSnap) };
+            }
         } else if (seg.name === 'upperArmR' || seg.name === 'lowerArmR') {
             ex = armSweep(seg.name, up, armDropR);
+            if (armSnap > 0) {
+                const sn = POSE_ARMS_50DEG[seg.name];
+                ex = { x: lerp(ex.x, sn.x, armSnap), y: lerp(ex.y, sn.y, armSnap),
+                       rx: lerp(ex.rx, sn.rx, armSnap), rz: lerp(ex.rz, sn.rz, armSnap),
+                       dz: lerp(ex.dz, sn.dz, armSnap) };
+            }
         }
 
         mesh.position.x = lerp(ex.x,  tk.x,  tuck);
@@ -281,11 +302,11 @@ function applyPose(meshes, tuck, armDropL, armDropR) {
     // When arm is dropped (armDrop=1) the wrist is at the BOTTOM (-h/2).
     // During tuck the arms fold forward; keep glove at bottom in that case.
     if (meshes.gloveL) {
-        const effectiveDrop = Math.max(armDropL, tuck);
+        const effectiveDrop = Math.max(armDropL, tuck, armSnap);
         meshes.gloveL.mesh.position.y = lerp(meshes.gloveL.halfH, -meshes.gloveL.halfH, effectiveDrop);
     }
     if (meshes.gloveR) {
-        const effectiveDrop = Math.max(armDropR, tuck);
+        const effectiveDrop = Math.max(armDropR, tuck, armSnap);
         meshes.gloveR.mesh.position.y = lerp(meshes.gloveR.halfH, -meshes.gloveR.halfH, effectiveDrop);
     }
 }
@@ -677,6 +698,17 @@ window.addEventListener('DOMContentLoaded', () => {
         crashed:    false, // true when landed badly
         crashAngle: 0.0,  // target flip angle to animate toward after crash
         stopped:    false, // true once vz reaches 0 on outrun
+        // Per-flip twist tracking
+        perFlipTwists:   [],   // twists done in each completed flip
+        lastFlipInt:     0,    // floor(|flipAngle|/2π) at last frame
+        spinAtFlipStart: 0.0,  // spinAngle when current flip began
+        spinBoundaries:  [],   // spinAngle values recorded at each flip boundary
+        trickName:       '',   // computed at landing
+        execution:       0,    // out of 30 at landing
+        armSnap:         0.0,  // 0-1: blend toward POSE_ARMS_50DEG
+        armSnapTarget:   0,
+        airTime:         0.0,  // seconds in air on current jump
+        tuckedTime:      0.0,  // seconds tuckAmount >= 0.8 while airborne
     };
 
     let leftDown        = false;
@@ -730,6 +762,11 @@ window.addEventListener('DOMContentLoaded', () => {
         if (e.code === 'ArrowUp' && state.grounded) {
             state.flipDir = -1;
         }
+        if (e.code === 'ArrowUp' && !state.grounded && !state.crashed) {
+            // Snap spin to nearest full twist and drop arms 50° forward
+            state.spinTarget    = Math.round(state.spinAngle / (Math.PI * 2)) * Math.PI * 2;
+            state.armSnapTarget = 1;
+        }
         if (e.code === 'ArrowLeft' && !leftDown && !state.crashed) {
             e.preventDefault();
             leftDown = true;
@@ -767,8 +804,98 @@ window.addEventListener('DOMContentLoaded', () => {
         }
     });
 
+    // ── Scoring (FIS degree of difficulty) ──────────────────────────────────
+    const DD_TABLE = {
+        // Singles
+        '0':1.70, '1':2.00, '2':2.30, '3':2.60,
+        // Doubles
+        '0,0':2.10,
+        '0,1':2.50, '1,0':2.50,
+        '1,1':3.15,
+        '0,2':3.00, '2,0':3.00,
+        '1,2':3.50, '2,1':3.50,
+        '2,2':4.00,
+        '0,3':3.30, '3,0':3.30,
+        '1,3':3.80, '3,1':3.80,
+        '2,3':4.30, '3,2':4.30,
+        '3,3':4.70,
+        // Triples
+        '0,0,0':2.90,
+        '1,0,0':3.30, '0,1,0':3.30, '0,0,1':3.20,
+        '1,1,0':3.80, '1,0,1':3.75, '0,1,1':3.75,
+        '1,1,1':4.425,
+        '2,0,0':3.50, '0,2,0':3.50, '0,0,2':3.40,
+        '2,1,0':4.00, '1,2,0':4.00, '0,2,1':4.00, '0,1,2':3.90, '1,0,2':3.90, '2,0,1':3.95,
+        '2,1,1':4.20, '1,2,1':4.20, '1,1,2':4.10,
+        '2,2,0':4.50, '0,2,2':4.50, '2,0,2':4.45,
+        '2,2,1':4.80, '2,1,2':4.75, '1,2,2':4.75,
+        '2,2,2':5.10,
+        '3,1,1':4.60, '1,3,1':4.60, '1,1,3':4.50,
+        // Quads
+        '0,0,0,0':3.50,
+        '1,0,0,0':3.90, '0,1,0,0':3.90, '0,0,1,0':3.90, '0,0,0,1':3.80,
+        '1,1,0,0':4.40, '1,0,1,0':4.35, '1,0,0,1':4.30,
+        '0,1,1,0':4.40, '0,1,0,1':4.35, '0,0,1,1':4.30,
+        '1,1,1,0':5.00, '1,1,0,1':4.95, '1,0,1,1':4.95, '0,1,1,1':4.95,
+        '1,1,1,1':5.80,
+    };
+    const HS_KEY = `hs_${_worldParam}`;
+    let highScore = parseFloat(localStorage.getItem(HS_KEY) || '0');
+    function calcDD(perFlipTwists) {
+        const key = perFlipTwists.join(',');
+        if (DD_TABLE[key] !== undefined) return DD_TABLE[key];
+        // Fallback for unlisted combos
+        const flips = perFlipTwists.length;
+        const twists = perFlipTwists.reduce((a, b) => a + b, 0);
+        return Math.round((1.4 + flips * 0.5 + twists * 0.4) * 1000) / 1000;
+    }
+
     // ── Billboard (shown when skier stops on outrun) ─────────────────────────
-    // ── HUD ───────────────────────────────────────────────────────────────────
+    const bbUI = BABYLON.GUI.AdvancedDynamicTexture.CreateFullscreenUI('bbUI', true, scene);
+    const bbContainer = new BABYLON.GUI.Rectangle('bbContainer');
+    bbContainer.width           = '400px';
+    bbContainer.height          = '200px';
+    bbContainer.cornerRadius    = 14;
+    bbContainer.color           = 'rgba(0,0,0,0)';
+    bbContainer.background      = 'rgba(0,0,0,0.6)';
+    bbContainer.horizontalAlignment = BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_RIGHT;
+    bbContainer.verticalAlignment   = BABYLON.GUI.Control.VERTICAL_ALIGNMENT_CENTER;
+    bbContainer.paddingRight    = '24px';
+    bbContainer.isVisible       = false;
+    bbUI.addControl(bbContainer);
+    const bbStack = new BABYLON.GUI.StackPanel('bbStack');
+    bbStack.isVertical = true;
+    bbStack.width = '100%';
+    bbContainer.addControl(bbStack);
+    const bbName = new BABYLON.GUI.TextBlock('bbName');
+    bbName.color        = '#ffffff';
+    bbName.fontSize     = 30;
+    bbName.fontFamily   = 'sans-serif';
+    bbName.fontStyle    = 'bold';
+    bbName.height       = '90px';
+    bbName.textWrapping = BABYLON.GUI.TextWrapping.WordWrap;
+    bbName.resizeToFit  = false;
+    bbName.outlineWidth = 4;
+    bbName.outlineColor = '#000000';
+    bbStack.addControl(bbName);
+    const bbSub = new BABYLON.GUI.TextBlock('bbSub');
+    bbSub.color      = '#aaccff';
+    bbSub.fontSize   = 21;
+    bbSub.fontFamily = 'sans-serif';
+    bbSub.height     = '50px';
+    bbSub.outlineWidth = 3;
+    bbSub.outlineColor = '#000000';
+    bbStack.addControl(bbSub);
+    const bbScore = new BABYLON.GUI.TextBlock('bbScore');
+    bbScore.color      = '#ffee88';
+    bbScore.fontSize   = 21;
+    bbScore.fontFamily = 'sans-serif';
+    bbScore.fontStyle  = 'bold';
+    bbScore.height     = '46px';
+    bbScore.outlineWidth = 3;
+    bbScore.outlineColor = '#000000';
+    bbStack.addControl(bbScore);
+    const billboard = { get isVisible() { return bbContainer.isVisible; }, set isVisible(v) { bbContainer.isVisible = v; } };
     const hud = buildHUD(scene);
     const TUCK_RATE = 3.0;
 
@@ -794,8 +921,38 @@ window.addEventListener('DOMContentLoaded', () => {
         if (state.grounded) {
             const prevZ = state.posZ;
             state.vz   += terrainAccelZ(state.posZ) * dt;
-            if (state.posZ > OUTRUN_Z && !IS_D2T && state.vz < 0) state.vz = 0; // stop at rest
-            if (state.posZ > J2_OUTRUN_Z && state.vz < 0) state.vz = 0;
+            if (state.posZ > OUTRUN_Z && !IS_D2T && state.vz < 0) {
+                state.vz = 0;
+                if (!state.stopped && !state.crashed && state.trickName) {
+                    state.stopped = true;
+                    const totalFlips  = state.perFlipTwists.length;
+                    const totalTwists = state.perFlipTwists.reduce((a, b) => a + b, 0);
+                    const dd    = calcDD(state.perFlipTwists);
+                    const score = Math.round(dd * state.execution * 10) / 10;
+                    const isNew = score > highScore;
+                    if (isNew) { highScore = score; localStorage.setItem(HS_KEY, score); }
+                    bbName.text  = state.trickName;
+                    bbSub.text   = `${totalFlips} flip${totalFlips !== 1 ? 's' : ''} · ${totalTwists} twist${totalTwists !== 1 ? 's' : ''}  ·  DD ${dd}  ×  exec ${state.execution}`;
+                    bbScore.text = isNew ? `★ NEW BEST  ${score}` : `${score}  (best: ${highScore})`;
+                    billboard.isVisible = true;
+                }
+            }
+            if (state.posZ > J2_OUTRUN_Z && state.vz < 0) {
+                state.vz = 0;
+                if (!state.stopped && !state.crashed && state.trickName) {
+                    state.stopped = true;
+                    const totalFlips  = state.perFlipTwists.length;
+                    const totalTwists = state.perFlipTwists.reduce((a, b) => a + b, 0);
+                    const dd    = calcDD(state.perFlipTwists);
+                    const score = Math.round(dd * state.execution * 10) / 10;
+                    const isNew = score > highScore;
+                    if (isNew) { highScore = score; localStorage.setItem(HS_KEY, score); }
+                    bbName.text  = state.trickName;
+                    bbSub.text   = `${totalFlips} flip${totalFlips !== 1 ? 's' : ''} · ${totalTwists} twist${totalTwists !== 1 ? 's' : ''}  ·  DD ${dd}  ×  exec ${state.execution}`;
+                    bbScore.text = isNew ? `★ NEW BEST  ${score}` : `${score}  (best: ${highScore})`;
+                    billboard.isVisible = true;
+                }
+            }
             state.posZ += state.vz * dt;
             // Only launch when actually crossing the kicker tip (not after landing past it)
             const crossingJ1 = prevZ <= KICKER_END_Z && state.posZ > KICKER_END_Z;
@@ -805,6 +962,18 @@ window.addEventListener('DOMContentLoaded', () => {
                 state.vz       = state.vz * Math.cos(KICKER_ANGLE);
                 state.rootY    = terrainRootY(crossingJ1 ? KICKER_END_Z : J2_KICKER_END_Z);
                 state.grounded = false;
+                // Reset per-flip twist tracking
+                state.perFlipTwists   = [];
+                state.lastFlipInt     = 0;
+                state.spinAtFlipStart = state.spinAngle;
+                state.spinBoundaries  = [];
+                state.airTime         = 0.0;
+                state.tuckedTime      = 0.0;
+                state.armSnap         = 0.0;
+                state.armSnapTarget   = 0;
+                // Hide billboard on takeoff
+                billboard.isVisible   = false;
+                state.stopped         = false;
                 if (crossingJ2) {
                     // Second jump: boost flip and spin to triple speed
                     state.L_flip   = I0 * 4.5 * 1.3;
@@ -829,6 +998,9 @@ window.addEventListener('DOMContentLoaded', () => {
             state.vy    -= GRAVITY * dt;
             state.rootY += state.vy * dt;
             state.posZ  += state.vz * dt;
+            // Track air time and tuck time for execution scoring
+            state.airTime    += dt;
+            if (state.tuckAmount >= 0.8) state.tuckedTime += dt;
             const surY   = terrainRootY(state.posZ);
             if (state.rootY <= surY) {
                 const TWO_PI  = Math.PI * 2;
@@ -853,6 +1025,29 @@ window.addEventListener('DOMContentLoaded', () => {
                 state.spinMult = 1.0; // reset spin multiplier on landing
 
                 if (goodLanding) {
+                    // Compute per-flip twists from recorded spin boundary values
+                    const spinPoints = [state.spinAtFlipStart, ...state.spinBoundaries, capturedSpin];
+                    state.perFlipTwists = [];
+                    for (let i = 0; i < spinPoints.length - 1; i++) {
+                        state.perFlipTwists.push(Math.round(Math.abs(spinPoints[i + 1] - spinPoints[i]) / (Math.PI * 2)));
+                    }
+                    // Build trick name
+                    const TWIST_NAMES = ['Lay', 'Full', 'Double Full', 'Triple Full'];
+                    state.trickName = state.perFlipTwists
+                        .map(t => TWIST_NAMES[Math.min(t, 3)])
+                        .join('-');
+                    // ── Execution score (out of 30) ──────────────────────────
+                    // Air: fixed 6 pts
+                    const airScore = 6;
+                    // Form: tuck ratio 0-15 pts
+                    const tuckRatio = state.airTime > 0 ? Math.min(state.tuckedTime / state.airTime, 1) : 0;
+                    const formScore = Math.round(tuckRatio * 15 * 10) / 10;
+                    // Landing: how close to perfectly upright & forward (0-9 pts)
+                    const TWO_PI2 = Math.PI * 2;
+                    const flipDev  = Math.min(norm < Math.PI ? norm : TWO_PI2 - norm, Math.PI / 2) / (Math.PI / 2);
+                    const spinDev  = Math.min(spinNorm < Math.PI ? spinNorm : TWO_PI2 - spinNorm, Math.PI / 4) / (Math.PI / 4);
+                    const landScore = Math.round((1 - Math.max(flipDev, spinDev)) * 9 * 10) / 10;
+                    state.execution = Math.round((airScore + formScore + landScore) * 10) / 10;
                     state.crashed   = false;
                     state.flipAngle = 0;
                     state.flipDir   = 1;
@@ -906,6 +1101,15 @@ window.addEventListener('DOMContentLoaded', () => {
             }
         }
 
+        // ── Per-flip twist boundary detector (after spin update) ────────────────
+        if (!state.grounded) {
+            const currentFlipInt = Math.floor(Math.abs(state.flipAngle) / (Math.PI * 2));
+            if (currentFlipInt > state.lastFlipInt) {
+                state.spinBoundaries.push(state.spinAngle);
+                state.lastFlipInt = currentFlipInt;
+            }
+        }
+
         // ── Arm drop: wind-up, active spin, or double mode ─────────────────
         const spinRemaining = state.spinTarget - state.spinAngle;
         // Arm swap phase overrides normal arm targets
@@ -931,9 +1135,14 @@ window.addEventListener('DOMContentLoaded', () => {
         const dR = armRTarget - state.armDropR;
         state.armDropL += Math.abs(dL) <= armStep ? dL : Math.sign(dL) * armStep;
         state.armDropR += Math.abs(dR) <= armStep ? dR : Math.sign(dR) * armStep;
+        // Animate arm snap (forward 50° position)
+        const dSnap = state.armSnapTarget - state.armSnap;
+        state.armSnap += Math.abs(dSnap) <= armStep ? dSnap : Math.sign(dSnap) * armStep;
+        // Fade snap back out on landing
+        if (state.grounded) state.armSnapTarget = 0;
 
         // ── Apply body pose ────────────────────────────────────────────────
-        applyPose(character.meshes, state.tuckAmount, state.armDropL, state.armDropR);
+        applyPose(character.meshes, state.tuckAmount, state.armDropL, state.armDropR, state.armSnap);
 
         // ── Character rotation ─────────────────────────────────────────────
         // qFace turns the character to face +Z (downhill direction).
