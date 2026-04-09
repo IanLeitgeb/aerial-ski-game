@@ -336,7 +336,7 @@ function buildHUD(scene) {
     hint.verticalAlignment       = BABYLON.GUI.Control.VERTICAL_ALIGNMENT_TOP;
     hint.paddingRight = '14px';
     hint.paddingTop   = '14px';
-    hint.text       = 'SPACE: tuck\n← then →: left twist\n→ then ←: right twist\ndrag: orbit';
+    hint.text       = 'SPACE: tuck\n← then →: left twist\n→ then ←: right twist\n↓: power wrap\ndrag: orbit';
     hint.resizeToFit = true;
     ui.addControl(hint);
 
@@ -720,6 +720,7 @@ window.addEventListener('DOMContentLoaded', () => {
     let rightArmHoldTime= 0;    // seconds left arrow held alone on inrun (right arm up)
     const ARM_HOLD_REQ  = 0.5;  // seconds arm must be up before jump
     let paused          = false;
+    let powerWrapDown   = false; // down arrow held → 1.3× spin rate
     let doubleMode      = false; // both keys held → continuous 2x speed spin
     let secondKeyTimer  = null;  // timeout handle; fires after hold threshold
     const DOUBLE_HOLD_MS = 180;  // ms — hold second key longer than this = double mode
@@ -759,6 +760,9 @@ window.addEventListener('DOMContentLoaded', () => {
         if (e.code === 'ArrowUp' || e.code === 'ArrowDown') {
             e.preventDefault();
         }
+        if (e.code === 'ArrowDown' && !state.grounded && !state.crashed) {
+            powerWrapDown = true;
+        }
         if (e.code === 'ArrowUp' && state.grounded) {
             state.flipDir = -1;
         }
@@ -792,6 +796,7 @@ window.addEventListener('DOMContentLoaded', () => {
     });
     window.addEventListener('keyup', e => {
         if (e.code === 'Space') state.tuckTarget = 0.0;
+        if (e.code === 'ArrowDown') powerWrapDown = false;
         if (e.code === 'ArrowLeft' && leftDown) {
             leftDown = false;
             if (doubleMode) exitDoubleMode();
@@ -1022,7 +1027,8 @@ window.addEventListener('DOMContentLoaded', () => {
                 state.tuckAmount = 0;
                 armSwapPhase   = false;
                 autoSpinActive = false;
-                state.spinMult = 1.0; // reset spin multiplier on landing
+                state.spinMult  = 1.0; // reset spin multiplier on landing
+                powerWrapDown   = false; // clear power wrap on landing
 
                 if (goodLanding) {
                     // Compute per-flip twists from recorded spin boundary values
@@ -1083,15 +1089,16 @@ window.addEventListener('DOMContentLoaded', () => {
 
         // ── Spin ──────────────────────────────────────────────────────────
         if (!state.grounded) {
+            const powerWrapMult = powerWrapDown ? 1.3 : 1.0;
             if (doubleMode) {
                 // Continuous spin at 2× speed while both keys held
-                state.spinAngle += state.doubleDir * SPIN_SPEED * state.spinMult * 2 * dt;
+                state.spinAngle += state.doubleDir * SPIN_SPEED * state.spinMult * powerWrapMult * 2 * dt;
                 // Keep spinTarget just ahead so arm-drop logic stays active
                 state.spinTarget = state.spinAngle + state.doubleDir * 0.01;
             } else {
                 const spinDiff = state.spinTarget - state.spinAngle;
                 if (Math.abs(spinDiff) > 0.001) {
-                    const spinStep = SPIN_SPEED * state.spinMult * (autoSpinActive ? 2 : 1) * dt;
+                    const spinStep = SPIN_SPEED * state.spinMult * powerWrapMult * (autoSpinActive ? 2 : 1) * dt;
                     state.spinAngle += (Math.abs(spinDiff) <= spinStep)
                         ? spinDiff
                         : Math.sign(spinDiff) * spinStep;
