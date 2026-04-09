@@ -26,15 +26,17 @@
             <div onclick="location.href='?world=double'">Double</div>
             <div onclick="location.href='?world=triple'">Triple</div>
             <div onclick="location.href='?world=quad'">Quad</div>
+            <div onclick="location.href='?world=d2t'">Double to Triple</div>
         </div>
     </div>
     <script>
         (function() {
             var wp = new URLSearchParams(location.search).get('world') || 'double';
             document.addEventListener('DOMContentLoaded', function() {
-                document.getElementById('worldLabel').textContent = wp.charAt(0).toUpperCase() + wp.slice(1);
+                var labelMap = { single: 'Single', double: 'Double', triple: 'Triple', quad: 'Quad', d2t: 'Double to Triple' };
+                document.getElementById('worldLabel').textContent = labelMap[wp] || wp.charAt(0).toUpperCase() + wp.slice(1);
                 var items = document.querySelectorAll('#worldList div');
-                items.forEach(function(el) { if (el.textContent.toLowerCase() === wp) el.classList.add('active'); });
+                items.forEach(function(el) { if (el.textContent.toLowerCase() === wp || el.textContent === (labelMap[wp] || '')) el.classList.add('active'); });
                 document.getElementById('worldBtn').addEventListener('click', function() {
                     var list = document.getElementById('worldList');
                     list.style.display = list.style.display === 'block' ? 'none' : 'block';

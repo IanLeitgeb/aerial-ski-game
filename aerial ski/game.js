@@ -331,10 +331,19 @@ const LANDING_ANGLE = 40 * Math.PI / 180;
 const LANDING_DROP  = 3.5; // extra vertical drop of landing zone
 const KICKER_Z      = 22;
 const KICKER_END_Z  = 24.5;
-const OUTRUN_Z      = KICKER_END_Z + 50; // landing slope ends here, flat outrun begins
-const FLAT_Z        = KICKER_Z - 9.0; // flat table starts before kicker
 const _worldParam   = new URLSearchParams(location.search).get('world') || 'double';
+const OUTRUN_Z      = KICKER_END_Z + (_worldParam === 'd2t' ? 34 : 50); // landing slope ends here
+const FLAT_Z        = KICKER_Z - 9.0; // flat table starts before kicker
 const SLOPE_START_Z = _worldParam === 'quad' ? -33.8 : _worldParam === 'triple' ? -19.8 : _worldParam === 'single' ? -4.3 : -11.3;
+
+// ── Double-to-triple second jump constants ────────────────────────────────
+const IS_D2T        = _worldParam === 'd2t';
+const J2_SLOPE_Z    = OUTRUN_Z;              // second inrun starts at end of first landing
+const J2_SLOPE_LEN  = 1.5;                  // inrun length before second flat table
+const J2_FLAT_Z     = J2_SLOPE_Z + J2_SLOPE_LEN;
+const J2_KICKER_Z   = J2_FLAT_Z + 9;
+const J2_KICKER_END_Z = J2_KICKER_Z + 2.5;
+const J2_OUTRUN_Z   = J2_KICKER_END_Z + 50;
 
 function terrainRootY(z) {
     if (z < SLOPE_START_Z) return -SLOPE_START_Z * Math.tan(SLOPE_ANGLE); // flat top
@@ -347,7 +356,17 @@ function terrainRootY(z) {
     const kickerTopY = tableY + (KICKER_END_Z - KICKER_Z) * Math.tan(KICKER_ANGLE);
     const landingBaseY = kickerTopY - LANDING_DROP;
     if (z <= OUTRUN_Z) return landingBaseY - (z - KICKER_END_Z) * Math.tan(LANDING_ANGLE);
-    return landingBaseY - (OUTRUN_Z - KICKER_END_Z) * Math.tan(LANDING_ANGLE); // flat outrun
+    const outrunY = landingBaseY - (OUTRUN_Z - KICKER_END_Z) * Math.tan(LANDING_ANGLE);
+    if (!IS_D2T) return outrunY; // flat outrun
+    // ── Second jump (d2t) ────────────────────────────────────────────────
+    if (z < J2_FLAT_Z) return outrunY - (z - J2_SLOPE_Z) * Math.tan(SLOPE_ANGLE); // second inrun
+    const j2TableY = outrunY - J2_SLOPE_LEN * Math.tan(SLOPE_ANGLE);
+    if (z < J2_KICKER_Z) return j2TableY;
+    if (z <= J2_KICKER_END_Z) return j2TableY + (z - J2_KICKER_Z) * Math.tan(KICKER_ANGLE);
+    const j2KickerTopY  = j2TableY + (J2_KICKER_END_Z - J2_KICKER_Z) * Math.tan(KICKER_ANGLE);
+    const j2LandingBaseY = j2KickerTopY - LANDING_DROP;
+    if (z <= J2_OUTRUN_Z) return j2LandingBaseY - (z - J2_KICKER_END_Z) * Math.tan(LANDING_ANGLE);
+    return j2LandingBaseY - (J2_OUTRUN_Z - J2_KICKER_END_Z) * Math.tan(LANDING_ANGLE);
 }
 
 function terrainAccelZ(z) {
@@ -357,7 +376,16 @@ function terrainAccelZ(z) {
     if (z >= FLAT_Z && z < KICKER_Z)      return 0; // flat table
     if (z >= KICKER_Z && z <= KICKER_END_Z) return -g * Math.sin(KICKER_ANGLE);
     if (z > KICKER_END_Z && z <= OUTRUN_Z) return g * Math.sin(LANDING_ANGLE);
-    if (z > OUTRUN_Z) return -4.0; // flat outrun — friction decelerates to stop
+    if (!IS_D2T) {
+        if (z > OUTRUN_Z) return -4.0; // flat outrun friction
+        return 0;
+    }
+    // d2t second jump
+    if (z > OUTRUN_Z && z < J2_FLAT_Z)          return g * Math.sin(SLOPE_ANGLE);
+    if (z >= J2_FLAT_Z && z < J2_KICKER_Z)      return 0;
+    if (z >= J2_KICKER_Z && z <= J2_KICKER_END_Z) return -g * Math.sin(KICKER_ANGLE);
+    if (z > J2_KICKER_END_Z && z <= J2_OUTRUN_Z)  return g * Math.sin(LANDING_ANGLE);
+    if (z > J2_OUTRUN_Z) return -4.0;
     return 0;
 }
 
@@ -439,7 +467,7 @@ window.addEventListener('DOMContentLoaded', () => {
 
     // Kicker
     const kickerBox = BABYLON.MeshBuilder.CreateBox('kicker',
-        { width: 10, height: 1.2, depth: (KICKER_END_Z - KICKER_Z) / Math.cos(KICKER_ANGLE) }, scene);
+        { width: 3, height: 1.2, depth: (KICKER_END_Z - KICKER_Z) / Math.cos(KICKER_ANGLE) }, scene);
     kickerBox.rotation.x = -KICKER_ANGLE;
     kickerBox.position.set(0,
         terrainRootY((KICKER_Z + KICKER_END_Z) / 2) - FOOT_OFFSET - 0.6,
@@ -452,10 +480,37 @@ window.addEventListener('DOMContentLoaded', () => {
     const ktransOffset = -0.8; // adjust to align visually
     const ktransMidZ   = KICKER_Z + ktransOffset + KTRANS_LEN / 2;
     const ktransBox = BABYLON.MeshBuilder.CreateBox('kickerTransition',
-        { width: 10, height: 1.2, depth: KTRANS_LEN / Math.cos(KTRANS_ANGLE) }, scene);
+        { width: 3, height: 1.2, depth: KTRANS_LEN / Math.cos(KTRANS_ANGLE) }, scene);
     ktransBox.rotation.x = -KTRANS_ANGLE;
     ktransBox.position.set(0, terrainRootY(KICKER_Z) - FOOT_OFFSET - 0.6 / Math.cos(KTRANS_ANGLE) + 0.4, ktransMidZ);
     ktransBox.material = snowMat;
+
+    // Kicker top-edge arc (red tube spanning the full width)
+    const cornerMat = new BABYLON.StandardMaterial('cornerMat', scene);
+    cornerMat.diffuseColor  = new BABYLON.Color3(1, 0, 0);
+    cornerMat.emissiveColor = new BABYLON.Color3(0.8, 0, 0);
+    const kickerTopY = terrainRootY(KICKER_END_Z);
+    const arcHalfW   = 1.5;   // half the kicker width (3 units total)
+    const baseY      = kickerTopY + 0.11 - 2;
+    // Drops follow the kicker face angle rather than straight down
+    const dropDY = -Math.sin(KICKER_ANGLE);  // y component of 1-unit drop along kicker face
+    const dropDZ = -Math.cos(KICKER_ANGLE);  // z component
+    const arcPath    = [
+        new BABYLON.Vector3(-arcHalfW, baseY + dropDY + 0.6, KICKER_END_Z - 0.5 + dropDZ),  // bottom of left drop
+        new BABYLON.Vector3(-arcHalfW, baseY          + 0.6, KICKER_END_Z - 0.5),            // top-left corner
+        new BABYLON.Vector3(-0.5,      baseY          + 0.6, KICKER_END_Z - 0.5),            // inner end of left segment
+    ];
+    const arcTube = BABYLON.MeshBuilder.CreateTube('kickerArc',
+        { path: arcPath, radius: 0.06, tessellation: 8, cap: BABYLON.Mesh.CAP_ALL }, scene);
+    arcTube.material = cornerMat;
+    const arcPathR   = [
+        new BABYLON.Vector3( 0.5,      baseY          + 0.6, KICKER_END_Z - 0.5),            // inner end of right segment
+        new BABYLON.Vector3( arcHalfW, baseY          + 0.6, KICKER_END_Z - 0.5),            // top-right corner
+        new BABYLON.Vector3( arcHalfW, baseY + dropDY + 0.6, KICKER_END_Z - 0.5 + dropDZ),  // bottom of right drop
+    ];
+    const arcTubeR = BABYLON.MeshBuilder.CreateTube('kickerArcR',
+        { path: arcPathR, radius: 0.06, tessellation: 8, cap: BABYLON.Mesh.CAP_ALL }, scene);
+    arcTubeR.material = cornerMat;
 
     // Sloped landing zone
     const landingMidZ = (KICKER_END_Z + OUTRUN_Z) / 2;
@@ -466,13 +521,81 @@ window.addEventListener('DOMContentLoaded', () => {
     landingBox.position.set(0, terrainRootY(landingMidZ) - FOOT_OFFSET - 0.6 / Math.cos(LANDING_ANGLE), landingMidZ);
     landingBox.material = snowMat;
 
-    // Flat outrun (30 units long)
-    const OUTRUN_LEN  = 90;
+    // Flat outrun (30 units long) — only for non-d2t worlds
+    const OUTRUN_LEN  = IS_D2T ? J2_SLOPE_LEN : 90;
     const outrunMidZ  = OUTRUN_Z + OUTRUN_LEN / 2;
     const outrunBox = BABYLON.MeshBuilder.CreateBox('outrun',
         { width: 10, height: 1.2, depth: OUTRUN_LEN }, scene);
     outrunBox.position.set(0, terrainRootY(OUTRUN_Z) - FOOT_OFFSET - 0.6, outrunMidZ);
     outrunBox.material = snowMat;
+
+    // ── Second jump (d2t world) ───────────────────────────────────────────────
+    if (IS_D2T) {
+        // Second inrun slope
+        const j2SlopeMidZ = (J2_SLOPE_Z + J2_FLAT_Z) / 2;
+        const j2SlopeBox = BABYLON.MeshBuilder.CreateBox('j2slope',
+            { width: 10, height: 1.2, depth: J2_SLOPE_LEN / Math.cos(SLOPE_ANGLE) }, scene);
+        j2SlopeBox.rotation.x = SLOPE_ANGLE;
+        j2SlopeBox.position.set(0, terrainRootY(j2SlopeMidZ) - FOOT_OFFSET - 0.6, j2SlopeMidZ);
+        j2SlopeBox.material = snowMat;
+
+        // Second flat table
+        const j2TableMidZ = (J2_FLAT_Z + J2_KICKER_Z) / 2;
+        const j2TableBox = BABYLON.MeshBuilder.CreateBox('j2flatTable',
+            { width: 10, height: 1.2, depth: J2_KICKER_Z - J2_FLAT_Z }, scene);
+        j2TableBox.position.set(0, terrainRootY(j2TableMidZ) - FOOT_OFFSET - 0.6, j2TableMidZ);
+        j2TableBox.material = snowMat;
+
+        // Second kicker
+        const j2KickerBox = BABYLON.MeshBuilder.CreateBox('j2kicker',
+            { width: 3, height: 1.2, depth: (J2_KICKER_END_Z - J2_KICKER_Z) / Math.cos(KICKER_ANGLE) }, scene);
+        j2KickerBox.rotation.x = -KICKER_ANGLE;
+        j2KickerBox.position.set(0,
+            terrainRootY((J2_KICKER_Z + J2_KICKER_END_Z) / 2) - FOOT_OFFSET - 0.6,
+            (J2_KICKER_Z + J2_KICKER_END_Z) / 2);
+        j2KickerBox.material = snowMat;
+
+        // Second landing
+        const j2LandingMidZ = (J2_KICKER_END_Z + J2_OUTRUN_Z) / 2;
+        const j2LandingBox = BABYLON.MeshBuilder.CreateBox('j2landing',
+            { width: 10, height: 1.2, depth: (J2_OUTRUN_Z - J2_KICKER_END_Z) / Math.cos(LANDING_ANGLE) }, scene);
+        j2LandingBox.rotation.x = LANDING_ANGLE;
+        j2LandingBox.position.set(0, terrainRootY(j2LandingMidZ) - FOOT_OFFSET - 0.6 / Math.cos(LANDING_ANGLE), j2LandingMidZ);
+        j2LandingBox.material = snowMat;
+
+        // Second outrun
+        const j2OutrunMidZ = J2_OUTRUN_Z + 45;
+        const j2OutrunBox = BABYLON.MeshBuilder.CreateBox('j2outrun',
+            { width: 10, height: 1.2, depth: 90 }, scene);
+        j2OutrunBox.position.set(0, terrainRootY(J2_OUTRUN_Z) - FOOT_OFFSET - 0.6, j2OutrunMidZ);
+        j2OutrunBox.material = snowMat;
+
+        // Trees at the second outrun
+        const j2TrunkMat = new BABYLON.StandardMaterial('j2trunkMat', scene);
+        j2TrunkMat.diffuseColor = new BABYLON.Color3(0.38, 0.24, 0.14);
+        const j2FoliageMat = new BABYLON.StandardMaterial('j2foliageMat', scene);
+        j2FoliageMat.diffuseColor = new BABYLON.Color3(0.13, 0.38, 0.18);
+        const j2TreeBaseY = terrainRootY(J2_OUTRUN_Z) - FOOT_OFFSET;
+        [
+            { z: J2_OUTRUN_Z + 5,  x: 3.5, scale: 1.0 },
+            { z: J2_OUTRUN_Z + 14, x: 4.8, scale: 1.3 },
+            { z: J2_OUTRUN_Z + 25, x: 3.2, scale: 0.9 },
+            { z: J2_OUTRUN_Z + 8,  x:-3.8, scale: 1.1 },
+            { z: J2_OUTRUN_Z + 19, x:-4.5, scale: 1.2 },
+        ].forEach(function(t, i) {
+            const trunkH   = 0.7 * t.scale;
+            const foliageH = 1.8 * t.scale;
+            const foliageR = 0.65 * t.scale;
+            const trunk = BABYLON.MeshBuilder.CreateCylinder('j2tree_trunk_' + i,
+                { height: trunkH, diameter: 0.24 * t.scale, tessellation: 6 }, scene);
+            trunk.position.set(t.x, j2TreeBaseY + trunkH / 2, t.z);
+            trunk.material = j2TrunkMat;
+            const foliage = BABYLON.MeshBuilder.CreateCylinder('j2tree_foliage_' + i,
+                { height: foliageH, diameterTop: 0, diameterBottom: foliageR * 2, tessellation: 7 }, scene);
+            foliage.position.set(t.x, j2TreeBaseY + trunkH + foliageH / 2, t.z);
+            foliage.material = j2FoliageMat;
+        });
+    }
 
     // Flat start area (behind slope start)
     const startBox = BABYLON.MeshBuilder.CreateBox('start',
@@ -481,6 +604,7 @@ window.addEventListener('DOMContentLoaded', () => {
     startBox.material = snowMat;
 
     // ── Background trees ──────────────────────────────────────────────────────
+    if (!IS_D2T) {
     const trunkMat = new BABYLON.StandardMaterial('trunkMat', scene);
     trunkMat.diffuseColor = new BABYLON.Color3(0.38, 0.24, 0.14);
     const foliageMat = new BABYLON.StandardMaterial('foliageMat', scene);
@@ -514,6 +638,7 @@ window.addEventListener('DOMContentLoaded', () => {
         foliage.position.set(t.x, treeBaseY + trunkH + foliageH / 2, t.z);
         foliage.material = foliageMat;
     });
+    } // end !IS_D2T trees
 
     // ── Physics state ─────────────────────────────────────────────────────────
     //
@@ -537,8 +662,10 @@ window.addEventListener('DOMContentLoaded', () => {
         flipAngle:  0.0,
         tuckAmount: 0.0,
         tuckTarget: 0.0,
+        flipDir:    1,    // +1 = backflip, -1 = frontflip
         spinAngle:  0.0,  // current spin angle (rad)
         spinTarget: 0.0,  // target spin; each tap adds ±2π
+        spinMult:   1.0,  // spin speed multiplier (boosted on d2t second jump)
         doubleDir:  1,    // +1 = left twist, -1 = right twist (used in double mode)
         armDropL:   0.0,  // 0 = raised, 1 = dropped to side
         armDropR:   0.0,
@@ -554,8 +681,12 @@ window.addEventListener('DOMContentLoaded', () => {
 
     let leftDown        = false;
     let rightDown       = false;
-    let tPoseDown       = false;
-    let tPoseAmount     = 0;
+    let autoSpinActive  = false;
+    let armSwapPhase    = false; // true during quick arm swap at takeoff
+    let armSwapDir      = 0;    // +1 = left twists (left arm was up), -1 = right twists // true while arm-up takeoff twists are running
+    let leftArmHoldTime = 0;    // seconds right arrow held alone on inrun (left arm up)
+    let rightArmHoldTime= 0;    // seconds left arrow held alone on inrun (right arm up)
+    const ARM_HOLD_REQ  = 0.5;  // seconds arm must be up before jump
     let paused          = false;
     let doubleMode      = false; // both keys held → continuous 2x speed spin
     let secondKeyTimer  = null;  // timeout handle; fires after hold threshold
@@ -596,8 +727,8 @@ window.addEventListener('DOMContentLoaded', () => {
         if (e.code === 'ArrowUp' || e.code === 'ArrowDown') {
             e.preventDefault();
         }
-        if (e.code === 'ArrowDown') {
-            tPoseDown = true;
+        if (e.code === 'ArrowUp' && state.grounded) {
+            state.flipDir = -1;
         }
         if (e.code === 'ArrowLeft' && !leftDown && !state.crashed) {
             e.preventDefault();
@@ -623,7 +754,6 @@ window.addEventListener('DOMContentLoaded', () => {
         }
     });
     window.addEventListener('keyup', e => {
-        if (e.code === 'ArrowDown') tPoseDown = false;
         if (e.code === 'Space') state.tuckTarget = 0.0;
         if (e.code === 'ArrowLeft' && leftDown) {
             leftDown = false;
@@ -656,17 +786,42 @@ window.addEventListener('DOMContentLoaded', () => {
         }
 
         // ── Terrain physics (frictionless) ────────────────────────────────
+        // ── Arm hold timers (count how long each single arm has been up on inrun) ──
+        if (state.grounded) {
+            if (rightDown && !leftDown) leftArmHoldTime  += dt; else leftArmHoldTime  = 0;
+            if (leftDown && !rightDown) rightArmHoldTime += dt; else rightArmHoldTime = 0;
+        }
         if (state.grounded) {
             const prevZ = state.posZ;
             state.vz   += terrainAccelZ(state.posZ) * dt;
-            if (state.posZ > OUTRUN_Z && state.vz < 0) state.vz = 0; // stop at rest
+            if (state.posZ > OUTRUN_Z && !IS_D2T && state.vz < 0) state.vz = 0; // stop at rest
+            if (state.posZ > J2_OUTRUN_Z && state.vz < 0) state.vz = 0;
             state.posZ += state.vz * dt;
             // Only launch when actually crossing the kicker tip (not after landing past it)
-            if (prevZ <= KICKER_END_Z && state.posZ > KICKER_END_Z) {
+            const crossingJ1 = prevZ <= KICKER_END_Z && state.posZ > KICKER_END_Z;
+            const crossingJ2 = IS_D2T && prevZ <= J2_KICKER_END_Z && state.posZ > J2_KICKER_END_Z;
+            if (crossingJ1 || crossingJ2) {
                 state.vy       = state.vz * Math.sin(KICKER_ANGLE);
                 state.vz       = state.vz * Math.cos(KICKER_ANGLE);
-                state.rootY    = terrainRootY(KICKER_END_Z);
+                state.rootY    = terrainRootY(crossingJ1 ? KICKER_END_Z : J2_KICKER_END_Z);
                 state.grounded = false;
+                if (crossingJ2) {
+                    // Second jump: boost flip and spin to triple speed
+                    state.L_flip   = I0 * 4.5 * 1.3;
+                    state.spinMult = 1.3;
+                }
+                // Arm up at takeoff → 2 fast twists toward that side (only if held long enough)
+                if (rightDown && !leftDown && leftArmHoldTime >= ARM_HOLD_REQ) {
+                    state.spinTarget = state.spinAngle + Math.PI * 4;
+                    armSwapPhase = true;
+                    armSwapDir   = 1;
+                    autoSpinActive = false;
+                } else if (leftDown && !rightDown && rightArmHoldTime >= ARM_HOLD_REQ) {
+                    state.spinTarget = state.spinAngle - Math.PI * 4;
+                    armSwapPhase = true;
+                    armSwapDir   = -1;
+                    autoSpinActive = false;
+                }
             } else {
                 state.rootY = terrainRootY(state.posZ);
             }
@@ -679,7 +834,10 @@ window.addEventListener('DOMContentLoaded', () => {
                 const TWO_PI  = Math.PI * 2;
                 const norm    = ((state.flipAngle % TWO_PI) + TWO_PI) % TWO_PI;
                 const LAND_TOL = Math.PI / 4; // 45° — clean landing window
-                const goodLanding = norm < LAND_TOL || norm > TWO_PI - LAND_TOL;
+                const spinNorm = ((state.spinAngle % TWO_PI) + TWO_PI) % TWO_PI;
+                const SPIN_TOL = Math.PI / 4; // 45° — must be facing forward
+                const facingForward = spinNorm < SPIN_TOL || spinNorm > TWO_PI - SPIN_TOL;
+                const goodLanding = (norm < LAND_TOL || norm > TWO_PI - LAND_TOL) && facingForward;
 
                 state.rootY      = surY;
                 state.vy         = 0;
@@ -690,13 +848,18 @@ window.addEventListener('DOMContentLoaded', () => {
                 state.spinTarget = 0;
                 state.tuckTarget = 0;
                 state.tuckAmount = 0;
+                armSwapPhase   = false;
+                autoSpinActive = false;
+                state.spinMult = 1.0; // reset spin multiplier on landing
 
                 if (goodLanding) {
                     state.crashed   = false;
                     state.flipAngle = 0;
+                    state.flipDir   = 1;
                     // preserve vz so skier glides away down the landing slope
                 } else {
                     state.crashed = true;
+                    state.flipDir = 1;
                     state.vz      = 0; // stop sliding on crash
                     // Snap toward nearest lying-flat angle:
                     // norm < π  → back leading → land on back  (π)
@@ -712,7 +875,7 @@ window.addEventListener('DOMContentLoaded', () => {
         const I     = computeI(state.tuckAmount);
         const omega = Math.min(state.L_flip / I, MAX_OMEGA);
         if (!state.grounded) {
-            state.flipAngle += omega * dt;
+            state.flipAngle += omega * state.flipDir * dt;
         }
         // ── Crash: animate flip angle toward lying-flat position ───────────
         if (state.crashed) {
@@ -727,26 +890,42 @@ window.addEventListener('DOMContentLoaded', () => {
         if (!state.grounded) {
             if (doubleMode) {
                 // Continuous spin at 2× speed while both keys held
-                state.spinAngle += state.doubleDir * SPIN_SPEED * 2 * dt;
+                state.spinAngle += state.doubleDir * SPIN_SPEED * state.spinMult * 2 * dt;
                 // Keep spinTarget just ahead so arm-drop logic stays active
                 state.spinTarget = state.spinAngle + state.doubleDir * 0.01;
             } else {
                 const spinDiff = state.spinTarget - state.spinAngle;
                 if (Math.abs(spinDiff) > 0.001) {
-                    const spinStep = SPIN_SPEED * dt;
+                    const spinStep = SPIN_SPEED * state.spinMult * (autoSpinActive ? 2 : 1) * dt;
                     state.spinAngle += (Math.abs(spinDiff) <= spinStep)
                         ? spinDiff
                         : Math.sign(spinDiff) * spinStep;
+                } else {
+                    autoSpinActive = false;
                 }
             }
         }
 
         // ── Arm drop: wind-up, active spin, or double mode ─────────────────
         const spinRemaining = state.spinTarget - state.spinAngle;
-        // Spin-driven arm drop only applies in the air; on the ground only manual key-hold matters
+        // Arm swap phase overrides normal arm targets
         const spinDrivesArm = !state.grounded;
-        const armLTarget = state.crashed || (leftDown && !rightDown) || doubleMode || (spinDrivesArm && spinRemaining >  0.05) ? 1.0 : 0.0;
-        const armRTarget = state.crashed || (rightDown && !leftDown) || doubleMode || (spinDrivesArm && spinRemaining < -0.05) ? 1.0 : 0.0;
+        let armLTarget, armRTarget;
+        if (armSwapPhase) {
+            armLTarget = armSwapDir ===  1 ? 1.0 : 0.0;
+            armRTarget = armSwapDir === -1 ? 1.0 : 0.0;
+            // Detect swap completion, then switch to 2x auto-spin
+            const swapDone = armSwapDir === 1
+                ? (state.armDropL >= 0.99 && state.armDropR <= 0.01)
+                : (state.armDropR >= 0.99 && state.armDropL <= 0.01);
+            if (swapDone) {
+                armSwapPhase   = false;
+                autoSpinActive = true;
+            }
+        } else {
+            armLTarget = state.crashed || (leftDown && !rightDown) || doubleMode || (spinDrivesArm && spinRemaining >  0.05) ? 1.0 : 0.0;
+            armRTarget = state.crashed || (rightDown && !leftDown) || doubleMode || (spinDrivesArm && spinRemaining < -0.05) ? 1.0 : 0.0;
+        }
         const armStep = ARM_DROP_RATE * dt;
         const dL = armLTarget - state.armDropL;
         const dR = armRTarget - state.armDropR;
@@ -755,34 +934,6 @@ window.addEventListener('DOMContentLoaded', () => {
 
         // ── Apply body pose ────────────────────────────────────────────────
         applyPose(character.meshes, state.tuckAmount, state.armDropL, state.armDropR);
-
-        // ── T-pose blend (ArrowDown) ───────────────────────────────────────
-        const T_RATE = 5.0;
-        tPoseAmount += ((tPoseDown ? 1 : 0) - tPoseAmount) * Math.min(1, T_RATE * dt);
-        if (tPoseAmount > 0.001) {
-            const ms = character.meshes;
-            // Lower arm / hand leads; upper arm follows behind
-            const tH = Math.min(1.0, tPoseAmount * 1.7); // hand leads
-            const tA = tPoseAmount;                        // upper arm follows
-            // Arc: hand sweeps up through an arc on the way out to the side
-            const arcH = Math.sin(tH * Math.PI) * 0.45;
-            const arcA = Math.sin(tA * Math.PI) * 0.20;
-
-            ms['upperArmL'].rotation.z = lerp(ms['upperArmL'].rotation.z, -Math.PI / 2, tA);
-            ms['upperArmR'].rotation.z = lerp(ms['upperArmR'].rotation.z,  Math.PI / 2, tA);
-            ms['upperArmL'].position.x = lerp(ms['upperArmL'].position.x, -0.355, tA);
-            ms['upperArmR'].position.x = lerp(ms['upperArmR'].position.x,  0.355, tA);
-            ms['upperArmL'].position.y = lerp(ms['upperArmL'].position.y,  0.150, tA) + arcA;
-            ms['upperArmR'].position.y = lerp(ms['upperArmR'].position.y,  0.150, tA) + arcA;
-
-            ms['lowerArmL'].rotation.z = lerp(ms['lowerArmL'].rotation.z, -Math.PI / 2, tH);
-            ms['lowerArmR'].rotation.z = lerp(ms['lowerArmR'].rotation.z,  Math.PI / 2, tH);
-            ms['lowerArmL'].position.x = lerp(ms['lowerArmL'].position.x, -0.630, tH);
-            ms['lowerArmR'].position.x = lerp(ms['lowerArmR'].position.x,  0.630, tH);
-            ms['lowerArmL'].position.y = lerp(ms['lowerArmL'].position.y,  0.150, tH) + arcH;
-            ms['lowerArmR'].position.y = lerp(ms['lowerArmR'].position.y,  0.150, tH) + arcH;
-            // Gloves are children of lowerArm and rotate with it automatically
-        }
 
         // ── Character rotation ─────────────────────────────────────────────
         // qFace turns the character to face +Z (downhill direction).
@@ -794,6 +945,10 @@ window.addEventListener('DOMContentLoaded', () => {
             else if (state.posZ >= FLAT_Z && state.posZ < KICKER_Z)          tilt = 0;
             else if (state.posZ >= KICKER_Z && state.posZ <= KICKER_END_Z)   tilt = KICKER_ANGLE;
             else if (state.posZ > KICKER_END_Z && state.posZ <= OUTRUN_Z) tilt = -LANDING_ANGLE;
+            else if (IS_D2T && state.posZ > OUTRUN_Z && state.posZ < J2_FLAT_Z)         tilt = -SLOPE_ANGLE;
+            else if (IS_D2T && state.posZ >= J2_FLAT_Z && state.posZ < J2_KICKER_Z)    tilt = 0;
+            else if (IS_D2T && state.posZ >= J2_KICKER_Z && state.posZ <= J2_KICKER_END_Z) tilt = KICKER_ANGLE;
+            else if (IS_D2T && state.posZ > J2_KICKER_END_Z && state.posZ <= J2_OUTRUN_Z)  tilt = -LANDING_ANGLE;
             else if (state.posZ > OUTRUN_Z)                               tilt = 0; // flat outrun
             const qTilt  = BABYLON.Quaternion.RotationAxis(BABYLON.Axis.X, tilt);
             const qCrash = state.crashed
