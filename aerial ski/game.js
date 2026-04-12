@@ -66,6 +66,23 @@ const POSE_UNTUCKED = {
     skiR:      { x:  0.075, y: -1.010, rx:  0.00, rz:  0.00, dz:  0.00 },
 };
 
+// Inrun crouch: egg/tuck position — torso leans forward over knees.  Root is lowered
+// 0.35 units when fully tucked, so ski y is set to -0.675 (= -1.010 + 0.35).
+const POSE_INRUN_TUCK = {
+    torso:     { x:  0.000, y:  0.000, rx: -1.10, rz:  0.00, dz: -0.10 },  // torso tips forward
+    head:      { x:  0.000, y:  0.160, rx: -1.00, rz:  0.00, dz: -0.45 },  // head drives forward/down
+    upperArmL: { x: -0.205, y:  0.000, rx:  0.00, rz:  0.00, dz:  0.00 },
+    upperArmR: { x:  0.205, y:  0.000, rx:  0.00, rz:  0.00, dz:  0.00 },
+    lowerArmL: { x: -0.205, y: -0.275, rx:  0.00, rz:  0.00, dz:  0.00 },
+    lowerArmR: { x:  0.205, y: -0.275, rx:  0.00, rz:  0.00, dz:  0.00 },
+    upperLegL: { x: -0.075, y: -0.240, rx:  0.85, rz:  0.00, dz:  0.15 },  // thighs push back
+    upperLegR: { x:  0.075, y: -0.240, rx:  0.85, rz:  0.00, dz:  0.15 },
+    lowerLegL: { x: -0.075, y: -0.490, rx: -0.40, rz:  0.00, dz:  0.05 },  // shins tilt forward
+    lowerLegR: { x:  0.075, y: -0.490, rx: -0.40, rz:  0.00, dz:  0.05 },
+    skiL:      { x: -0.075, y: -0.675, rx:  0.00, rz:  0.00, dz:  0.00 },
+    skiR:      { x:  0.075, y: -0.675, rx:  0.00, rz:  0.00, dz:  0.00 },
+};
+
 const POSE_TUCKED = {
     // Knees lift forward (-dz) and up toward chest — tuck in the YZ plane
     torso:     { x:  0.000, y:  0.000, rx:  0.35, rz:  0.00, dz:  0.00 },  // torso curls forward
@@ -248,31 +265,24 @@ function buildCharacter(scene) {
     return { root, meshes };
 }
 
-// Two-phase arm sweep helper.
-// t 0→0.5: raised → swung forward in front of body
-// t 0.5→1: from in front → hanging at side
-function armSweep(name, up, t) {
-    const fw = POSE_ARMS_FORWARD[name];
-    const dp = POSE_ARMS_DROPPED[name];
-    if (t <= 0.5) {
-        const s = t * 2;
-        return {
-            x:  lerp(up.x,  fw.x,  s),
-            y:  lerp(up.y,  fw.y,  s),
-            rx: lerp(up.rx, fw.rx, s),
-            rz: lerp(up.rz, fw.rz, s),
-            dz: lerp(up.dz, fw.dz, s),
-        };
-    } else {
-        const s = (t - 0.5) * 2;
-        return {
-            x:  lerp(fw.x,  dp.x,  s),
-            y:  lerp(fw.y,  dp.y,  s),
-            rx: lerp(fw.rx, dp.rx, s),
-            rz: lerp(fw.rz, dp.rz, s),
-            dz: lerp(fw.dz, dp.dz, s),
-        };
-    }
+// Arc-based arm drop: arm rotates in the sagittal (Y-Z) plane around the shoulder
+// joint, sweeping straight forward in front of the body and then down.
+// Character faces -Z, so forward = negative dz.
+// t = 0: arm raised straight up.  t = 1: arm hanging straight down.
+function armSweep(name, _up, t) {
+    const phi  = Math.PI * t;           // 0 (up) → π (down)
+    const baseX = (name === 'upperArmR' || name === 'lowerArmR') ? 0.205 : -0.205;
+    // Radial distances from the shoulder pivot (y=0.150) along the arm chain:
+    //   upper-arm centre: h/2         = 0.30/2        = 0.150
+    //   lower-arm centre: h_u + h_l/2 = 0.30 + 0.125  = 0.425
+    const dist = (name === 'lowerArmL' || name === 'lowerArmR') ? 0.425 : 0.150;
+    return {
+        x:  baseX,
+        y:  0.150 + dist * Math.cos(phi),   // 0.300/0.575 up → 0.000/-0.275 down
+        rx: -phi,                            // 0 up → -π/2 forward → -π down
+        rz: 0,
+        dz: -dist * Math.sin(phi),           // 0 up → max-forward at mid-arc → 0 down
+    };
 }
 
 // ── Pose applicator ────────────────────────────────────────────────────────
@@ -280,11 +290,13 @@ function armSweep(name, up, t) {
 // armDropL: 0 = left arm raised, 1 = left arm dropped to side
 // armDropR: 0 = right arm raised, 1 = right arm dropped to side
 // armSnap:  0-1, blends arms toward POSE_ARMS_50DEG (overrides armDrop for arm segments)
+// arguments[7] = grounded: true → use POSE_INRUN_TUCK, false → use POSE_TUCKED
 function applyPose(meshes, tuck, armDropL, armDropR, armSnap) {
+    const grounded = arguments[7];
     for (const seg of SEGMENTS) {
         const mesh = meshes[seg.name];
         const up   = POSE_UNTUCKED[seg.name];
-        const tk   = POSE_TUCKED[seg.name];
+        const tk   = (grounded ? POSE_INRUN_TUCK : POSE_TUCKED)[seg.name];
         let ex = up;
 
         if (seg.name === 'upperArmL' || seg.name === 'lowerArmL') {
@@ -339,16 +351,15 @@ function applyPose(meshes, tuck, armDropL, armDropR, armSnap) {
     }
 
     // ── Reposition gloves to always sit at the wrist ───────────────────────
-    // When arm is raised (armDrop=0) the wrist is at the TOP of lowerArm (+h/2).
-    // When arm is dropped (armDrop=1) the wrist is at the BOTTOM (-h/2).
-    // During tuck the arms fold forward; keep glove at bottom in that case.
+    // With the arc-based arm drop the local +Y axis always points along the arm
+    // toward the wrist end, so the glove stays fixed at +halfH during any drop.
+    // Only during tuck (arm folds forward with rx≠0) do we slide it toward the
+    // elbow so it doesn't poke through the knees.
     if (meshes.gloveL) {
-        const effectiveDrop = Math.max(armDropL, tuck, armSnap);
-        meshes.gloveL.mesh.position.y = lerp(meshes.gloveL.halfH, -meshes.gloveL.halfH, effectiveDrop);
+        meshes.gloveL.mesh.position.y = lerp(meshes.gloveL.halfH, -meshes.gloveL.halfH, tuck);
     }
     if (meshes.gloveR) {
-        const effectiveDrop = Math.max(armDropR, tuck, armSnap);
-        meshes.gloveR.mesh.position.y = lerp(meshes.gloveR.halfH, -meshes.gloveR.halfH, effectiveDrop);
+        meshes.gloveR.mesh.position.y = lerp(meshes.gloveR.halfH, -meshes.gloveR.halfH, tuck);
     }
 }
 
@@ -440,7 +451,7 @@ function terrainAccelZ(z) {
     if (z >= KICKER_Z && z <= KICKER_END_Z) return -g * Math.sin(KICKER_ANGLE);
     if (z > KICKER_END_Z && z <= OUTRUN_Z) return g * Math.sin(LANDING_ANGLE);
     if (!IS_D2T) {
-        if (z > OUTRUN_Z) return -4.0; // flat outrun friction
+        if (z > OUTRUN_Z) return -14.0; // flat outrun friction
         return 0;
     }
     // d2t second jump
@@ -448,7 +459,7 @@ function terrainAccelZ(z) {
     if (z >= J2_FLAT_Z && z < J2_KICKER_Z)      return 0;
     if (z >= J2_KICKER_Z && z <= J2_KICKER_END_Z) return -g * Math.sin(KICKER_ANGLE);
     if (z > J2_KICKER_END_Z && z <= J2_OUTRUN_Z)  return g * Math.sin(LANDING_ANGLE);
-    if (z > J2_OUTRUN_Z) return -4.0;
+    if (z > J2_OUTRUN_Z) return -14.0;
     return 0;
 }
 
@@ -504,7 +515,7 @@ window.addEventListener('DOMContentLoaded', () => {
 
     // ── Character ─────────────────────────────────────────────────────────────
     const character = buildCharacter(scene);
-    applyPose(character.meshes, 0, 0, 0); // start fully extended, arms raised
+    applyPose(character.meshes, 0, 1, 1); // start fully extended, arms down
 
     // ── Terrain meshes (visual — physics uses terrainRootY()) ────────────────────
     const snowMat = new BABYLON.StandardMaterial('snowMat', scene);
@@ -737,8 +748,8 @@ window.addEventListener('DOMContentLoaded', () => {
         spinTarget: 0.0,  // target spin; each tap adds ±2π
         spinMult:   1.0,  // spin speed multiplier (boosted on d2t second jump)
         doubleDir:  1,    // +1 = left twist, -1 = right twist (used in double mode)
-        armDropL:   0.0,  // 0 = raised, 1 = dropped to side
-        armDropR:   0.0,
+        armDropL:   1.0,  // 0 = raised, 1 = dropped to side
+        armDropR:   1.0,
         rootY:      0.0,  // world Y of character root
         vy:         0.0,  // vertical velocity (world-units/s)
         posZ:       SLOPE_START_Z + 2.0, // start near top of inrun
@@ -825,8 +836,8 @@ window.addEventListener('DOMContentLoaded', () => {
             state.spinAngle   = 0.0;
             state.spinTarget  = 0.0;
             state.spinMult    = 1.0;
-            state.armDropL    = 0.0;
-            state.armDropR    = 0.0;
+            state.armDropL    = 1.0;
+            state.armDropR    = 1.0;
             state.vy          = 0.0;
             state.posZ        = SLOPE_START_Z + 2.0;
             state.vz          = 0.0;
@@ -850,6 +861,7 @@ window.addEventListener('DOMContentLoaded', () => {
             doubleMode = false; powerWrapDown = false; arrowUpDown = false;
             flipPower = 0; pmFill.style.width = '0%';
             billboard.isVisible = false;
+            compLandingResult = null;
             readyState = true; readyTurnT = 0.0;
             return;
         }
@@ -1044,15 +1056,32 @@ window.addEventListener('DOMContentLoaded', () => {
     function trickKeyToName(key) {
         return key.split(',').map(n => TWIST_NAMES_COMP[+n]).join('-');
     }
-    const _compPoolKey = _compParam ? `${_worldParam}_${_compParam}` : null;
-    const _compPool    = _compPoolKey ? (COMP_POOLS[_compPoolKey] || []) : [];
-    const assignedTrick = _compPool.length
-        ? _compPool[Math.floor(Math.random() * _compPool.length)]
-        : null;
-    // Expose assigned trick to HTML for the compHUD
+    // Build ascending-DD progression list for competition mode.
+    // easy:   easy → medium → hard pools (starts with simplest tricks)
+    // medium: medium → hard pools
+    // hard:   hard pool only, sorted ascending by DD (starts with lowest hard DD)
+    function buildCompProgression(worldParam, difficulty) {
+        const easyPool = COMP_POOLS[`${worldParam}_easy`]   || [];
+        const medPool  = COMP_POOLS[`${worldParam}_medium`] || [];
+        const hardPool = COMP_POOLS[`${worldParam}_hard`]   || [];
+        let tricks;
+        if (difficulty === 'easy')        tricks = [...easyPool, ...medPool, ...hardPool];
+        else if (difficulty === 'hard')   tricks = [...hardPool];
+        else                              tricks = [...medPool, ...hardPool]; // medium
+        return tricks.sort((a, b) => (DD_TABLE[a] || 0) - (DD_TABLE[b] || 0));
+    }
+    const _compProgression = _compParam ? buildCompProgression(_worldParam, _compParam) : [];
+    let compTricksLanded = 0;
+    function pickNextCompTrick() {
+        if (!_compProgression.length) return null;
+        return _compProgression[Math.min(compTricksLanded, _compProgression.length - 1)];
+    }
+    let assignedTrick = _compProgression.length ? pickNextCompTrick() : null;
+    let compLandingResult = null; // { matched: bool, neededKey: string|null }
+    const compHUDEl = document.getElementById('compHUD');
     if (assignedTrick) {
-        document.getElementById('compHUD').textContent = '🏆 Land: ' + trickKeyToName(assignedTrick);
-        document.getElementById('compHUD').style.display = 'block';
+        compHUDEl.textContent = '🏆 Land: ' + trickKeyToName(assignedTrick);
+        compHUDEl.style.display = 'block';
     }
     function calcDD(perFlipTwists) {
         const key = perFlipTwists.join(',');
@@ -1225,10 +1254,9 @@ window.addEventListener('DOMContentLoaded', () => {
                     bbName.text  = state.trickName;
                     bbSub.text   = `${totalFlips} flip${totalFlips !== 1 ? 's' : ''} · ${totalTwists} twist${totalTwists !== 1 ? 's' : ''}  ·  DD ${dd}  ×  exec ${state.execution}`;
                     bbScore.text = isNew ? `★ NEW BEST  ${score}` : `${score}  (best: ${highScore})`;
-                    if (assignedTrick) {
-                        const matched = state.perFlipTwists.join(',') === assignedTrick;
-                        bbComp.text     = matched ? '✓ Trick Complete!' : `✗ Needed: ${trickKeyToName(assignedTrick)}`;
-                        bbComp.color    = matched ? '#00ff88' : '#ff6644';
+                    if (compLandingResult !== null) {
+                        bbComp.text      = compLandingResult.matched ? '✓ Trick Complete!' : `✗ Needed: ${trickKeyToName(compLandingResult.neededKey)}`;
+                        bbComp.color     = compLandingResult.matched ? '#00ff88' : '#ff6644';
                         bbComp.isVisible = true;
                     }
                     billboard.isVisible = true;
@@ -1247,10 +1275,9 @@ window.addEventListener('DOMContentLoaded', () => {
                     bbName.text  = state.trickName;
                     bbSub.text   = `${totalFlips} flip${totalFlips !== 1 ? 's' : ''} · ${totalTwists} twist${totalTwists !== 1 ? 's' : ''}  ·  DD ${dd}  ×  exec ${state.execution}`;
                     bbScore.text = isNew ? `★ NEW BEST  ${score}` : `${score}  (best: ${highScore})`;
-                    if (assignedTrick) {
-                        const matched = state.perFlipTwists.join(',') === assignedTrick;
-                        bbComp.text     = matched ? '✓ Trick Complete!' : `✗ Needed: ${trickKeyToName(assignedTrick)}`;
-                        bbComp.color    = matched ? '#00ff88' : '#ff6644';
+                    if (compLandingResult !== null) {
+                        bbComp.text      = compLandingResult.matched ? '✓ Trick Complete!' : `✗ Needed: ${trickKeyToName(compLandingResult.neededKey)}`;
+                        bbComp.color     = compLandingResult.matched ? '#00ff88' : '#ff6644';
                         bbComp.isVisible = true;
                     }
                     billboard.isVisible = true;
@@ -1279,6 +1306,7 @@ window.addEventListener('DOMContentLoaded', () => {
                 // Hide billboard on takeoff
                 billboard.isVisible   = false;
                 bbComp.isVisible      = false;
+                compLandingResult     = null;
                 state.stopped         = false;
                 // Apply flip power: 3rd dash (75%) = world-normal flip speed
                 if (crossingJ1) {
@@ -1314,6 +1342,8 @@ window.addEventListener('DOMContentLoaded', () => {
                     const blendedTilt = rawTilt * readyTurnT;
                     state.rootY += FOOT_OFFSET * (1.0 - Math.cos(blendedTilt));
                 }
+                // Inrun crouch: sink root down so body comes toward skis
+                state.rootY -= state.tuckAmount * 0.35;
             }
         } else {
             state.vy    -= GRAVITY * dt;
@@ -1363,6 +1393,18 @@ window.addEventListener('DOMContentLoaded', () => {
                     state.trickName = state.perFlipTwists
                         .map(t => TWIST_NAMES[Math.min(t, 3)])
                         .join('-');
+                    // ── Competition progression ───────────────────────────────
+                    if (assignedTrick !== null) {
+                        const _matched = state.perFlipTwists.join(',') === assignedTrick;
+                        compLandingResult = { matched: _matched, neededKey: _matched ? null : assignedTrick };
+                        if (_matched && _compProgression.length) {
+                            compTricksLanded++;
+                            assignedTrick = pickNextCompTrick();
+                            if (assignedTrick) {
+                                compHUDEl.textContent = '🏆 Land: ' + trickKeyToName(assignedTrick);
+                            }
+                        }
+                    }
                     // ── Execution score ──────────────────────────────────────
                     // Clean landing = 30; crash = 0 (handled in else branch)
                     state.execution = 30;
@@ -1451,8 +1493,11 @@ window.addEventListener('DOMContentLoaded', () => {
                 autoSpinActive = true;
             }
         } else {
-            armLTarget = state.crashed || (leftDown && !rightDown) || doubleMode || (spinDrivesArm && spinRemaining >  0.05) ? 1.0 : 0.0;
-            armRTarget = state.crashed || (rightDown && !leftDown) || doubleMode || (spinDrivesArm && spinRemaining < -0.05) ? 1.0 : 0.0;
+            // Keep arms down on inrun until ~1 second before the flat table
+            const timeToTable = state.vz > 0 ? (FLAT_Z - state.posZ) / state.vz : Infinity;
+            const onInrun = state.grounded && state.posZ < FLAT_Z && timeToTable > 1.0;
+            armLTarget = onInrun || state.crashed || (leftDown && !rightDown) || doubleMode || (spinDrivesArm && spinRemaining >  0.05) ? 1.0 : 0.0;
+            armRTarget = onInrun || state.crashed || (rightDown && !leftDown) || doubleMode || (spinDrivesArm && spinRemaining < -0.05) ? 1.0 : 0.0;
         }
         const armStep = ARM_DROP_RATE * dt;
         const dL = armLTarget - state.armDropL;
@@ -1477,7 +1522,7 @@ window.addEventListener('DOMContentLoaded', () => {
         state.layArmT    += Math.abs(dLayT) <= layTStep ? dLayT : Math.sign(dLayT) * layTStep;
 
         // ── Apply body pose ────────────────────────────────────────────────
-        applyPose(character.meshes, state.tuckAmount, state.armDropL, state.armDropR, state.armSnap, state.layArmT, state.armRaise);
+        applyPose(character.meshes, state.tuckAmount, state.armDropL, state.armDropR, state.armSnap, state.layArmT, state.armRaise, state.grounded);
 
         // ── Character rotation ─────────────────────────────────────────────
         // qFace turns the character to face +Z (downhill direction).
