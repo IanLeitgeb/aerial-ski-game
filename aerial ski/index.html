@@ -15,9 +15,24 @@
         #worldList div { padding: 6px 14px; color: #b8d8ff; cursor: pointer; font-size: 13px; }
         #worldList div:hover { background: #243648; }
         #worldList div.active { color: #fff; font-weight: bold; }
+        #powerMeter { display: none; position: absolute; bottom: 48px; left: 50%; transform: translateX(-50%); z-index: 10; text-align: center; pointer-events: none; }
+        #powerMeterLabel { font-family: sans-serif; font-size: 13px; color: #cce8ff; letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 22px; text-shadow: 0 1px 4px #000; }
+        #powerMeterWrap { position: relative; width: 480px; }
+        #powerMeterTrack { width: 100%; height: 18px; background: rgba(0,0,0,0.45); border: 1.5px solid rgba(180,220,255,0.45); border-radius: 9px; overflow: hidden; }
+        #powerMeterFill { height: 100%; width: 0%; border-radius: 9px; background: linear-gradient(90deg, #2af 0%, #0f8 60%, #ff4 85%, #f44 100%); transition: none; }
+        #powerMeterTicks { position: absolute; top: 0; left: 0; width: 100%; height: 18px; pointer-events: none; }
+        .pmTick { position: absolute; top: 0; width: 2px; height: 100%; background: rgba(0,0,0,0.55); }
+        .pmTickLabel { position: absolute; top: -20px; transform: translateX(-50%); font-family: sans-serif; font-size: 12px; font-weight: bold; color: #fff; text-shadow: 0 1px 4px #000, 0 0 6px #000; white-space: nowrap; }
     </style>
 </head>
 <body>
+    <div id="powerMeter">
+        <div id="powerMeterLabel">Flip Power</div>
+        <div id="powerMeterWrap">
+            <div id="powerMeterTrack"><div id="powerMeterFill"></div></div>
+            <div id="powerMeterTicks"></div>
+        </div>
+    </div>
     <canvas id="renderCanvas"></canvas>
     <div id="worldMenu">
         <button id="worldBtn">⛷ <span id="worldLabel">Normal</span> ▾</button>

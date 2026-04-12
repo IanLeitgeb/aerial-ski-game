@@ -107,6 +107,21 @@ const POSE_ARMS_50DEG = {
     lowerArmL: { x: -0.205, y: -0.123, rx: -0.873, rz:  0.00, dz: -0.326 },
     lowerArmR: { x:  0.205, y: -0.123, rx: -0.873, rz:  0.00, dz: -0.326 },
 };
+// T-pose: arms straight out to the sides.
+// rz = +π/2 (left arm), rz = -π/2 (right arm).
+const POSE_ARMS_T = {
+    upperArmL: { x: -0.355, y:  0.150, rx: 0.00, rz:  1.57, dz:  0.00 },
+    upperArmR: { x:  0.355, y:  0.150, rx: 0.00, rz: -1.57, dz:  0.00 },
+    lowerArmL: { x: -0.580, y:  0.150, rx: 0.00, rz:  1.57, dz:  0.00 },
+    lowerArmR: { x:  0.580, y:  0.150, rx: 0.00, rz: -1.57, dz:  0.00 },
+};
+// Arms raised straight up overhead.
+const POSE_ARMS_UP = {
+    upperArmL: { x: -0.205, y:  0.450, rx:  0.00, rz:  0.00, dz:  0.00 },
+    upperArmR: { x:  0.205, y:  0.450, rx:  0.00, rz:  0.00, dz:  0.00 },
+    lowerArmL: { x: -0.205, y:  0.725, rx:  0.00, rz:  0.00, dz:  0.00 },
+    lowerArmR: { x:  0.205, y:  0.725, rx:  0.00, rz:  0.00, dz:  0.00 },
+};
 
 // ── Physics helpers ────────────────────────────────────────────────────────
 function lerp(a, b, t) { return a + (b - a) * t; }
@@ -280,6 +295,18 @@ function applyPose(meshes, tuck, armDropL, armDropR, armSnap) {
                        rx: lerp(ex.rx, sn.rx, armSnap), rz: lerp(ex.rz, sn.rz, armSnap),
                        dz: lerp(ex.dz, sn.dz, armSnap) };
             }
+            if (arguments[5] > 0) { // layArmT
+                const tp = POSE_ARMS_T[seg.name];
+                ex = { x: lerp(ex.x, tp.x, arguments[5]), y: lerp(ex.y, tp.y, arguments[5]),
+                       rx: lerp(ex.rx, tp.rx, arguments[5]), rz: lerp(ex.rz, tp.rz, arguments[5]),
+                       dz: lerp(ex.dz, tp.dz, arguments[5]) };
+            }
+            if (arguments[6] > 0) { // armRaise
+                const up2 = POSE_ARMS_UP[seg.name];
+                ex = { x: lerp(ex.x, up2.x, arguments[6]), y: lerp(ex.y, up2.y, arguments[6]),
+                       rx: lerp(ex.rx, up2.rx, arguments[6]), rz: lerp(ex.rz, up2.rz, arguments[6]),
+                       dz: lerp(ex.dz, up2.dz, arguments[6]) };
+            }
         } else if (seg.name === 'upperArmR' || seg.name === 'lowerArmR') {
             ex = armSweep(seg.name, up, armDropR);
             if (armSnap > 0) {
@@ -287,6 +314,18 @@ function applyPose(meshes, tuck, armDropL, armDropR, armSnap) {
                 ex = { x: lerp(ex.x, sn.x, armSnap), y: lerp(ex.y, sn.y, armSnap),
                        rx: lerp(ex.rx, sn.rx, armSnap), rz: lerp(ex.rz, sn.rz, armSnap),
                        dz: lerp(ex.dz, sn.dz, armSnap) };
+            }
+            if (arguments[5] > 0) { // layArmT
+                const tp = POSE_ARMS_T[seg.name];
+                ex = { x: lerp(ex.x, tp.x, arguments[5]), y: lerp(ex.y, tp.y, arguments[5]),
+                       rx: lerp(ex.rx, tp.rx, arguments[5]), rz: lerp(ex.rz, tp.rz, arguments[5]),
+                       dz: lerp(ex.dz, tp.dz, arguments[5]) };
+            }
+            if (arguments[6] > 0) { // armRaise
+                const up2 = POSE_ARMS_UP[seg.name];
+                ex = { x: lerp(ex.x, up2.x, arguments[6]), y: lerp(ex.y, up2.y, arguments[6]),
+                       rx: lerp(ex.rx, up2.rx, arguments[6]), rz: lerp(ex.rz, up2.rz, arguments[6]),
+                       dz: lerp(ex.dz, up2.dz, arguments[6]) };
             }
         }
 
@@ -445,12 +484,20 @@ window.addEventListener('DOMContentLoaded', () => {
         camera.orthoRight  =  halfH * (w / h);
     }
     setOrtho();
-    window.addEventListener('resize', () => { engine.resize(); setOrtho(cameraFollow ? 5.0 : 3.0); });
+    window.addEventListener('resize', () => { engine.resize(); if (!cameraFollow) setOrtho(3.0); });
 
     // ── Lighting ─────────────────────────────────────────────────────────────
     const hemi = new BABYLON.HemisphericLight('hemi', new BABYLON.Vector3(0.4, 1, -0.8), scene);
     hemi.intensity   = 1.0;
     hemi.groundColor = new BABYLON.Color3(0.2, 0.2, 0.3); // subtle cool fill from below
+
+    // ── Depth of field pipeline (active only in behind-character view) ────────
+    const dofPipeline = new BABYLON.DefaultRenderingPipeline('dof', true, scene, [camera]);
+    dofPipeline.depthOfFieldEnabled  = false;
+    dofPipeline.depthOfFieldBlurLevel = BABYLON.DepthOfFieldEffectBlurLevel.Medium;
+    dofPipeline.depthOfField.fStop        = 1.4;
+    dofPipeline.depthOfField.focalLength  = 50;   // mm — tighter focus
+    dofPipeline.depthOfField.focusDistance = 10000; // mm — distance to character (~10 world units)
 
     // ── Character ─────────────────────────────────────────────────────────────
     const character = buildCharacter(scene);
@@ -669,7 +716,7 @@ window.addEventListener('DOMContentLoaded', () => {
     // SPIN:  Separate rotation axis (Y). Can be initiated mid-air via arm drops.
     //        Stub only in Phase 1 — tracked in state, shown in HUD, not animated.
     //
-    const TARGET_OMEGA_UNTUCKED = 4.5 * (_worldParam === 'quad' ? 1.404 : _worldParam === 'triple' ? 1.3 : _worldParam === 'single' ? 0.59 : 1.0); // rad/s at full extension
+    const TARGET_OMEGA_UNTUCKED = 4.5 * 0.9925 * (_worldParam === 'quad' ? 1.404 : _worldParam === 'triple' ? 1.3 : _worldParam === 'single' ? 0.59 : 1.0); // rad/s at full extension
     const MAX_OMEGA = 9.75;            // rad/s cap — limits tucked flip speed
     const I0 = computeI(0);            // I at tuck = 0 (fully extended)
 
@@ -705,7 +752,10 @@ window.addEventListener('DOMContentLoaded', () => {
         trickName:       '',   // computed at landing
         execution:       0,    // out of 37 at landing
         armSnap:         0.0,  // 0-1: blend toward POSE_ARMS_50DEG
+        layArmT:         0.0,  // 0-1: blend arms toward T-pose during lay
         armSnapTarget:   0,
+        armRaise:        0.0,  // 0-1: blend arms straight up
+        armRaiseTarget:  0,
         airTime:         0.0,  // seconds in air on current jump
     };
 
@@ -718,14 +768,22 @@ window.addEventListener('DOMContentLoaded', () => {
     let rightArmHoldTime= 0;    // seconds left arrow held alone on inrun (right arm up)
     const ARM_HOLD_REQ  = 0.5;  // seconds arm must be up before jump
     let paused          = false;
-    let cameraFollow    = false; // C toggles: false = fixed start pos, true = behind character
+    let cameraFollow    = true;  // C toggles: true = behind character, false = fixed side view
     let powerWrapDown   = false; // down arrow held → 1.3× spin rate
+    let arrowUpDown     = false; // up arrow held mid-air → gradually slow flip
     let doubleMode      = false; // both keys held → continuous 2x speed spin
     let secondKeyTimer  = null;  // timeout handle; fires after hold threshold
     const DOUBLE_HOLD_MS = 180;  // ms — hold second key longer than this = double mode
 
     // Initialise rotationQuaternion so Babylon doesn't mix with euler rotation.
     character.root.rotationQuaternion = BABYLON.Quaternion.Identity();
+
+    // Apply default behind-character camera immediately
+    camera.alpha = -Math.PI / 2;
+    camera.beta  = Math.PI / 3.2;
+    camera.mode  = BABYLON.Camera.PERSPECTIVE_CAMERA;
+    camera.fov   = 0.9;
+    dofPipeline.depthOfFieldEnabled = true;
 
 
     // ── Input ─────────────────────────────────────────────────────────────────
@@ -751,19 +809,60 @@ window.addEventListener('DOMContentLoaded', () => {
 
     window.addEventListener('keydown', e => {
         if (e.code === 'KeyP') { paused = !paused; return; }
+        if (e.code === 'KeyR') {
+            // Reset to top of slope
+            state.L_flip      = I0 * TARGET_OMEGA_UNTUCKED;
+            state.flipAngle   = 0.0;
+            state.tuckAmount  = 0.0;
+            state.tuckTarget  = 0.0;
+            state.flipDir     = 1;
+            state.spinAngle   = 0.0;
+            state.spinTarget  = 0.0;
+            state.spinMult    = 1.0;
+            state.armDropL    = 0.0;
+            state.armDropR    = 0.0;
+            state.vy          = 0.0;
+            state.posZ        = SLOPE_START_Z + 2.0;
+            state.vz          = 0.0;
+            state.grounded    = true;
+            state.crashed     = false;
+            state.crashAngle  = 0.0;
+            state.stopped     = false;
+            state.perFlipTwists   = [];
+            state.lastFlipInt     = 0;
+            state.spinAtFlipStart = 0.0;
+            state.spinBoundaries  = [];
+            state.trickName   = '';
+            state.execution   = 0;
+            state.armSnap     = 0.0;
+            state.layArmT     = 0.0;
+            state.armSnapTarget = 0;
+            state.airTime     = 0.0;
+            leftDown = false; rightDown = false;
+            autoSpinActive = false; armSwapPhase = false;
+            leftArmHoldTime = 0; rightArmHoldTime = 0;
+            doubleMode = false; powerWrapDown = false; arrowUpDown = false;
+            flipPower = 0; pmFill.style.width = '0%';
+            billboard.isVisible = false;
+            return;
+        }
         if (e.code === 'KeyC') {
             cameraFollow = !cameraFollow;
             if (cameraFollow) {
-                // Switch to behind-character view: camera on -Z side, looking forward
+                // Switch to behind-character view: perspective + DOF
                 camera.alpha = -Math.PI / 2;
                 camera.beta  = Math.PI / 3.2;
-                setOrtho(5.0);
+                camera.mode  = BABYLON.Camera.PERSPECTIVE_CAMERA;
+                camera.fov   = 0.9; // ~52°
+                dofPipeline.depthOfFieldEnabled = true;
             } else {
-                // Return to fixed starting side view
+                // Return to fixed starting side view: ortho, no DOF
                 camera.alpha  = Math.PI;
                 camera.beta   = Math.PI / 2;
                 camera.target = BABYLON.Vector3.Zero();
+                camera.mode   = BABYLON.Camera.ORTHOGRAPHIC_CAMERA;
                 setOrtho(3.0);
+                dofPipeline.depthOfFieldEnabled = false;
             }
             return;
         }
@@ -778,13 +877,10 @@ window.addEventListener('DOMContentLoaded', () => {
         if (e.code === 'ArrowDown' && !state.grounded && !state.crashed) {
             powerWrapDown = true;
         }
-        if (e.code === 'ArrowUp' && state.grounded) {
-            state.flipDir = -1;
-        }
         if (e.code === 'ArrowUp' && !state.grounded && !state.crashed) {
-            // Snap spin to nearest full twist and drop arms 50° forward
-            state.spinTarget    = Math.round(state.spinAngle / (Math.PI * 2)) * Math.PI * 2;
-            state.armSnapTarget = 1;
+            // Raise arms straight up
+            state.armRaiseTarget = 1;
+            arrowUpDown = true;
         }
         if (e.code === 'ArrowLeft' && !leftDown && !state.crashed) {
             e.preventDefault();
@@ -812,6 +908,7 @@ window.addEventListener('DOMContentLoaded', () => {
     window.addEventListener('keyup', e => {
         if (e.code === 'Space') state.tuckTarget = 0.0;
         if (e.code === 'ArrowDown') powerWrapDown = false;
+        if (e.code === 'ArrowUp') arrowUpDown = false;
         if (e.code === 'ArrowLeft' && leftDown) {
             leftDown = false;
             if (doubleMode) exitDoubleMode();
@@ -970,6 +1067,39 @@ window.addEventListener('DOMContentLoaded', () => {
     const hud = buildHUD(scene);
     const TUCK_RATE = 3.0;
 
+    // ── Flip-power meter ──────────────────────────────────────────────────────
+    // Show while on approach; hold ↓ to fill, release to stop filling.
+    // At takeoff, L_flip is scaled by the meter value (0.3 → 1.0 of max).
+    const pmEl    = document.getElementById('powerMeter');
+    const pmFill  = document.getElementById('powerMeterFill');
+    const pmTicks = document.getElementById('powerMeterTicks');
+    let   flipPower = 0;          // 0.0 – 1.0
+    let   pmActive  = false;      // true while meter is visible / accepting input
+    let   pmDownHeld = false;     // true while ↓ is held on approach
+    const APPROACH_START_Z = SLOPE_START_Z; // show meter from the top of the slope
+    const FLIP_POWER_RATE  = 2.2;           // seconds to fill from 0 → 1
+
+    // Build flip-count tick marks.
+    // powerScale = 0.3 + flipPower * 0.7; at powerScale=1 the world's nominal
+    // flip count is achieved. Place a dash + label for each whole flip number.
+    (function buildTicks() {
+        // Ticks at 25/50/75/100% — evenly representing 1/2/3/4 flips
+        for (let n = 1; n <= 4; n++) {
+            const pct = (n / 4 * 100).toFixed(2);
+            const tick = document.createElement('div');
+            tick.className = 'pmTick';
+            tick.style.left = pct + '%';
+            pmTicks.appendChild(tick);
+        }
+    })();
+
+    window.addEventListener('keydown', e => {
+        if (e.code === 'ArrowDown' && state.grounded && !state.crashed) pmDownHeld = true;
+    });
+    window.addEventListener('keyup', e => {
+        if (e.code === 'ArrowDown') pmDownHeld = false;
+    });
+
     // ── Physics / render loop ─────────────────────────────────────────────────
     // Tuck transitions over 1/TUCK_RATE seconds (0.17 s)
     scene.registerBeforeRender(() => {
@@ -984,6 +1114,19 @@ window.addEventListener('DOMContentLoaded', () => {
         }
 
         // ── Terrain physics (frictionless) ────────────────────────────────
+        // ── Power meter visibility ──────────────────────────────────────────
+        const onApproach = state.grounded && state.posZ >= APPROACH_START_Z && state.posZ < KICKER_END_Z;
+        if (onApproach && !pmActive) {
+            pmActive = true;
+            pmEl.style.display = 'block';
+        } else if (!onApproach && pmActive) {
+            pmActive = false;
+            pmEl.style.display = 'none';
+        }
+        if (pmActive && pmDownHeld) {
+            flipPower = Math.min(1, flipPower + dt / FLIP_POWER_RATE);
+            pmFill.style.width = (flipPower * 100).toFixed(1) + '%';
+        }
         // ── Arm hold timers (count how long each single arm has been up on inrun) ──
         if (state.grounded) {
             if (rightDown && !leftDown) leftArmHoldTime  += dt; else leftArmHoldTime  = 0;
@@ -1040,10 +1183,20 @@ window.addEventListener('DOMContentLoaded', () => {
                 state.spinBoundaries  = [];
                 state.airTime         = 0.0;
                 state.armSnap         = 0.0;
+                state.layArmT         = 0.0;
+                state.armRaise        = 0.0;
+                state.armRaiseTarget  = 0;
                 state.armSnapTarget   = 0;
                 // Hide billboard on takeoff
                 billboard.isVisible   = false;
                 state.stopped         = false;
+                // Apply flip power: 3rd dash (75%) = world-normal flip speed
+                if (crossingJ1) {
+                    state.L_flip = I0 * TARGET_OMEGA_UNTUCKED * (Math.max(0.05, flipPower) / 0.75);
+                    // Reset meter for next jump
+                    flipPower = 0;
+                    pmFill.style.width = '0%';
+                }
                 if (crossingJ2) {
                     // Second jump: boost flip and spin to triple speed
                     state.L_flip   = I0 * 4.5 * 1.3;
@@ -1146,6 +1299,11 @@ window.addEventListener('DOMContentLoaded', () => {
         // ── Spin ──────────────────────────────────────────────────────────
         if (!state.grounded) {
             const powerWrapMult = powerWrapDown ? 1.3 : 1.0;
+            // Gradually slow flip while ↑ is held (min 30% of original)
+            if (arrowUpDown) {
+                const minL = I0 * TARGET_OMEGA_UNTUCKED * 0.3;
+                state.L_flip = Math.max(minL, state.L_flip * (1 - 1.5 * dt));
+            }
             if (doubleMode) {
                 // Continuous spin at 2× speed while both keys held
                 state.spinAngle += state.doubleDir * SPIN_SPEED * state.spinMult * powerWrapMult * 2 * dt;
@@ -1201,11 +1359,22 @@ window.addEventListener('DOMContentLoaded', () => {
         // Animate arm snap (forward 50° position)
         const dSnap = state.armSnapTarget - state.armSnap;
         state.armSnap += Math.abs(dSnap) <= armStep ? dSnap : Math.sign(dSnap) * armStep;
-        // Fade snap back out on landing
-        if (state.grounded) state.armSnapTarget = 0;
+        // Animate arm raise (straight up)
+        const dRaise = state.armRaiseTarget - state.armRaise;
+        state.armRaise += Math.abs(dRaise) <= armStep ? dRaise : Math.sign(dRaise) * armStep;
+        // Fade snap and raise back out on landing
+        if (state.grounded) { state.armSnapTarget = 0; state.armRaiseTarget = 0; }
+
+        // ── Lay T-pose: arms drift out to sides when no inputs on first flip ──
+        const inFirstFlip = !state.grounded && !state.crashed && Math.abs(state.flipAngle) < Math.PI * 2;
+        const noInputs    = !leftDown && !rightDown && state.tuckTarget === 0 && !doubleMode;
+        const layTTarget  = inFirstFlip && noInputs ? 1.0 : 0.0;
+        const layTStep    = 1.8 * dt; // ~0.55 s to fully extend
+        const dLayT       = layTTarget - state.layArmT;
+        state.layArmT    += Math.abs(dLayT) <= layTStep ? dLayT : Math.sign(dLayT) * layTStep;
 
         // ── Apply body pose ────────────────────────────────────────────────
-        applyPose(character.meshes, state.tuckAmount, state.armDropL, state.armDropR, state.armSnap);
+        applyPose(character.meshes, state.tuckAmount, state.armDropL, state.armDropR, state.armSnap, state.layArmT, state.armRaise);
 
         // ── Character rotation ─────────────────────────────────────────────
         // qFace turns the character to face +Z (downhill direction).
