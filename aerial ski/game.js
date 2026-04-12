@@ -303,9 +303,10 @@ function applyPose(meshes, tuck, armDropL, armDropR, armSnap) {
             }
             if (arguments[6] > 0) { // armRaise
                 const up2 = POSE_ARMS_UP[seg.name];
-                ex = { x: lerp(ex.x, up2.x, arguments[6]), y: lerp(ex.y, up2.y, arguments[6]),
-                       rx: lerp(ex.rx, up2.rx, arguments[6]), rz: lerp(ex.rz, up2.rz, arguments[6]),
-                       dz: lerp(ex.dz, up2.dz, arguments[6]) };
+                const raiseT = arguments[6] * (1 - armDropL);
+                ex = { x: lerp(ex.x, up2.x, raiseT), y: lerp(ex.y, up2.y, raiseT),
+                       rx: lerp(ex.rx, up2.rx, raiseT), rz: lerp(ex.rz, up2.rz, raiseT),
+                       dz: lerp(ex.dz, up2.dz, raiseT) };
             }
         } else if (seg.name === 'upperArmR' || seg.name === 'lowerArmR') {
             ex = armSweep(seg.name, up, armDropR);
@@ -323,9 +324,10 @@ function applyPose(meshes, tuck, armDropL, armDropR, armSnap) {
             }
             if (arguments[6] > 0) { // armRaise
                 const up2 = POSE_ARMS_UP[seg.name];
-                ex = { x: lerp(ex.x, up2.x, arguments[6]), y: lerp(ex.y, up2.y, arguments[6]),
-                       rx: lerp(ex.rx, up2.rx, arguments[6]), rz: lerp(ex.rz, up2.rz, arguments[6]),
-                       dz: lerp(ex.dz, up2.dz, arguments[6]) };
+                const raiseT = arguments[6] * (1 - armDropR);
+                ex = { x: lerp(ex.x, up2.x, raiseT), y: lerp(ex.y, up2.y, raiseT),
+                       rx: lerp(ex.rx, up2.rx, raiseT), rz: lerp(ex.rz, up2.rz, raiseT),
+                       dz: lerp(ex.dz, up2.dz, raiseT) };
             }
         }
 
@@ -780,7 +782,7 @@ window.addEventListener('DOMContentLoaded', () => {
 
     // Apply default behind-character camera immediately
     camera.alpha = -Math.PI / 2;
-    camera.beta  = Math.PI / 3.2;
+    camera.beta  = Math.PI / 3.2 - 2 * Math.PI / 180;
     camera.mode  = BABYLON.Camera.PERSPECTIVE_CAMERA;
     camera.fov   = 0.9;
     dofPipeline.depthOfFieldEnabled = true;
@@ -851,7 +853,7 @@ window.addEventListener('DOMContentLoaded', () => {
             if (cameraFollow) {
                 // Switch to behind-character view: perspective + DOF
                 camera.alpha = -Math.PI / 2;
-                camera.beta  = Math.PI / 3.2;
+                camera.beta  = Math.PI / 3.2 - 2 * Math.PI / 180;
                 camera.mode  = BABYLON.Camera.PERSPECTIVE_CAMERA;
                 camera.fov   = 0.9; // ~52°
                 dofPipeline.depthOfFieldEnabled = true;
@@ -1237,7 +1239,6 @@ window.addEventListener('DOMContentLoaded', () => {
                 state.rootY      = surY;
                 state.vy         = 0;
                 state.grounded   = true;
-                // capture spin before zeroing
                 const capturedSpin = state.spinAngle;
                 state.spinAngle  = 0;
                 state.spinTarget = 0;
@@ -1301,8 +1302,8 @@ window.addEventListener('DOMContentLoaded', () => {
             const powerWrapMult = powerWrapDown ? 1.3 : 1.0;
             // Gradually slow flip while ↑ is held (min 30% of original)
             if (arrowUpDown) {
-                const minL = I0 * TARGET_OMEGA_UNTUCKED * 0.3;
-                state.L_flip = Math.max(minL, state.L_flip * (1 - 1.5 * dt));
+                const minL = I0 * TARGET_OMEGA_UNTUCKED * 0.75;
+                state.L_flip = Math.max(minL, state.L_flip * (1 - 0.4 * dt));
             }
             if (doubleMode) {
                 // Continuous spin at 2× speed while both keys held
@@ -1406,6 +1407,11 @@ window.addEventListener('DOMContentLoaded', () => {
         // ── Camera follow ──────────────────────────────────────────────────────────────
         camera.target.y = state.rootY;
         camera.target.z = state.posZ;
+        if (cameraFollow) {
+            const BASE_BETA = Math.PI / 3.2 - 2 * Math.PI / 180;
+            const betaTarget = state.grounded ? BASE_BETA : BASE_BETA - 4 * Math.PI / 180;
+            camera.beta += (betaTarget - camera.beta) * Math.min(1, 5 * dt);
+        }
 
         // ── HUD ───────────────────────────────────────────────────────────
         const rotations = state.flipAngle / (2 * Math.PI);
