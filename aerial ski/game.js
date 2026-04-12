@@ -436,17 +436,16 @@ window.addEventListener('DOMContentLoaded', () => {
     camera.upperRadiusLimit = 10;
     camera.mode = BABYLON.Camera.ORTHOGRAPHIC_CAMERA;
 
-    function setOrtho() {
+    function setOrtho(halfH = 3.0) {
         const w = engine.getRenderWidth();
         const h = engine.getRenderHeight();
-        const halfH = 3.0; // world-unit half-height visible on screen
         camera.orthoTop    =  halfH;
         camera.orthoBottom = -halfH;
         camera.orthoLeft   = -halfH * (w / h);
         camera.orthoRight  =  halfH * (w / h);
     }
     setOrtho();
-    window.addEventListener('resize', () => { engine.resize(); setOrtho(); });
+    window.addEventListener('resize', () => { engine.resize(); setOrtho(cameraFollow ? 5.0 : 3.0); });
 
     // ── Lighting ─────────────────────────────────────────────────────────────
     const hemi = new BABYLON.HemisphericLight('hemi', new BABYLON.Vector3(0.4, 1, -0.8), scene);
@@ -704,11 +703,10 @@ window.addEventListener('DOMContentLoaded', () => {
         spinAtFlipStart: 0.0,  // spinAngle when current flip began
         spinBoundaries:  [],   // spinAngle values recorded at each flip boundary
         trickName:       '',   // computed at landing
-        execution:       0,    // out of 30 at landing
+        execution:       0,    // out of 37 at landing
         armSnap:         0.0,  // 0-1: blend toward POSE_ARMS_50DEG
         armSnapTarget:   0,
         airTime:         0.0,  // seconds in air on current jump
-        tuckedTime:      0.0,  // seconds tuckAmount >= 0.8 while airborne
     };
 
     let leftDown        = false;
@@ -720,6 +718,7 @@ window.addEventListener('DOMContentLoaded', () => {
     let rightArmHoldTime= 0;    // seconds left arrow held alone on inrun (right arm up)
     const ARM_HOLD_REQ  = 0.5;  // seconds arm must be up before jump
     let paused          = false;
+    let cameraFollow    = false; // C toggles: false = fixed start pos, true = behind character
     let powerWrapDown   = false; // down arrow held → 1.3× spin rate
     let doubleMode      = false; // both keys held → continuous 2x speed spin
     let secondKeyTimer  = null;  // timeout handle; fires after hold threshold
@@ -752,6 +751,22 @@ window.addEventListener('DOMContentLoaded', () => {
 
     window.addEventListener('keydown', e => {
         if (e.code === 'KeyP') { paused = !paused; return; }
+        if (e.code === 'KeyC') {
+            cameraFollow = !cameraFollow;
+            if (cameraFollow) {
+                // Switch to behind-character view: camera on -Z side, looking forward
+                camera.alpha = -Math.PI / 2;
+                camera.beta  = Math.PI / 3.2;
+                setOrtho(5.0);
+            } else {
+                // Return to fixed starting side view
+                camera.alpha  = Math.PI;
+                camera.beta   = Math.PI / 2;
+                camera.target = BABYLON.Vector3.Zero();
+                setOrtho(3.0);
+            }
+            return;
+        }
         if (paused) return;
         if (e.code === 'Space') {
             e.preventDefault();
@@ -836,13 +851,64 @@ window.addEventListener('DOMContentLoaded', () => {
         '2,2,1':4.80, '2,1,2':4.75, '1,2,2':4.75,
         '2,2,2':5.10,
         '3,1,1':4.60, '1,3,1':4.60, '1,1,3':4.50,
-        // Quads
+        // Quads — lays and single-fulls
         '0,0,0,0':3.50,
         '1,0,0,0':3.90, '0,1,0,0':3.90, '0,0,1,0':3.90, '0,0,0,1':3.80,
         '1,1,0,0':4.40, '1,0,1,0':4.35, '1,0,0,1':4.30,
         '0,1,1,0':4.40, '0,1,0,1':4.35, '0,0,1,1':4.30,
         '1,1,1,0':5.00, '1,1,0,1':4.95, '1,0,1,1':4.95, '0,1,1,1':4.95,
         '1,1,1,1':5.80,
+        // Quads — one double-full
+        '2,0,0,0':4.10, '0,2,0,0':4.10, '0,0,2,0':4.00, '0,0,0,2':4.00,
+        // Quads — double-full + one single-full
+        '2,1,0,0':4.60, '1,2,0,0':4.60,
+        '2,0,1,0':4.55, '0,2,1,0':4.55,
+        '2,0,0,1':4.50, '0,2,0,1':4.50,
+        '1,0,2,0':4.50, '0,1,2,0':4.50,
+        '1,0,0,2':4.45, '0,1,0,2':4.45,
+        '0,0,2,1':4.45, '0,0,1,2':4.40,
+        // Quads — double-full + two single-fulls
+        '2,1,1,0':5.10, '1,2,1,0':5.10, '1,1,2,0':5.10,
+        '2,1,0,1':5.05, '1,2,0,1':5.00,
+        '2,0,1,1':5.00, '0,2,1,1':5.00,
+        '0,1,2,1':5.00, '1,0,2,1':5.00,
+        '1,1,0,2':4.95, '1,0,1,2':4.95, '0,1,1,2':4.95,
+        // Quads — double-full + three single-fulls
+        '2,1,1,1':5.95, '1,2,1,1':5.90, '1,1,2,1':5.90, '1,1,1,2':5.85,
+        // Quads — two double-fulls
+        '2,2,0,0':5.10, '2,0,2,0':5.05, '2,0,0,2':5.00,
+        '0,2,2,0':5.10, '0,2,0,2':5.00, '0,0,2,2':4.95,
+        // Quads — two double-fulls + one single-full
+        '2,2,1,0':5.60, '2,2,0,1':5.55,
+        '2,1,2,0':5.55, '2,0,2,1':5.50,
+        '2,1,0,2':5.45, '2,0,1,2':5.45,
+        '1,2,2,0':5.55, '0,2,2,1':5.50,
+        '1,2,0,2':5.45, '0,2,1,2':5.45,
+        '1,0,2,2':5.45, '0,1,2,2':5.45,
+        // Quads — two double-fulls + two single-fulls
+        '2,2,1,1':6.10, '2,1,2,1':6.05, '2,1,1,2':6.00,
+        '1,2,2,1':6.05, '1,2,1,2':6.00, '1,1,2,2':5.95,
+        // Quads — three double-fulls
+        '2,2,2,0':5.70, '2,2,0,2':5.65, '2,0,2,2':5.65, '0,2,2,2':5.65,
+        // Quads — three double-fulls + one single-full
+        '2,2,2,1':6.40, '2,2,1,2':6.35, '2,1,2,2':6.30, '1,2,2,2':6.30,
+        // Quads — four double-fulls
+        '2,2,2,2':6.80,
+        // Quads — one triple-full
+        '3,0,0,0':4.30, '0,3,0,0':4.30, '0,0,3,0':4.20, '0,0,0,3':4.15,
+        // Quads — triple-full + one single-full
+        '3,1,0,0':4.85, '1,3,0,0':4.85,
+        '3,0,1,0':4.80, '0,3,1,0':4.80,
+        '3,0,0,1':4.75, '0,3,0,1':4.75,
+        '1,0,3,0':4.75, '0,1,3,0':4.75,
+        '0,0,3,1':4.65, '1,0,0,3':4.65, '0,1,0,3':4.60, '0,0,1,3':4.55,
+        // Quads — triple-full + two single-fulls
+        '3,1,1,0':5.50, '3,1,0,1':5.40, '3,0,1,1':5.35,
+        '1,3,1,0':5.50, '1,3,0,1':5.40, '0,3,1,1':5.35,
+        '1,1,3,0':5.45, '1,0,3,1':5.35, '0,1,3,1':5.40,
+        '1,1,0,3':5.25, '1,0,1,3':5.25, '0,1,1,3':5.25,
+        // Quads — triple-full + three single-fulls
+        '3,1,1,1':6.30, '1,3,1,1':6.25, '1,1,3,1':6.20, '1,1,1,3':6.10,
     };
     const HS_KEY = `hs_${_worldParam}`;
     let highScore = parseFloat(localStorage.getItem(HS_KEY) || '0');
@@ -973,7 +1039,6 @@ window.addEventListener('DOMContentLoaded', () => {
                 state.spinAtFlipStart = state.spinAngle;
                 state.spinBoundaries  = [];
                 state.airTime         = 0.0;
-                state.tuckedTime      = 0.0;
                 state.armSnap         = 0.0;
                 state.armSnapTarget   = 0;
                 // Hide billboard on takeoff
@@ -1005,7 +1070,7 @@ window.addEventListener('DOMContentLoaded', () => {
             state.posZ  += state.vz * dt;
             // Track air time and tuck time for execution scoring
             state.airTime    += dt;
-            if (state.tuckAmount >= 0.8) state.tuckedTime += dt;
+
             const surY   = terrainRootY(state.posZ);
             if (state.rootY <= surY) {
                 const TWO_PI  = Math.PI * 2;
@@ -1042,18 +1107,9 @@ window.addEventListener('DOMContentLoaded', () => {
                     state.trickName = state.perFlipTwists
                         .map(t => TWIST_NAMES[Math.min(t, 3)])
                         .join('-');
-                    // ── Execution score (out of 30) ──────────────────────────
-                    // Air: fixed 6 pts
-                    const airScore = 6;
-                    // Form: tuck ratio 0-15 pts
-                    const tuckRatio = state.airTime > 0 ? Math.min(state.tuckedTime / state.airTime, 1) : 0;
-                    const formScore = Math.round(tuckRatio * 15 * 10) / 10;
-                    // Landing: how close to perfectly upright & forward (0-9 pts)
-                    const TWO_PI2 = Math.PI * 2;
-                    const flipDev  = Math.min(norm < Math.PI ? norm : TWO_PI2 - norm, Math.PI / 2) / (Math.PI / 2);
-                    const spinDev  = Math.min(spinNorm < Math.PI ? spinNorm : TWO_PI2 - spinNorm, Math.PI / 4) / (Math.PI / 4);
-                    const landScore = Math.round((1 - Math.max(flipDev, spinDev)) * 9 * 10) / 10;
-                    state.execution = Math.round((airScore + formScore + landScore) * 10) / 10;
+                    // ── Execution score ──────────────────────────────────────
+                    // Clean landing = 30; crash = 0 (handled in else branch)
+                    state.execution = 30;
                     state.crashed   = false;
                     state.flipAngle = 0;
                     state.flipDir   = 1;
