@@ -15,6 +15,23 @@
         #worldList div { padding: 6px 14px; color: #b8d8ff; cursor: pointer; font-size: 13px; }
         #worldList div:hover { background: #243648; }
         #worldList div.active { color: #fff; font-weight: bold; }
+        #compBtn { background: #1a2a1a; color: #88ffaa; border: 1px solid #336633; padding: 5px 14px; cursor: pointer; font-size: 13px; border-radius: 4px; letter-spacing: 0.03em; margin-left: 8px; }
+        #compBtn:hover { background: #243a24; }
+        #compModal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.75); z-index: 100; align-items: center; justify-content: center; }
+        #compModal.open { display: flex; }
+        #compModalBox { background: #0f1e2e; border: 1px solid #445566; border-radius: 12px; padding: 28px 36px; min-width: 340px; color: #b8d8ff; font-family: sans-serif; }
+        #compModalBox h2 { font-size: 20px; color: #fff; margin-bottom: 20px; }
+        .compSection { margin-bottom: 18px; }
+        .compSection label { display: block; font-size: 13px; color: #778899; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.06em; }
+        .compRadioGroup { display: flex; gap: 8px; flex-wrap: wrap; }
+        .compRadioGroup input[type=radio] { display: none; }
+        .compRadioGroup label { background: #1a2a3a; border: 1px solid #445566; border-radius: 5px; padding: 6px 14px; cursor: pointer; font-size: 13px; color: #b8d8ff; text-transform: none; letter-spacing: 0; display: inline-block; transition: background 0.1s; }
+        .compRadioGroup input[type=radio]:checked + label { background: #1a4a2a; border-color: #44aa66; color: #88ffaa; font-weight: bold; }
+        .compRadioGroup label:hover { background: #243648; }
+        #compBeginBtn { background: #1a4a2a; color: #88ffaa; border: 1px solid #44aa66; padding: 9px 28px; font-size: 15px; font-weight: bold; border-radius: 6px; cursor: pointer; margin-right: 12px; }
+        #compBeginBtn:hover { background: #1e5a32; }
+        #compCancelBtn { background: none; border: none; color: #778899; font-size: 13px; cursor: pointer; text-decoration: underline; }
+        #compHUD { display: none; position: absolute; top: 10px; left: 50%; transform: translateX(-50%); z-index: 10; background: rgba(0,0,0,0.55); border: 1px solid #44aa66; border-radius: 6px; padding: 5px 18px; font-family: sans-serif; font-size: 14px; font-weight: bold; color: #88ffaa; letter-spacing: 0.04em; white-space: nowrap; pointer-events: none; margin-top: 42px; }
         #powerMeter { display: none; position: absolute; bottom: 48px; left: 50%; transform: translateX(-50%); z-index: 10; text-align: center; pointer-events: none; }
         #powerMeterLabel { font-family: sans-serif; font-size: 13px; color: #cce8ff; letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 22px; text-shadow: 0 1px 4px #000; }
         #powerMeterWrap { position: relative; width: 480px; }
@@ -36,12 +53,38 @@
     <canvas id="renderCanvas"></canvas>
     <div id="worldMenu">
         <button id="worldBtn">⛷ <span id="worldLabel">Normal</span> ▾</button>
+        <button id="compBtn">🏆 Compete</button>
         <div id="worldList">
             <div onclick="location.href='?world=single'">Single</div>
             <div onclick="location.href='?world=double'">Double</div>
             <div onclick="location.href='?world=triple'">Triple</div>
             <div onclick="location.href='?world=quad'">Quad</div>
             <div onclick="location.href='?world=d2t'">Double to Triple</div>
+        </div>
+    </div>
+    <div id="compHUD"></div>
+    <div id="compModal">
+        <div id="compModalBox">
+            <h2>🏆 Competition Mode</h2>
+            <div class="compSection">
+                <label>Jump</label>
+                <div class="compRadioGroup">
+                    <input type="radio" name="compWorld" id="cw_single" value="single"><label for="cw_single">Single</label>
+                    <input type="radio" name="compWorld" id="cw_double" value="double" checked><label for="cw_double">Double</label>
+                    <input type="radio" name="compWorld" id="cw_triple" value="triple"><label for="cw_triple">Triple</label>
+                    <input type="radio" name="compWorld" id="cw_quad"   value="quad"><label for="cw_quad">Quad</label>
+                </div>
+            </div>
+            <div class="compSection">
+                <label>Difficulty</label>
+                <div class="compRadioGroup">
+                    <input type="radio" name="compDiff" id="cd_easy"   value="easy" checked><label for="cd_easy">Easy</label>
+                    <input type="radio" name="compDiff" id="cd_medium" value="medium"><label for="cd_medium">Medium</label>
+                    <input type="radio" name="compDiff" id="cd_hard"   value="hard"><label for="cd_hard">Hard</label>
+                </div>
+            </div>
+            <button id="compBeginBtn">Begin</button>
+            <button id="compCancelBtn">Cancel</button>
         </div>
     </div>
     <script>
@@ -59,6 +102,29 @@
                 document.addEventListener('click', function(e) {
                     if (!document.getElementById('worldMenu').contains(e.target))
                         document.getElementById('worldList').style.display = 'none';
+                });
+
+                // Competition modal
+                var compModal = document.getElementById('compModal');
+                document.getElementById('compBtn').addEventListener('click', function() {
+                    // Pre-select current world if applicable (not d2t)
+                    var validWorlds = ['single','double','triple','quad'];
+                    if (validWorlds.indexOf(wp) !== -1) {
+                        var radio = document.querySelector('input[name=compWorld][value="' + wp + '"]');
+                        if (radio) radio.checked = true;
+                    }
+                    compModal.classList.add('open');
+                });
+                document.getElementById('compCancelBtn').addEventListener('click', function() {
+                    compModal.classList.remove('open');
+                });
+                compModal.addEventListener('click', function(e) {
+                    if (e.target === compModal) compModal.classList.remove('open');
+                });
+                document.getElementById('compBeginBtn').addEventListener('click', function() {
+                    var world = document.querySelector('input[name=compWorld]:checked');
+                    var diff  = document.querySelector('input[name=compDiff]:checked');
+                    if (world && diff) location.href = '?world=' + world.value + '&comp=' + diff.value;
                 });
             });
         })();

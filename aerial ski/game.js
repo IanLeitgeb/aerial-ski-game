@@ -381,7 +381,7 @@ function buildHUD(scene) {
     hint.resizeToFit = true;
     ui.addControl(hint);
 
-    return hud;
+    return { hud, hint };
 }
 
 // ── Terrain ───────────────────────────────────────────────────────────────────
@@ -394,6 +394,7 @@ const LANDING_DROP  = 3.5; // extra vertical drop of landing zone
 const KICKER_Z      = 22;
 const KICKER_END_Z  = 24.5;
 const _worldParam   = new URLSearchParams(location.search).get('world') || 'double';
+const _compParam    = new URLSearchParams(location.search).get('comp');  // null | 'easy' | 'medium' | 'hard'
 const OUTRUN_Z      = KICKER_END_Z + (_worldParam === 'd2t' ? 34 : 50); // landing slope ends here
 const FLAT_Z        = KICKER_Z - 9.0; // flat table starts before kicker
 const SLOPE_START_Z = _worldParam === 'quad' ? -33.8 : _worldParam === 'triple' ? -19.8 : _worldParam === 'single' ? -4.3 : -11.3;
@@ -773,6 +774,9 @@ window.addEventListener('DOMContentLoaded', () => {
     let cameraFollow    = true;  // C toggles: true = behind character, false = fixed side view
     let powerWrapDown   = false; // down arrow held → 1.3× spin rate
     let arrowUpDown     = false; // up arrow held mid-air → gradually slow flip
+    let readyState      = true;  // true = waiting at top, character facing sideways
+    let readyTurnT      = 0.0;   // 0→1: progress of turn-to-face-downhill animation
+    const READY_TURN_DUR = 0.7;  // seconds to complete the turn
     let doubleMode      = false; // both keys held → continuous 2x speed spin
     let secondKeyTimer  = null;  // timeout handle; fires after hold threshold
     const DOUBLE_HOLD_MS = 180;  // ms — hold second key longer than this = double mode
@@ -846,6 +850,7 @@ window.addEventListener('DOMContentLoaded', () => {
             doubleMode = false; powerWrapDown = false; arrowUpDown = false;
             flipPower = 0; pmFill.style.width = '0%';
             billboard.isVisible = false;
+            readyState = true; readyTurnT = 0.0;
             return;
         }
         if (e.code === 'KeyC') {
@@ -878,6 +883,10 @@ window.addEventListener('DOMContentLoaded', () => {
         }
         if (e.code === 'ArrowDown' && !state.grounded && !state.crashed) {
             powerWrapDown = true;
+        }
+        if (e.code === 'ArrowUp' && state.grounded && readyState && readyTurnT === 0.0) {
+            // Begin turn-to-face-downhill animation
+            readyTurnT = 0.001; // small non-zero to start animation
         }
         if (e.code === 'ArrowUp' && !state.grounded && !state.crashed) {
             // Raise arms straight up
@@ -1011,6 +1020,40 @@ window.addEventListener('DOMContentLoaded', () => {
     };
     const HS_KEY = `hs_${_worldParam}`;
     let highScore = parseFloat(localStorage.getItem(HS_KEY) || '0');
+
+    // ── Competition mode ──────────────────────────────────────────────────────
+    const COMP_POOLS = {
+        // Singles — only one flip, no ordering issue
+        single_easy:   ['0','1'],
+        single_medium: ['2'],
+        single_hard:   ['3'],
+        // Doubles — lays (0s) always come first
+        double_easy:   ['0,0','0,1'],
+        double_medium: ['1,1','0,2','1,2','2,1'],
+        double_hard:   ['2,2','1,3','3,1','2,3','3,2','3,3'],
+        // Triples — lays always precede spins
+        triple_easy:   ['0,0,0','0,0,1'],
+        triple_medium: ['0,1,1','1,1,1'],
+        triple_hard:   ['2,1,1','1,2,1','1,1,2','2,2,1','2,2,2'],
+        // Quads — lays always precede spins
+        quad_easy:     ['0,0,0,0','0,0,0,1','0,0,1,1'],
+        quad_medium:   ['0,1,1,1','1,1,1,1'],
+        quad_hard:     ['0,0,2,2','2,1,1,1','2,2,1,1','0,2,2,2','2,2,2,2'],
+    };
+    const TWIST_NAMES_COMP = ['Lay', 'Full', 'Double Full', 'Triple Full'];
+    function trickKeyToName(key) {
+        return key.split(',').map(n => TWIST_NAMES_COMP[+n]).join('-');
+    }
+    const _compPoolKey = _compParam ? `${_worldParam}_${_compParam}` : null;
+    const _compPool    = _compPoolKey ? (COMP_POOLS[_compPoolKey] || []) : [];
+    const assignedTrick = _compPool.length
+        ? _compPool[Math.floor(Math.random() * _compPool.length)]
+        : null;
+    // Expose assigned trick to HTML for the compHUD
+    if (assignedTrick) {
+        document.getElementById('compHUD').textContent = '🏆 Land: ' + trickKeyToName(assignedTrick);
+        document.getElementById('compHUD').style.display = 'block';
+    }
     function calcDD(perFlipTwists) {
         const key = perFlipTwists.join(',');
         if (DD_TABLE[key] !== undefined) return DD_TABLE[key];
@@ -1065,8 +1108,25 @@ window.addEventListener('DOMContentLoaded', () => {
     bbScore.outlineWidth = 3;
     bbScore.outlineColor = '#000000';
     bbStack.addControl(bbScore);
-    const billboard = { get isVisible() { return bbContainer.isVisible; }, set isVisible(v) { bbContainer.isVisible = v; } };
-    const hud = buildHUD(scene);
+    const bbComp = new BABYLON.GUI.TextBlock('bbComp');
+    bbComp.color       = '#00ff88';
+    bbComp.fontSize    = 21;
+    bbComp.fontFamily  = 'sans-serif';
+    bbComp.fontStyle   = 'bold';
+    bbComp.height      = '40px';
+    bbComp.outlineWidth = 3;
+    bbComp.outlineColor = '#000000';
+    bbComp.isVisible   = false;
+    bbStack.addControl(bbComp);
+    // Grow container when comp row is visible
+    const billboard = {
+        get isVisible() { return bbContainer.isVisible; },
+        set isVisible(v) {
+            bbContainer.isVisible = v;
+            bbContainer.height = (v && bbComp.isVisible) ? '240px' : '200px';
+        }
+    };
+    const { hud, hint } = buildHUD(scene);
     const TUCK_RATE = 3.0;
 
     // ── Flip-power meter ──────────────────────────────────────────────────────
@@ -1079,7 +1139,7 @@ window.addEventListener('DOMContentLoaded', () => {
     let   pmActive  = false;      // true while meter is visible / accepting input
     let   pmDownHeld = false;     // true while ↓ is held on approach
     const APPROACH_START_Z = SLOPE_START_Z; // show meter from the top of the slope
-    const FLIP_POWER_RATE  = 2.2;           // seconds to fill from 0 → 1
+    const FLIP_POWER_RATE  = 1.7;           // seconds to fill from 0 → 1
 
     // Build flip-count tick marks.
     // powerScale = 0.3 + flipPower * 0.7; at powerScale=1 the world's nominal
@@ -1125,7 +1185,7 @@ window.addEventListener('DOMContentLoaded', () => {
             pmActive = false;
             pmEl.style.display = 'none';
         }
-        if (pmActive && pmDownHeld) {
+        if (pmActive && pmDownHeld && !readyState) {
             flipPower = Math.min(1, flipPower + dt / FLIP_POWER_RATE);
             pmFill.style.width = (flipPower * 100).toFixed(1) + '%';
         }
@@ -1135,6 +1195,21 @@ window.addEventListener('DOMContentLoaded', () => {
             if (leftDown && !rightDown) rightArmHoldTime += dt; else rightArmHoldTime = 0;
         }
         if (state.grounded) {
+            // ── Ready state: freeze at top until ↑ pressed ──────────────────
+            if (readyState) {
+                if (readyTurnT > 0) {
+                    // Advancing turn animation
+                    readyTurnT = Math.min(1.0, readyTurnT + dt / READY_TURN_DUR);
+                    if (readyTurnT >= 1.0) {
+                        readyState  = false;
+                        readyTurnT  = 1.0;
+                    }
+                }
+                if (readyTurnT < 1.0) {
+                    // Still waiting or turning — don't accelerate yet
+                    state.vz = 0;
+                }
+            }
             const prevZ = state.posZ;
             state.vz   += terrainAccelZ(state.posZ) * dt;
             if (state.posZ > OUTRUN_Z && !IS_D2T && state.vz < 0) {
@@ -1150,6 +1225,12 @@ window.addEventListener('DOMContentLoaded', () => {
                     bbName.text  = state.trickName;
                     bbSub.text   = `${totalFlips} flip${totalFlips !== 1 ? 's' : ''} · ${totalTwists} twist${totalTwists !== 1 ? 's' : ''}  ·  DD ${dd}  ×  exec ${state.execution}`;
                     bbScore.text = isNew ? `★ NEW BEST  ${score}` : `${score}  (best: ${highScore})`;
+                    if (assignedTrick) {
+                        const matched = state.perFlipTwists.join(',') === assignedTrick;
+                        bbComp.text     = matched ? '✓ Trick Complete!' : `✗ Needed: ${trickKeyToName(assignedTrick)}`;
+                        bbComp.color    = matched ? '#00ff88' : '#ff6644';
+                        bbComp.isVisible = true;
+                    }
                     billboard.isVisible = true;
                 }
             }
@@ -1166,6 +1247,12 @@ window.addEventListener('DOMContentLoaded', () => {
                     bbName.text  = state.trickName;
                     bbSub.text   = `${totalFlips} flip${totalFlips !== 1 ? 's' : ''} · ${totalTwists} twist${totalTwists !== 1 ? 's' : ''}  ·  DD ${dd}  ×  exec ${state.execution}`;
                     bbScore.text = isNew ? `★ NEW BEST  ${score}` : `${score}  (best: ${highScore})`;
+                    if (assignedTrick) {
+                        const matched = state.perFlipTwists.join(',') === assignedTrick;
+                        bbComp.text     = matched ? '✓ Trick Complete!' : `✗ Needed: ${trickKeyToName(assignedTrick)}`;
+                        bbComp.color    = matched ? '#00ff88' : '#ff6644';
+                        bbComp.isVisible = true;
+                    }
                     billboard.isVisible = true;
                 }
             }
@@ -1191,6 +1278,7 @@ window.addEventListener('DOMContentLoaded', () => {
                 state.armSnapTarget   = 0;
                 // Hide billboard on takeoff
                 billboard.isVisible   = false;
+                bbComp.isVisible      = false;
                 state.stopped         = false;
                 // Apply flip power: 3rd dash (75%) = world-normal flip speed
                 if (crossingJ1) {
@@ -1218,6 +1306,14 @@ window.addEventListener('DOMContentLoaded', () => {
                 }
             } else {
                 state.rootY = terrainRootY(state.posZ);
+                // When upright (readyState, tilt=0) the full FOOT_OFFSET goes straight
+                // down so the skis sit on the surface. As tilt increases, compensate so
+                // the foot doesn't sink: rootY lifts by FOOT_OFFSET*(1-cos(tilt)).
+                if (readyState && readyTurnT < 1.0) {
+                    const rawTilt = -SLOPE_ANGLE; // slope angle at start position
+                    const blendedTilt = rawTilt * readyTurnT;
+                    state.rootY += FOOT_OFFSET * (1.0 - Math.cos(blendedTilt));
+                }
             }
         } else {
             state.vy    -= GRAVITY * dt;
@@ -1250,8 +1346,14 @@ window.addEventListener('DOMContentLoaded', () => {
                 powerWrapDown   = false; // clear power wrap on landing
 
                 if (goodLanding) {
-                    // Compute per-flip twists from recorded spin boundary values
-                    const spinPoints = [state.spinAtFlipStart, ...state.spinBoundaries, capturedSpin];
+                    // Compute per-flip twists from recorded spin boundary values.
+                    // spinBoundaries records the spin angle at each completed flip revolution.
+                    // If the skier overshoots slightly, the last boundary fires before landing,
+                    // and capturedSpin would create a spurious near-zero trailing interval.
+                    // Only add capturedSpin when boundaries don't yet cover all completed flips.
+                    const completedFlips = Math.round(Math.abs(state.flipAngle) / (Math.PI * 2));
+                    const spinPoints = [state.spinAtFlipStart, ...state.spinBoundaries];
+                    if (spinPoints.length - 1 < completedFlips) spinPoints.push(capturedSpin);
                     state.perFlipTwists = [];
                     for (let i = 0; i < spinPoints.length - 1; i++) {
                         state.perFlipTwists.push(Math.round(Math.abs(spinPoints[i + 1] - spinPoints[i]) / (Math.PI * 2)));
@@ -1379,7 +1481,10 @@ window.addEventListener('DOMContentLoaded', () => {
 
         // ── Character rotation ─────────────────────────────────────────────
         // qFace turns the character to face +Z (downhill direction).
-        const qFace = BABYLON.Quaternion.RotationAxis(BABYLON.Axis.Y, Math.PI);
+        // In readyState the character starts facing sideways (+π/2) and smoothly
+        // rotates to face downhill (0) as readyTurnT goes 0→1.
+        const readyYaw = readyState ? (1.0 - readyTurnT) * (Math.PI / 2) : 0.0;
+        const qFace = BABYLON.Quaternion.RotationAxis(BABYLON.Axis.Y, Math.PI + readyYaw);
         if (state.grounded) {
             let tilt = 0;
             if (state.posZ >= SLOPE_START_Z && state.posZ < FLAT_Z)           tilt = -SLOPE_ANGLE;
@@ -1392,6 +1497,8 @@ window.addEventListener('DOMContentLoaded', () => {
             else if (IS_D2T && state.posZ >= J2_KICKER_Z && state.posZ <= J2_KICKER_END_Z) tilt = KICKER_ANGLE;
             else if (IS_D2T && state.posZ > J2_KICKER_END_Z && state.posZ <= J2_OUTRUN_Z)  tilt = -LANDING_ANGLE;
             else if (state.posZ > OUTRUN_Z)                               tilt = 0; // flat outrun
+            // During ready-state turn, blend tilt from 0 (upright) to full slope tilt
+            if (readyState) tilt = tilt * readyTurnT;
             const qTilt  = BABYLON.Quaternion.RotationAxis(BABYLON.Axis.X, tilt);
             const qCrash = state.crashed
                 ? BABYLON.Quaternion.RotationAxis(BABYLON.Axis.X, state.flipAngle)
@@ -1426,6 +1533,9 @@ window.addEventListener('DOMContentLoaded', () => {
             `Spin angle : ${(state.spinAngle  / (Math.PI * 2)).toFixed(2)} rev`,
             `Spin target: ${(state.spinTarget / (Math.PI * 2)).toFixed(2)} rev`,
         ].join('\n');
+        hint.text = readyState && readyTurnT === 0.0
+            ? '↑: Start run\ndrag: orbit'
+            : 'SPACE: tuck\n← then →: left twist\n→ then ←: right twist\n↓: power wrap\ndrag: orbit';
     });
 
     // ── Run ───────────────────────────────────────────────────────────────────
