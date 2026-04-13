@@ -1,22 +1,36 @@
 'use strict';
 
+// ── Colour helpers ─────────────────────────────────────────────────────────
+function _hexToRgb(hex) {
+    var r = parseInt(hex.slice(1,3),16)/255;
+    var g = parseInt(hex.slice(3,5),16)/255;
+    var b = parseInt(hex.slice(5,7),16)/255;
+    return [r, g, b];
+}
+const _CC = {
+    helmet: _hexToRgb(localStorage.getItem('color_helmet') || '#1a1a1a'),
+    torso:  _hexToRgb(localStorage.getItem('color_torso')  || '#1440bf'),
+    arms:   _hexToRgb(localStorage.getItem('color_arms')   || '#cc0f0f'),
+    legs:   _hexToRgb(localStorage.getItem('color_legs')   || '#1a1a1a'),
+};
+
 // ── Segment definitions ────────────────────────────────────────────────────
 // Each segment has a name, box size (w × h × d), and mass (arbitrary units,
 // proportional to a real athlete — ratios are what matter for physics).
 const SEGMENTS = [
-    { name: 'torso',     w: 0.30, h: 0.55, d: 0.28, mass: 22.0, color: [0.12, 0.56, 1.00] },
-    { name: 'head',      w: 0.22, h: 0.24, d: 0.24, mass:  6.0, color: [0.90, 0.30, 0.02] },
-    { name: 'upperArmL', w: 0.11, h: 0.30, d: 0.11, mass:  2.5, color: [0.12, 0.56, 1.00] },
-    { name: 'upperArmR', w: 0.11, h: 0.30, d: 0.11, mass:  2.5, color: [0.12, 0.56, 1.00] },
-    { name: 'lowerArmL', w: 0.09, h: 0.25, d: 0.09, mass:  1.5, color: [0.12, 0.56, 1.00] },
-    { name: 'lowerArmR', w: 0.09, h: 0.25, d: 0.09, mass:  1.5, color: [0.12, 0.56, 1.00] },
-    { name: 'upperLegL', w: 0.13, h: 0.36, d: 0.18, mass:  7.0, color: [0.10, 0.10, 0.38] },
-    { name: 'upperLegR', w: 0.13, h: 0.36, d: 0.18, mass:  7.0, color: [0.10, 0.10, 0.38] },
-    { name: 'lowerLegL', w: 0.11, h: 0.36, d: 0.14, mass:  5.0, color: [0.12, 0.12, 0.55] },
-    { name: 'lowerLegR', w: 0.11, h: 0.36, d: 0.14, mass:  5.0, color: [0.12, 0.12, 0.55] },
+    { name: 'torso',     w: 0.30, h: 0.55, d: 0.28, mass: 22.0, color: _CC.torso  },
+    { name: 'head',      w: 0.22, h: 0.24, d: 0.24, mass:  6.0, color: _CC.helmet },
+    { name: 'upperArmL', w: 0.11, h: 0.30, d: 0.11, mass:  2.5, color: _CC.arms   },
+    { name: 'upperArmR', w: 0.11, h: 0.30, d: 0.11, mass:  2.5, color: _CC.arms   },
+    { name: 'lowerArmL', w: 0.09, h: 0.25, d: 0.09, mass:  1.5, color: _CC.arms   },
+    { name: 'lowerArmR', w: 0.09, h: 0.25, d: 0.09, mass:  1.5, color: _CC.arms   },
+    { name: 'upperLegL', w: 0.13, h: 0.36, d: 0.18, mass:  7.0, color: _CC.legs   },
+    { name: 'upperLegR', w: 0.13, h: 0.36, d: 0.18, mass:  7.0, color: _CC.legs   },
+    { name: 'lowerLegL', w: 0.11, h: 0.36, d: 0.14, mass:  5.0, color: _CC.legs   },
+    { name: 'lowerLegR', w: 0.11, h: 0.36, d: 0.14, mass:  5.0, color: _CC.legs   },
     // Skis: long (≈ leg length), thin, flat — centered under each foot
-    { name: 'skiL',      w: 0.08, h: 0.03, d: 1.20, mass:  2.0, color: [0.05, 0.10, 0.40] },
-    { name: 'skiR',      w: 0.08, h: 0.03, d: 1.20, mass:  2.0, color: [0.05, 0.10, 0.40] },
+    { name: 'skiL',      w: 0.08, h: 0.03, d: 1.20, mass:  2.0, color: [0.08, 0.08, 0.08] },
+    { name: 'skiR',      w: 0.08, h: 0.03, d: 1.20, mass:  2.0, color: [0.08, 0.08, 0.08] },
 ];
 
 // ── Poses ─────────────────────────────────────────────────────────────────
@@ -30,11 +44,11 @@ const SEGMENTS = [
 // These are constant and never changed by pose animation.
 const BASE_Z = {
     torso: 0, head: 0,
-    upperArmL:  0.07, upperArmR: -0.07,
-    lowerArmL:  0.07, lowerArmR: -0.07,
-    upperLegL:  0.07, upperLegR: -0.07,
-    lowerLegL:  0.07, lowerLegR: -0.07,
-    skiL:       0.07, skiR:      -0.07,
+    upperArmL:  0.008, upperArmR: -0.008,
+    lowerArmL:  0.008, lowerArmR: -0.008,
+    upperLegL:  0.008, upperLegR: -0.008,
+    lowerLegL:  0.008, lowerLegR: -0.008,
+    skiL:       0.008, skiR:      -0.008,
 };
 
 // Segment chain geometry (all heights for reference):
@@ -79,8 +93,8 @@ const POSE_INRUN_TUCK = {
     upperLegR: { x:  0.075, y: -0.240, rx:  0.85, rz:  0.00, dz:  0.15 },
     lowerLegL: { x: -0.075, y: -0.490, rx: -0.40, rz:  0.00, dz:  0.05 },  // shins tilt forward
     lowerLegR: { x:  0.075, y: -0.490, rx: -0.40, rz:  0.00, dz:  0.05 },
-    skiL:      { x: -0.075, y: -0.675, rx:  0.00, rz:  0.00, dz:  0.00 },
-    skiR:      { x:  0.075, y: -0.675, rx:  0.00, rz:  0.00, dz:  0.00 },
+    skiL:      { x: -0.075, y: -0.660, rx:  0.00, rz:  0.00, dz:  0.00 },
+    skiR:      { x:  0.075, y: -0.660, rx:  0.00, rz:  0.00, dz:  0.00 },
 };
 
 const POSE_TUCKED = {
@@ -183,7 +197,7 @@ function buildCharacter(scene) {
                 diameterTop:    seg.w,
                 diameterBottom: seg.w * 0.68,
                 height:         seg.h,
-                tessellation:   12,
+                tessellation:   18,
             }, scene);
         } else if (n === 'skiL' || n === 'skiR') {
             // Skis remain flat boxes
@@ -192,13 +206,45 @@ function buildCharacter(scene) {
                 height: seg.h,
                 depth:  seg.d,
             }, scene);
+        } else if (n === 'upperLegL' || n === 'upperLegR') {
+            // Thigh — wide at hip, tapers to knee
+            mesh = BABYLON.MeshBuilder.CreateCylinder(n, {
+                diameterTop:    0.175,
+                diameterBottom: 0.115,
+                height:         seg.h,
+                tessellation:   18,
+            }, scene);
+        } else if (n === 'lowerLegL' || n === 'lowerLegR') {
+            // Calf — full at top, tapers to ankle
+            mesh = BABYLON.MeshBuilder.CreateCylinder(n, {
+                diameterTop:    0.135,
+                diameterBottom: 0.080,
+                height:         seg.h,
+                tessellation:   18,
+            }, scene);
+        } else if (n === 'upperArmL' || n === 'upperArmR') {
+            // Upper arm — wider at shoulder, tapers to elbow
+            mesh = BABYLON.MeshBuilder.CreateCylinder(n, {
+                diameterTop:    0.120,
+                diameterBottom: 0.090,
+                height:         seg.h,
+                tessellation:   18,
+            }, scene);
+        } else if (n === 'lowerArmL' || n === 'lowerArmR') {
+            // Forearm — wider at elbow, tapers to wrist
+            mesh = BABYLON.MeshBuilder.CreateCylinder(n, {
+                diameterTop:    0.095,
+                diameterBottom: 0.065,
+                height:         seg.h,
+                tessellation:   18,
+            }, scene);
         } else {
-            // All limb segments — rounded cylinders
+            // Fallback — rounded cylinder
             const diam = (seg.w + seg.d) / 2;
             mesh = BABYLON.MeshBuilder.CreateCylinder(n, {
                 diameter:     diam,
                 height:       seg.h,
-                tessellation: 8,
+                tessellation: 18,
             }, scene);
         }
 
@@ -206,8 +252,10 @@ function buildCharacter(scene) {
 
         const mat = new BABYLON.StandardMaterial(n + '_mat', scene);
         mat.diffuseColor  = new BABYLON.Color3(seg.color[0], seg.color[1], seg.color[2]);
-        mat.specularColor = new BABYLON.Color3(0.35, 0.35, 0.35);
-        mat.specularPower = 32;
+        // Lycra/spandex sheen on suit panels; matte on skis
+        const isSki = (n === 'skiL' || n === 'skiR');
+        mat.specularColor = isSki ? new BABYLON.Color3(0.15, 0.15, 0.15) : new BABYLON.Color3(0.65, 0.65, 0.65);
+        mat.specularPower = isSki ? 12 : 55;
         mesh.material = mat;
 
         meshes[n] = mesh;
@@ -227,9 +275,68 @@ function buildCharacter(scene) {
             vMat.specularColor = new BABYLON.Color3(0.7, 0.75, 0.9);
             vMat.specularPower = 80;
             visor.material = vMat;
+
+            // Nose bump below visor
+            const nose = BABYLON.MeshBuilder.CreateSphere('nose', {
+                diameter: seg.h * 0.24,
+                segments: 6,
+            }, scene);
+            nose.parent = mesh;
+            nose.scaling.set(0.65, 0.55, 1.1);
+            nose.position.set(0, -seg.h * 0.12, -seg.h * 0.45);
+            const nMat = new BABYLON.StandardMaterial('nose_mat', scene);
+            nMat.diffuseColor  = new BABYLON.Color3(0.85, 0.72, 0.60);
+            nMat.specularColor = new BABYLON.Color3(0.20, 0.15, 0.12);
+            nose.material = nMat;
+        }
+
+        if (n === 'torso') {
+            // Neck — cylinder bridging torso top to head
+            const neck = BABYLON.MeshBuilder.CreateCylinder('neck', {
+                diameterTop:    0.11,
+                diameterBottom: 0.13,
+                height:         0.09,
+                tessellation:   14,
+            }, scene);
+            neck.parent = mesh;
+            neck.position.set(0, seg.h * 0.5 + 0.045, 0);
+            const nkMat = new BABYLON.StandardMaterial('neck_mat', scene);
+            nkMat.diffuseColor  = new BABYLON.Color3(0.85, 0.72, 0.60);
+            nkMat.specularColor = new BABYLON.Color3(0.20, 0.15, 0.12);
+            nkMat.specularPower = 18;
+            neck.material = nkMat;
+        }
+
+        if (n === 'upperArmL' || n === 'upperArmR') {
+            // Shoulder sphere — fills gap between torso and upper arm
+            const shoulder = BABYLON.MeshBuilder.CreateSphere(n + '_shoulder', {
+                diameter: 0.13,
+                segments: 8,
+            }, scene);
+            shoulder.parent = mesh;
+            shoulder.position.set(0, seg.h * 0.5, 0);
+            const sMat = new BABYLON.StandardMaterial(n + '_shoulder_mat', scene);
+            sMat.diffuseColor  = new BABYLON.Color3(_CC.arms[0], _CC.arms[1], _CC.arms[2]);
+            sMat.specularColor = new BABYLON.Color3(0.55, 0.20, 0.20);
+            sMat.specularPower = 55;
+            shoulder.material = sMat;
         }
 
         if (n === 'lowerArmL' || n === 'lowerArmR') {
+            // Elbow sphere — fills gap between upper and lower arm
+            const elbow = BABYLON.MeshBuilder.CreateSphere(n + '_elbow', {
+                diameter: 0.060,
+                segments: 8,
+            }, scene);
+            elbow.scaling.set(1.0, 0.70, 1.0); // flatten slightly — elbows aren't round balls
+            elbow.parent = mesh;
+            elbow.position.set(0, seg.h * 0.5, 0);
+            const eMat = new BABYLON.StandardMaterial(n + '_elbow_mat', scene);
+            eMat.diffuseColor  = new BABYLON.Color3(_CC.arms[0], _CC.arms[1], _CC.arms[2]);
+            eMat.specularColor = new BABYLON.Color3(0.55, 0.20, 0.20);
+            eMat.specularPower = 55;
+            elbow.material = eMat;
+
             // Glove sphere at the wrist end — position updated dynamically in applyPose
             const hand = BABYLON.MeshBuilder.CreateSphere(n + '_glove', {
                 diameter: (seg.w + seg.d) / 2 * 1.5,
@@ -245,20 +352,78 @@ function buildCharacter(scene) {
             meshes[n === 'lowerArmL' ? 'gloveL' : 'gloveR'] = { mesh: hand, halfH: seg.h * 0.5 };
         }
 
-        if (n === 'lowerLegL' || n === 'lowerLegR') {
-            // Ski boot block at the base of each shin
-            const boot = BABYLON.MeshBuilder.CreateBox(n + '_boot', {
-                width:  seg.w * 1.6,
-                height: seg.h * 0.32,
-                depth:  seg.d * 1.3,
+        if (n === 'upperLegL' || n === 'upperLegR') {
+            // Hip sphere — fills gap between torso and upper leg
+            const hip = BABYLON.MeshBuilder.CreateSphere(n + '_hip', {
+                diameter: 0.17,
+                segments: 8,
             }, scene);
-            boot.parent = mesh;
-            boot.position.set(0, -seg.h * 0.34, 0);
-            const bMat = new BABYLON.StandardMaterial(n + '_boot_mat', scene);
-            bMat.diffuseColor  = new BABYLON.Color3(0.55, 0.08, 0.08);
-            bMat.specularColor = new BABYLON.Color3(0.45, 0.25, 0.25);
-            bMat.specularPower = 28;
-            boot.material = bMat;
+            hip.parent = mesh;
+            hip.position.set(0, seg.h * 0.5, 0);
+            const hipMat = new BABYLON.StandardMaterial(n + '_hip_mat', scene);
+            hipMat.diffuseColor  = new BABYLON.Color3(0.10, 0.10, 0.10);
+            hipMat.specularColor = new BABYLON.Color3(0.25, 0.25, 0.25);
+            hipMat.specularPower = 35;
+            hip.material = hipMat;
+        }
+
+        if (n === 'lowerLegL' || n === 'lowerLegR') {
+            // Knee sphere — fills gap between upper and lower leg
+            const knee = BABYLON.MeshBuilder.CreateSphere(n + '_knee', {
+                diameter: 0.13,
+                segments: 8,
+            }, scene);
+            knee.parent = mesh;
+            knee.position.set(0, seg.h * 0.5, 0);
+            const knMat = new BABYLON.StandardMaterial(n + '_knee_mat', scene);
+            knMat.diffuseColor  = new BABYLON.Color3(0.10, 0.10, 0.10);
+            knMat.specularColor = new BABYLON.Color3(0.25, 0.25, 0.25);
+            knMat.specularPower = 35;
+            knee.material = knMat;
+
+            // Ski boot — two-piece: lower shell + upper cuff
+            // Lower shell (hard outer sole/toe box)
+            const bootLower = BABYLON.MeshBuilder.CreateBox(n + '_bootLower', {
+                width:  seg.w * 1.55,
+                height: seg.h * 0.22,
+                depth:  seg.d * 1.55,
+            }, scene);
+            bootLower.parent = mesh;
+            bootLower.position.set(0, -seg.h * 0.42, seg.d * 0.12);
+            const blMat = new BABYLON.StandardMaterial(n + '_bootLower_mat', scene);
+            blMat.diffuseColor  = new BABYLON.Color3(0.12, 0.10, 0.09);
+            blMat.specularColor = new BABYLON.Color3(0.55, 0.50, 0.45);
+            blMat.specularPower = 60;
+            bootLower.material = blMat;
+
+            // Upper cuff (tall plastic shell wrapping the shin)
+            const bootCuff = BABYLON.MeshBuilder.CreateCylinder(n + '_bootCuff', {
+                diameterTop:    seg.w * 1.35,
+                diameterBottom: seg.w * 1.55,
+                height:         seg.h * 0.38,
+                tessellation:   14,
+            }, scene);
+            bootCuff.parent = mesh;
+            bootCuff.position.set(0, -seg.h * 0.22, 0);
+            const bcMat = new BABYLON.StandardMaterial(n + '_bootCuff_mat', scene);
+            bcMat.diffuseColor  = new BABYLON.Color3(0.58, 0.08, 0.06);
+            bcMat.specularColor = new BABYLON.Color3(0.55, 0.30, 0.28);
+            bcMat.specularPower = 45;
+            bootCuff.material = bcMat;
+
+            // Buckle strip — thin black band across the cuff
+            const buckle = BABYLON.MeshBuilder.CreateBox(n + '_buckle', {
+                width:  seg.w * 1.65,
+                height: seg.h * 0.04,
+                depth:  seg.d * 0.05,
+            }, scene);
+            buckle.parent = mesh;
+            buckle.position.set(0, -seg.h * 0.16, -seg.d * 0.70);
+            const buMat = new BABYLON.StandardMaterial(n + '_buckle_mat', scene);
+            buMat.diffuseColor  = new BABYLON.Color3(0.80, 0.78, 0.72);
+            buMat.specularColor = new BABYLON.Color3(0.90, 0.88, 0.82);
+            buMat.specularPower = 90;
+            buckle.material = buMat;
         }
     }
 
@@ -388,7 +553,8 @@ function buildHUD(scene) {
     hint.verticalAlignment       = BABYLON.GUI.Control.VERTICAL_ALIGNMENT_TOP;
     hint.paddingRight = '14px';
     hint.paddingTop   = '14px';
-    hint.text       = 'SPACE: tuck\n← then →: left twist\n→ then ←: right twist\n↓: power wrap\ndrag: orbit';
+    hint.text       = '';
+    hint.isVisible  = false;
     hint.resizeToFit = true;
     ui.addControl(hint);
 
@@ -405,19 +571,15 @@ const LANDING_DROP  = 3.5; // extra vertical drop of landing zone
 const KICKER_Z      = 22;
 const KICKER_END_Z  = 24.5;
 const _worldParam   = new URLSearchParams(location.search).get('world') || 'double';
-const _compParam    = new URLSearchParams(location.search).get('comp');  // null | 'easy' | 'medium' | 'hard'
-const OUTRUN_Z      = KICKER_END_Z + (_worldParam === 'd2t' ? 34 : 50); // landing slope ends here
+const _compParam    = new URLSearchParams(location.search).get('comp');  // null | 'easy' | 'medium' | 'hard' | 'ultra'
+const _ultraJump    = _compParam === 'ultra' ? Math.max(0, parseInt(new URLSearchParams(location.search).get('ultrajump') || '0', 10)) : 0;
+const _customInrun    = _worldParam === 'custom' ? Math.max(4, Math.min(100, parseFloat(new URLSearchParams(location.search).get('inrun')    || '11'))) : 0;
+const _customLanding  = _worldParam === 'custom' ? Math.max(20, Math.min(150, parseFloat(new URLSearchParams(location.search).get('landing')  || '50'))) : 0;
+const _customFlipSpeed = _worldParam === 'custom' ? Math.max(0.3, Math.min(3.0, parseFloat(new URLSearchParams(location.search).get('flipspeed') || '1.3'))) : 1.0;
+const OUTRUN_Z      = _worldParam === 'custom' ? KICKER_END_Z + _customLanding : KICKER_END_Z + (_worldParam === 'quint' ? 75 : 50); // landing slope ends here
 const FLAT_Z        = KICKER_Z - 9.0; // flat table starts before kicker
-const SLOPE_START_Z = _worldParam === 'quad' ? -33.8 : _worldParam === 'triple' ? -19.8 : _worldParam === 'single' ? -4.3 : -11.3;
+const SLOPE_START_Z = _worldParam === 'custom' ? -_customInrun : _worldParam === 'quint' ? -43.0 : _worldParam === 'quad' ? -33.8 : _worldParam === 'triple' ? -19.8 : _worldParam === 'single' ? -4.3 : -11.3;
 
-// ── Double-to-triple second jump constants ────────────────────────────────
-const IS_D2T        = _worldParam === 'd2t';
-const J2_SLOPE_Z    = OUTRUN_Z;              // second inrun starts at end of first landing
-const J2_SLOPE_LEN  = 1.5;                  // inrun length before second flat table
-const J2_FLAT_Z     = J2_SLOPE_Z + J2_SLOPE_LEN;
-const J2_KICKER_Z   = J2_FLAT_Z + 9;
-const J2_KICKER_END_Z = J2_KICKER_Z + 2.5;
-const J2_OUTRUN_Z   = J2_KICKER_END_Z + 50;
 
 function terrainRootY(z) {
     if (z < SLOPE_START_Z) return -SLOPE_START_Z * Math.tan(SLOPE_ANGLE); // flat top
@@ -431,16 +593,7 @@ function terrainRootY(z) {
     const landingBaseY = kickerTopY - LANDING_DROP;
     if (z <= OUTRUN_Z) return landingBaseY - (z - KICKER_END_Z) * Math.tan(LANDING_ANGLE);
     const outrunY = landingBaseY - (OUTRUN_Z - KICKER_END_Z) * Math.tan(LANDING_ANGLE);
-    if (!IS_D2T) return outrunY; // flat outrun
-    // ── Second jump (d2t) ────────────────────────────────────────────────
-    if (z < J2_FLAT_Z) return outrunY - (z - J2_SLOPE_Z) * Math.tan(SLOPE_ANGLE); // second inrun
-    const j2TableY = outrunY - J2_SLOPE_LEN * Math.tan(SLOPE_ANGLE);
-    if (z < J2_KICKER_Z) return j2TableY;
-    if (z <= J2_KICKER_END_Z) return j2TableY + (z - J2_KICKER_Z) * Math.tan(KICKER_ANGLE);
-    const j2KickerTopY  = j2TableY + (J2_KICKER_END_Z - J2_KICKER_Z) * Math.tan(KICKER_ANGLE);
-    const j2LandingBaseY = j2KickerTopY - LANDING_DROP;
-    if (z <= J2_OUTRUN_Z) return j2LandingBaseY - (z - J2_KICKER_END_Z) * Math.tan(LANDING_ANGLE);
-    return j2LandingBaseY - (J2_OUTRUN_Z - J2_KICKER_END_Z) * Math.tan(LANDING_ANGLE);
+    return outrunY; // flat outrun
 }
 
 function terrainAccelZ(z) {
@@ -450,16 +603,7 @@ function terrainAccelZ(z) {
     if (z >= FLAT_Z && z < KICKER_Z)      return 0; // flat table
     if (z >= KICKER_Z && z <= KICKER_END_Z) return -g * Math.sin(KICKER_ANGLE);
     if (z > KICKER_END_Z && z <= OUTRUN_Z) return g * Math.sin(LANDING_ANGLE);
-    if (!IS_D2T) {
-        if (z > OUTRUN_Z) return -14.0; // flat outrun friction
-        return 0;
-    }
-    // d2t second jump
-    if (z > OUTRUN_Z && z < J2_FLAT_Z)          return g * Math.sin(SLOPE_ANGLE);
-    if (z >= J2_FLAT_Z && z < J2_KICKER_Z)      return 0;
-    if (z >= J2_KICKER_Z && z <= J2_KICKER_END_Z) return -g * Math.sin(KICKER_ANGLE);
-    if (z > J2_KICKER_END_Z && z <= J2_OUTRUN_Z)  return g * Math.sin(LANDING_ANGLE);
-    if (z > J2_OUTRUN_Z) return -14.0;
+    if (z > OUTRUN_Z) return -14.0; // flat outrun friction
     return 0;
 }
 
@@ -516,6 +660,38 @@ window.addEventListener('DOMContentLoaded', () => {
     // ── Character ─────────────────────────────────────────────────────────────
     const character = buildCharacter(scene);
     applyPose(character.meshes, 0, 1, 1); // start fully extended, arms down
+    window._characterMeshes = character.meshes;
+
+    window.applySkierColors = function() {
+        function hexToC3(hex) {
+            return new BABYLON.Color3(
+                parseInt(hex.slice(1,3),16)/255,
+                parseInt(hex.slice(3,5),16)/255,
+                parseInt(hex.slice(5,7),16)/255
+            );
+        }
+        var m = window._characterMeshes;
+        if (!m) return;
+        var helmetC = hexToC3(localStorage.getItem('color_helmet') || '#1a1a1a');
+        var torsoC  = hexToC3(localStorage.getItem('color_torso')  || '#1440bf');
+        var armsC   = hexToC3(localStorage.getItem('color_arms')   || '#cc0f0f');
+        var legsC   = hexToC3(localStorage.getItem('color_legs')   || '#1a1a1a');
+        if (m['head']  && m['head'].material)  m['head'].material.diffuseColor  = helmetC;
+        if (m['torso'] && m['torso'].material) m['torso'].material.diffuseColor = torsoC;
+        ['upperArmL','upperArmR','lowerArmL','lowerArmR'].forEach(function(n) {
+            if (m[n] && m[n].material) m[n].material.diffuseColor = armsC;
+        });
+        ['upperLegL','upperLegR','lowerLegL','lowerLegR'].forEach(function(n) {
+            if (m[n] && m[n].material) m[n].material.diffuseColor = legsC;
+        });
+        // shoulder/elbow/glove detail meshes — walk all scene meshes by name
+        scene.meshes.forEach(function(mesh) {
+            if (!mesh.material) return;
+            var n = mesh.name;
+            if (n.indexOf('shoulder') !== -1 || n.indexOf('elbow') !== -1 || n.indexOf('glove') !== -1)
+                mesh.material.diffuseColor = armsC;
+        });
+    };
 
     // ── Terrain meshes (visual — physics uses terrainRootY()) ────────────────────
     const snowMat = new BABYLON.StandardMaterial('snowMat', scene);
@@ -602,81 +778,14 @@ window.addEventListener('DOMContentLoaded', () => {
     landingBox.position.set(0, terrainRootY(landingMidZ) - FOOT_OFFSET - 0.6 / Math.cos(LANDING_ANGLE), landingMidZ);
     landingBox.material = snowMat;
 
-    // Flat outrun (30 units long) — only for non-d2t worlds
-    const OUTRUN_LEN  = IS_D2T ? J2_SLOPE_LEN : 90;
+    // Flat outrun (90 units long)
+    const OUTRUN_LEN  = 90;
     const outrunMidZ  = OUTRUN_Z + OUTRUN_LEN / 2;
     const outrunBox = BABYLON.MeshBuilder.CreateBox('outrun',
         { width: 10, height: 1.2, depth: OUTRUN_LEN }, scene);
     outrunBox.position.set(0, terrainRootY(OUTRUN_Z) - FOOT_OFFSET - 0.6, outrunMidZ);
     outrunBox.material = snowMat;
 
-    // ── Second jump (d2t world) ───────────────────────────────────────────────
-    if (IS_D2T) {
-        // Second inrun slope
-        const j2SlopeMidZ = (J2_SLOPE_Z + J2_FLAT_Z) / 2;
-        const j2SlopeBox = BABYLON.MeshBuilder.CreateBox('j2slope',
-            { width: 10, height: 1.2, depth: J2_SLOPE_LEN / Math.cos(SLOPE_ANGLE) }, scene);
-        j2SlopeBox.rotation.x = SLOPE_ANGLE;
-        j2SlopeBox.position.set(0, terrainRootY(j2SlopeMidZ) - FOOT_OFFSET - 0.6, j2SlopeMidZ);
-        j2SlopeBox.material = snowMat;
-
-        // Second flat table
-        const j2TableMidZ = (J2_FLAT_Z + J2_KICKER_Z) / 2;
-        const j2TableBox = BABYLON.MeshBuilder.CreateBox('j2flatTable',
-            { width: 10, height: 1.2, depth: J2_KICKER_Z - J2_FLAT_Z }, scene);
-        j2TableBox.position.set(0, terrainRootY(j2TableMidZ) - FOOT_OFFSET - 0.6, j2TableMidZ);
-        j2TableBox.material = snowMat;
-
-        // Second kicker
-        const j2KickerBox = BABYLON.MeshBuilder.CreateBox('j2kicker',
-            { width: 3, height: 1.2, depth: (J2_KICKER_END_Z - J2_KICKER_Z) / Math.cos(KICKER_ANGLE) }, scene);
-        j2KickerBox.rotation.x = -KICKER_ANGLE;
-        j2KickerBox.position.set(0,
-            terrainRootY((J2_KICKER_Z + J2_KICKER_END_Z) / 2) - FOOT_OFFSET - 0.6,
-            (J2_KICKER_Z + J2_KICKER_END_Z) / 2);
-        j2KickerBox.material = snowMat;
-
-        // Second landing
-        const j2LandingMidZ = (J2_KICKER_END_Z + J2_OUTRUN_Z) / 2;
-        const j2LandingBox = BABYLON.MeshBuilder.CreateBox('j2landing',
-            { width: 10, height: 1.2, depth: (J2_OUTRUN_Z - J2_KICKER_END_Z) / Math.cos(LANDING_ANGLE) }, scene);
-        j2LandingBox.rotation.x = LANDING_ANGLE;
-        j2LandingBox.position.set(0, terrainRootY(j2LandingMidZ) - FOOT_OFFSET - 0.6 / Math.cos(LANDING_ANGLE), j2LandingMidZ);
-        j2LandingBox.material = snowMat;
-
-        // Second outrun
-        const j2OutrunMidZ = J2_OUTRUN_Z + 45;
-        const j2OutrunBox = BABYLON.MeshBuilder.CreateBox('j2outrun',
-            { width: 10, height: 1.2, depth: 90 }, scene);
-        j2OutrunBox.position.set(0, terrainRootY(J2_OUTRUN_Z) - FOOT_OFFSET - 0.6, j2OutrunMidZ);
-        j2OutrunBox.material = snowMat;
-
-        // Trees at the second outrun
-        const j2TrunkMat = new BABYLON.StandardMaterial('j2trunkMat', scene);
-        j2TrunkMat.diffuseColor = new BABYLON.Color3(0.38, 0.24, 0.14);
-        const j2FoliageMat = new BABYLON.StandardMaterial('j2foliageMat', scene);
-        j2FoliageMat.diffuseColor = new BABYLON.Color3(0.13, 0.38, 0.18);
-        const j2TreeBaseY = terrainRootY(J2_OUTRUN_Z) - FOOT_OFFSET;
-        [
-            { z: J2_OUTRUN_Z + 5,  x: 3.5, scale: 1.0 },
-            { z: J2_OUTRUN_Z + 14, x: 4.8, scale: 1.3 },
-            { z: J2_OUTRUN_Z + 25, x: 3.2, scale: 0.9 },
-            { z: J2_OUTRUN_Z + 8,  x:-3.8, scale: 1.1 },
-            { z: J2_OUTRUN_Z + 19, x:-4.5, scale: 1.2 },
-        ].forEach(function(t, i) {
-            const trunkH   = 0.7 * t.scale;
-            const foliageH = 1.8 * t.scale;
-            const foliageR = 0.65 * t.scale;
-            const trunk = BABYLON.MeshBuilder.CreateCylinder('j2tree_trunk_' + i,
-                { height: trunkH, diameter: 0.24 * t.scale, tessellation: 6 }, scene);
-            trunk.position.set(t.x, j2TreeBaseY + trunkH / 2, t.z);
-            trunk.material = j2TrunkMat;
-            const foliage = BABYLON.MeshBuilder.CreateCylinder('j2tree_foliage_' + i,
-                { height: foliageH, diameterTop: 0, diameterBottom: foliageR * 2, tessellation: 7 }, scene);
-            foliage.position.set(t.x, j2TreeBaseY + trunkH + foliageH / 2, t.z);
-            foliage.material = j2FoliageMat;
-        });
-    }
 
     // Flat start area (behind slope start)
     const startBox = BABYLON.MeshBuilder.CreateBox('start',
@@ -685,7 +794,7 @@ window.addEventListener('DOMContentLoaded', () => {
     startBox.material = snowMat;
 
     // ── Background trees ──────────────────────────────────────────────────────
-    if (!IS_D2T) {
+    {
     const trunkMat = new BABYLON.StandardMaterial('trunkMat', scene);
     trunkMat.diffuseColor = new BABYLON.Color3(0.38, 0.24, 0.14);
     const foliageMat = new BABYLON.StandardMaterial('foliageMat', scene);
@@ -719,7 +828,7 @@ window.addEventListener('DOMContentLoaded', () => {
         foliage.position.set(t.x, treeBaseY + trunkH + foliageH / 2, t.z);
         foliage.material = foliageMat;
     });
-    } // end !IS_D2T trees
+    } // end trees
 
     // ── Physics state ─────────────────────────────────────────────────────────
     //
@@ -730,11 +839,11 @@ window.addEventListener('DOMContentLoaded', () => {
     // SPIN:  Separate rotation axis (Y). Can be initiated mid-air via arm drops.
     //        Stub only in Phase 1 — tracked in state, shown in HUD, not animated.
     //
-    const TARGET_OMEGA_UNTUCKED = 4.5 * 0.9925 * (_worldParam === 'quad' ? 1.404 : _worldParam === 'triple' ? 1.3 : _worldParam === 'single' ? 0.59 : 1.0); // rad/s at full extension
+    const TARGET_OMEGA_UNTUCKED = 4.5 * 0.9925 * (_worldParam === 'custom' ? _customFlipSpeed : _worldParam === 'quint' ? 1.55 : _worldParam === 'quad' ? 1.404 : _worldParam === 'triple' ? 1.3 : _worldParam === 'single' ? 0.59 : 1.0); // rad/s at full extension
     const MAX_OMEGA = 9.75;            // rad/s cap — limits tucked flip speed
     const I0 = computeI(0);            // I at tuck = 0 (fully extended)
 
-    const SPIN_SPEED    = Math.PI * 2.0 * (_worldParam === 'quad' ? 1.3 : _worldParam === 'triple' ? 1.3 : _worldParam === 'single' ? 0.68 : 1.0); // rad/s ~= 1.0 full twist/second
+    const SPIN_SPEED    = Math.PI * 2.0 * (_worldParam === 'custom' ? _customFlipSpeed : _worldParam === 'quint' ? 1.45 : _worldParam === 'quad' ? 1.3 : _worldParam === 'triple' ? 1.3 : _worldParam === 'single' ? 0.68 : 1.0) * (localStorage.getItem('setting_superspin') === '1' ? 2.0 : 1.0); // rad/s ~= 1.0 full twist/second
     const ARM_DROP_RATE = 4.0;            // arm transitions in ~0.25 s
     const GRAVITY       = 14.0;           // world-units / s²
 
@@ -746,7 +855,7 @@ window.addEventListener('DOMContentLoaded', () => {
         flipDir:    1,    // +1 = backflip, -1 = frontflip
         spinAngle:  0.0,  // current spin angle (rad)
         spinTarget: 0.0,  // target spin; each tap adds ±2π
-        spinMult:   1.0,  // spin speed multiplier (boosted on d2t second jump)
+        spinMult:   1.0,  // spin speed multiplier
         doubleDir:  1,    // +1 = left twist, -1 = right twist (used in double mode)
         armDropL:   1.0,  // 0 = raised, 1 = dropped to side
         armDropR:   1.0,
@@ -763,6 +872,8 @@ window.addEventListener('DOMContentLoaded', () => {
         lastFlipInt:     0,    // floor(|flipAngle|/2π) at last frame
         spinAtFlipStart: 0.0,  // spinAngle when current flip began
         spinBoundaries:  [],   // spinAngle values recorded at each flip boundary
+        perFlipTucked:   [],   // true for each completed flip where tuck was used
+        currentFlipTucked: false, // whether tuck has been pressed in the current flip
         trickName:       '',   // computed at landing
         execution:       0,    // out of 37 at landing
         armSnap:         0.0,  // 0-1: blend toward POSE_ARMS_50DEG
@@ -778,6 +889,58 @@ window.addEventListener('DOMContentLoaded', () => {
     let autoSpinActive  = false;
     let armSwapPhase    = false; // true during quick arm swap at takeoff
     let armSwapDir      = 0;    // +1 = left twists (left arm was up), -1 = right twists // true while arm-up takeoff twists are running
+
+    // ── Replay recording ───────────────────────────────────────────────────
+    let replayFrames    = [];   // recorded frames from last run
+    let recordingActive = false; // true while actively recording
+    let replayActive    = false; // true while playing back replay
+    let replayIndex     = 0;    // current frame in playback
+    const replayBtn     = document.getElementById('replayBtn');
+    function startRecording() {
+        replayFrames    = [];
+        recordingActive = true;
+    }
+    function stopRecording() {
+        recordingActive = false;
+        if (replayBtn) replayBtn.disabled = replayFrames.length === 0;
+    }
+    function recordFrame() {
+        replayFrames.push({
+            posZ:       state.posZ,
+            rootY:      state.rootY,
+            flipAngle:  state.flipAngle,
+            spinAngle:  state.spinAngle,
+            tuckAmount: state.tuckAmount,
+            armDropL:   state.armDropL,
+            armDropR:   state.armDropR,
+            armSnap:    state.armSnap,
+            layArmT:    state.layArmT,
+            armRaise:   state.armRaise,
+            grounded:   state.grounded,
+            crashed:    state.crashed,
+            readyYaw:   0,
+        });
+    }
+    if (replayBtn) {
+        replayBtn.disabled = true;
+        const replaySpeedWrap = document.getElementById('replaySpeedWrap');
+        const replaySpeedEl   = document.getElementById('replaySpeed');
+        const replaySpeedVal  = document.getElementById('replaySpeedVal');
+        if (replaySpeedEl) {
+            replaySpeedEl.addEventListener('input', () => {
+                if (replaySpeedVal) replaySpeedVal.textContent = parseFloat(replaySpeedEl.value).toFixed(2).replace(/\.?0+$/, '') + '×';
+            });
+        }
+        replayBtn.addEventListener('click', () => {
+            if (!replayFrames.length) return;
+            replayActive = true;
+            replayIndex  = 0;
+            replayAccum  = 0;
+            paused       = false;
+            if (replaySpeedWrap) replaySpeedWrap.classList.add('visible');
+        });
+    }
+    let replayAccum  = 0;    // fractional frame accumulator for speed control
     let leftArmHoldTime = 0;    // seconds right arrow held alone on inrun (left arm up)
     let rightArmHoldTime= 0;    // seconds left arrow held alone on inrun (right arm up)
     const ARM_HOLD_REQ  = 0.5;  // seconds arm must be up before jump
@@ -827,6 +990,24 @@ window.addEventListener('DOMContentLoaded', () => {
     window.addEventListener('keydown', e => {
         if (e.code === 'KeyP') { paused = !paused; return; }
         if (e.code === 'KeyR') {
+            // In competition mode, only allow reset once stopped or crashed at the bottom
+            if (_compParam && !state.stopped && !state.crashed) return;
+            // Ultra mode: navigate to next world or restart from beginning
+            if (_compParam === 'ultra') {
+                if (compLandingResult && compLandingResult.matched) {
+                    const nextJump = _ultraJump + 1;
+                    if (nextJump < ULTRA_POOL.length) {
+                        location.href = '?world=' + ULTRA_WORLDS[nextJump] + '&comp=ultra&ultrajump=' + nextJump;
+                        return;
+                    }
+                    // Last jump already completed — restart ultra from beginning
+                    location.href = '?world=' + ULTRA_WORLDS[0] + '&comp=ultra&ultrajump=0';
+                    return;
+                }
+                // Failed or crashed — restart ultra from beginning
+                location.href = '?world=' + ULTRA_WORLDS[0] + '&comp=ultra&ultrajump=0';
+                return;
+            }
             // Reset to top of slope
             state.L_flip      = I0 * TARGET_OMEGA_UNTUCKED;
             state.flipAngle   = 0.0;
@@ -849,6 +1030,8 @@ window.addEventListener('DOMContentLoaded', () => {
             state.lastFlipInt     = 0;
             state.spinAtFlipStart = 0.0;
             state.spinBoundaries  = [];
+            state.perFlipTucked   = [];
+            state.currentFlipTucked = false;
             state.trickName   = '';
             state.execution   = 0;
             state.armSnap     = 0.0;
@@ -862,6 +1045,10 @@ window.addEventListener('DOMContentLoaded', () => {
             flipPower = 0; pmFill.style.width = '0%';
             billboard.isVisible = false;
             compLandingResult = null;
+            // Show the queued trick now that skier is back at the top
+            if (_compParam && compPendingTrick) {
+                compHUDEl.textContent = compHudLabel(compPendingTrick);
+            }
             readyState = true; readyTurnT = 0.0;
             return;
         }
@@ -1037,38 +1224,62 @@ window.addEventListener('DOMContentLoaded', () => {
     const COMP_POOLS = {
         // Singles — only one flip, no ordering issue
         single_easy:   ['0','1'],
-        single_medium: ['2'],
-        single_hard:   ['3'],
+        single_medium: ['1','2'],
+        single_hard:   ['0','1','2','3'],
         // Doubles — lays (0s) always come first
-        double_easy:   ['0,0','0,1'],
-        double_medium: ['1,1','0,2','1,2','2,1'],
-        double_hard:   ['2,2','1,3','3,1','2,3','3,2','3,3'],
+        double_easy:   ['0,1','1,1'],
+        double_medium: ['1,2','2,1'],
+        double_hard:   ['1,2','2,1','2,2','2,3'],
         // Triples — lays always precede spins
-        triple_easy:   ['0,0,0','0,0,1'],
-        triple_medium: ['0,1,1','1,1,1'],
-        triple_hard:   ['2,1,1','1,2,1','1,1,2','2,2,1','2,2,2'],
+        triple_easy:   ['0,0,1','0,1,1','1,1,1'],
+        triple_medium: ['1,1,1','1,2,1','2,1,1','1,1,2'],
+        triple_hard:   ['1,2,1','2,1,2','1,3,1','2,2,2','1,3,2'],
         // Quads — lays always precede spins
-        quad_easy:     ['0,0,0,0','0,0,0,1','0,0,1,1'],
-        quad_medium:   ['0,1,1,1','1,1,1,1'],
-        quad_hard:     ['0,0,2,2','2,1,1,1','2,2,1,1','0,2,2,2','2,2,2,2'],
+        quad_easy:     ['0,0,1,1','0,1,1,1','1,1,1,1'],
+        quad_medium:   ['1,1,1,1','0,1,2,1','1,2,1,1','2,1,1,2'],
+        quad_hard:     ['1,2,1,1','2,2,1,1','2,2,2,2','2,1,3,1','2,2,3,2'],
+        // Hardest — maximum difficulty per jump type
+        single_hardest: ['t,t','t,1'],
+        double_hardest: ['3,3','1,t,t'],
+        triple_hardest: ['2,2,3','3,2,3'],
+        quad_hardest:   ['2,3,2,3','2,t,1,2'],
+        // Quint — five flips
+        quint_easy:     ['0,0,0,1,1','0,0,1,1,1'],
+        quint_medium:   ['1,1,1,1,1','2,1,1,1,1','2,2,1,1,1'],
+        quint_hard:     ['2,1,2,1,1','1,2,2,2,1'],
+        quint_hardest:  ['2,2,2,2,2','2,3,3,2,2'],
     };
+    // Ultra — one trick per jump type, each on its matching world
+    const ULTRA_POOL   = ['3','2,3','2,2,2','1,3,2','2,2,3,2'];
+    const ULTRA_WORLDS = ULTRA_POOL.map(k => ['single','double','triple','quad'][k.split(',').length - 1]);
     const TWIST_NAMES_COMP = ['Lay', 'Full', 'Double Full', 'Triple Full'];
     function trickKeyToName(key) {
-        return key.split(',').map(n => TWIST_NAMES_COMP[+n]).join('-');
+        return key.split(',').map(n => n === 't' ? 'Tuck' : TWIST_NAMES_COMP[+n]).join('-');
     }
-    // Build ascending-DD progression list for competition mode.
-    // easy:   easy → medium → hard pools (starts with simplest tricks)
-    // medium: medium → hard pools
-    // hard:   hard pool only, sorted ascending by DD (starts with lowest hard DD)
+    // Match a landed trick against an assigned trick key.
+    // 't' tokens require 0 twists AND the flip was tucked.
+    // '0'-'3' tokens require matching twist count; for '0' in non-hardest pools
+    //   tuck is not required (preserves existing easy/medium/hard behaviour).
+    function matchTrick(perFlipTwists, tuckedPerFlip, key) {
+        const parts = key.split(',');
+        if (parts.length !== perFlipTwists.length) return false;
+        return parts.every((p, i) => {
+            if (p === 't') return perFlipTwists[i] === 0 && tuckedPerFlip[i];
+            return perFlipTwists[i] === parseInt(p);
+        });
+    }
+    function compHudLabel(trick) {
+        if (_compParam === 'ultra') return `☠ Jump ${_ultraJump + 1}/${ULTRA_POOL.length}: ${trickKeyToName(trick)}`;
+        const total = _compProgression.length;
+        const current = Math.min(compTricksLanded, total - 1) + 1;
+        return `🏆 Trick ${current}/${total}: ${trickKeyToName(trick)}`;
+    }
+    // Progression uses the pool for the selected difficulty exactly as defined — no resorting.
+    // easy uses only the easy pool, medium only medium, hard only hard.
+    // Ultra returns only the single trick for the current ultrajump index.
     function buildCompProgression(worldParam, difficulty) {
-        const easyPool = COMP_POOLS[`${worldParam}_easy`]   || [];
-        const medPool  = COMP_POOLS[`${worldParam}_medium`] || [];
-        const hardPool = COMP_POOLS[`${worldParam}_hard`]   || [];
-        let tricks;
-        if (difficulty === 'easy')        tricks = [...easyPool, ...medPool, ...hardPool];
-        else if (difficulty === 'hard')   tricks = [...hardPool];
-        else                              tricks = [...medPool, ...hardPool]; // medium
-        return tricks.sort((a, b) => (DD_TABLE[a] || 0) - (DD_TABLE[b] || 0));
+        if (difficulty === 'ultra') return [ULTRA_POOL[_ultraJump]];
+        return [...(COMP_POOLS[`${worldParam}_${difficulty}`] || [])];
     }
     const _compProgression = _compParam ? buildCompProgression(_worldParam, _compParam) : [];
     let compTricksLanded = 0;
@@ -1076,11 +1287,16 @@ window.addEventListener('DOMContentLoaded', () => {
         if (!_compProgression.length) return null;
         return _compProgression[Math.min(compTricksLanded, _compProgression.length - 1)];
     }
-    let assignedTrick = _compProgression.length ? pickNextCompTrick() : null;
+    let assignedTrick    = null; // revealed at takeoff
+    let compPendingTrick = _compProgression.length ? pickNextCompTrick() : null; // queued until next jump
     let compLandingResult = null; // { matched: bool, neededKey: string|null }
+    let compJustBeaten    = false; // true after final trick landed, until stop
     const compHUDEl = document.getElementById('compHUD');
-    if (assignedTrick) {
-        compHUDEl.textContent = '🏆 Land: ' + trickKeyToName(assignedTrick);
+    if (_compParam) {
+        const _initHudTrick = _compParam === 'ultra'
+            ? `☠ Jump ${_ultraJump + 1}/${ULTRA_POOL.length}: ${trickKeyToName(ULTRA_POOL[_ultraJump])}`
+            : (compPendingTrick ? `🏆 Trick 1/${_compProgression.length}: ${trickKeyToName(compPendingTrick)}` : '🏆');
+        compHUDEl.textContent = _initHudTrick;
         compHUDEl.style.display = 'block';
     }
     function calcDD(perFlipTwists) {
@@ -1197,6 +1413,39 @@ window.addEventListener('DOMContentLoaded', () => {
         const dt = engine.getDeltaTime() / 1000; // seconds
         if (paused || dt <= 0 || dt > 0.1) return; // skip when paused / stalled
 
+        // ── Replay playback ────────────────────────────────────────────────
+        if (replayActive) {
+            const replaySpeedEl = document.getElementById('replaySpeed');
+            const speed = replaySpeedEl ? parseFloat(replaySpeedEl.value) : 1.0;
+            replayAccum += speed;
+            while (replayAccum >= 1) {
+                replayAccum -= 1;
+                replayIndex++;
+                if (replayIndex >= replayFrames.length) {
+                    replayActive = false;
+                    const rsw = document.getElementById('replaySpeedWrap');
+                    if (rsw) rsw.classList.remove('visible');
+                    break;
+                }
+            }
+            if (!replayActive) return;
+            const f = replayFrames[Math.min(replayIndex, replayFrames.length - 1)];
+            character.root.position.y = f.rootY;
+            character.root.position.z = f.posZ;
+            applyPose(character.meshes, f.tuckAmount, f.armDropL, f.armDropR, f.armSnap, f.layArmT, f.armRaise, f.grounded);
+            const qFaceR = BABYLON.Quaternion.RotationAxis(BABYLON.Axis.Y, Math.PI);
+            if (f.grounded) {
+                character.root.rotationQuaternion = qFaceR;
+            } else {
+                const qFlipR = BABYLON.Quaternion.RotationAxis(BABYLON.Axis.X, f.flipAngle);
+                const qSpinR = BABYLON.Quaternion.RotationAxis(BABYLON.Axis.Y, f.spinAngle);
+                character.root.rotationQuaternion = qFaceR.multiply(qFlipR).multiply(qSpinR);
+            }
+            camera.target.y = f.rootY;
+            camera.target.z = f.posZ;
+            return;
+        }
+
         // ── Smooth tuck transition ─────────────────────────────────────────
         if (!state.crashed) {
         const diff = state.tuckTarget - state.tuckAmount;
@@ -1232,6 +1481,7 @@ window.addEventListener('DOMContentLoaded', () => {
                     if (readyTurnT >= 1.0) {
                         readyState  = false;
                         readyTurnT  = 1.0;
+                        startRecording();
                     }
                 }
                 if (readyTurnT < 1.0) {
@@ -1241,10 +1491,11 @@ window.addEventListener('DOMContentLoaded', () => {
             }
             const prevZ = state.posZ;
             state.vz   += terrainAccelZ(state.posZ) * dt;
-            if (state.posZ > OUTRUN_Z && !IS_D2T && state.vz < 0) {
+            if (state.posZ > OUTRUN_Z && state.vz < 0) {
                 state.vz = 0;
                 if (!state.stopped && !state.crashed && state.trickName) {
                     state.stopped = true;
+                    stopRecording();
                     const totalFlips  = state.perFlipTwists.length;
                     const totalTwists = state.perFlipTwists.reduce((a, b) => a + b, 0);
                     const dd    = calcDD(state.perFlipTwists);
@@ -1252,51 +1503,47 @@ window.addEventListener('DOMContentLoaded', () => {
                     const isNew = score > highScore;
                     if (isNew) { highScore = score; localStorage.setItem(HS_KEY, score); }
                     bbName.text  = state.trickName;
-                    bbSub.text   = `${totalFlips} flip${totalFlips !== 1 ? 's' : ''} · ${totalTwists} twist${totalTwists !== 1 ? 's' : ''}  ·  DD ${dd}  ×  exec ${state.execution}`;
-                    bbScore.text = isNew ? `★ NEW BEST  ${score}` : `${score}  (best: ${highScore})`;
+                    bbSub.text   = _compParam ? '' : `${totalFlips} flip${totalFlips !== 1 ? 's' : ''} · ${totalTwists} twist${totalTwists !== 1 ? 's' : ''}  ·  DD ${dd}  ×  exec ${state.execution}`;
+                    bbScore.text = _compParam ? '' : (isNew ? `★ NEW BEST  ${score}` : `${score}  (best: ${highScore})`);
+                    bbSub.isVisible   = !_compParam;
+                    bbScore.isVisible = !_compParam;
                     if (compLandingResult !== null) {
                         bbComp.text      = compLandingResult.matched ? '✓ Trick Complete!' : `✗ Needed: ${trickKeyToName(compLandingResult.neededKey)}`;
                         bbComp.color     = compLandingResult.matched ? '#00ff88' : '#ff6644';
                         bbComp.isVisible = true;
                     }
                     billboard.isVisible = true;
-                }
-            }
-            if (state.posZ > J2_OUTRUN_Z && state.vz < 0) {
-                state.vz = 0;
-                if (!state.stopped && !state.crashed && state.trickName) {
-                    state.stopped = true;
-                    const totalFlips  = state.perFlipTwists.length;
-                    const totalTwists = state.perFlipTwists.reduce((a, b) => a + b, 0);
-                    const dd    = calcDD(state.perFlipTwists);
-                    const score = Math.round(dd * state.execution * 10) / 10;
-                    const isNew = score > highScore;
-                    if (isNew) { highScore = score; localStorage.setItem(HS_KEY, score); }
-                    bbName.text  = state.trickName;
-                    bbSub.text   = `${totalFlips} flip${totalFlips !== 1 ? 's' : ''} · ${totalTwists} twist${totalTwists !== 1 ? 's' : ''}  ·  DD ${dd}  ×  exec ${state.execution}`;
-                    bbScore.text = isNew ? `★ NEW BEST  ${score}` : `${score}  (best: ${highScore})`;
-                    if (compLandingResult !== null) {
-                        bbComp.text      = compLandingResult.matched ? '✓ Trick Complete!' : `✗ Needed: ${trickKeyToName(compLandingResult.neededKey)}`;
-                        bbComp.color     = compLandingResult.matched ? '#00ff88' : '#ff6644';
-                        bbComp.isVisible = true;
+                    if (_compParam && !compJustBeaten) {
+                        const _msg = (compLandingResult && !compLandingResult.matched) ? 'Press R to restart...' : 'Press R to continue...';
+                        compHUDEl.textContent = (_compParam === 'ultra' ? '☠ ' : '🏆 ') + _msg;
                     }
-                    billboard.isVisible = true;
+                    if (compJustBeaten) {
+                        compJustBeaten = false;
+                        const isLastUltraJump = _compParam === 'ultra' && _ultraJump === ULTRA_POOL.length - 1;
+                        if (_compParam !== 'ultra' || isLastUltraJump) {
+                            if (typeof window.showCongratsScreen === 'function') window.showCongratsScreen(_compParam === 'ultra' ? 'quad' : _worldParam, _compParam);
+                        } else {
+                            compHUDEl.textContent = '☠ Press R for next jump →';
+                        }
+                    }
                 }
             }
+
             state.posZ += state.vz * dt;
             // Only launch when actually crossing the kicker tip (not after landing past it)
             const crossingJ1 = prevZ <= KICKER_END_Z && state.posZ > KICKER_END_Z;
-            const crossingJ2 = IS_D2T && prevZ <= J2_KICKER_END_Z && state.posZ > J2_KICKER_END_Z;
-            if (crossingJ1 || crossingJ2) {
+            if (crossingJ1) {
                 state.vy       = state.vz * Math.sin(KICKER_ANGLE);
                 state.vz       = state.vz * Math.cos(KICKER_ANGLE);
-                state.rootY    = terrainRootY(crossingJ1 ? KICKER_END_Z : J2_KICKER_END_Z);
+                state.rootY    = terrainRootY(KICKER_END_Z) + 0.10;
                 state.grounded = false;
                 // Reset per-flip twist tracking
                 state.perFlipTwists   = [];
                 state.lastFlipInt     = 0;
                 state.spinAtFlipStart = state.spinAngle;
                 state.spinBoundaries  = [];
+                state.perFlipTucked   = [];
+                state.currentFlipTucked = false;
                 state.airTime         = 0.0;
                 state.armSnap         = 0.0;
                 state.layArmT         = 0.0;
@@ -1308,6 +1555,12 @@ window.addEventListener('DOMContentLoaded', () => {
                 bbComp.isVisible      = false;
                 compLandingResult     = null;
                 state.stopped         = false;
+                // Reveal the pending trick now that skier is airborne
+                if (compPendingTrick !== null) {
+                    assignedTrick    = compPendingTrick;
+                    compPendingTrick = null;
+                    compHUDEl.textContent = compHudLabel(assignedTrick);
+                }
                 // Apply flip power: 3rd dash (75%) = world-normal flip speed
                 if (crossingJ1) {
                     state.L_flip = I0 * TARGET_OMEGA_UNTUCKED * (Math.max(0.05, flipPower) / 0.75);
@@ -1315,12 +1568,7 @@ window.addEventListener('DOMContentLoaded', () => {
                     flipPower = 0;
                     pmFill.style.width = '0%';
                 }
-                if (crossingJ2) {
-                    // Second jump: boost flip and spin to triple speed
-                    state.L_flip   = I0 * 4.5 * 1.3;
-                    state.spinMult = 1.3;
-                }
-                // Arm up at takeoff → 2 fast twists toward that side (only if held long enough)
+                    // Arm up at takeoff → 2 fast twists toward that side (only if held long enough)
                 if (rightDown && !leftDown && leftArmHoldTime >= ARM_HOLD_REQ) {
                     state.spinTarget = state.spinAngle + Math.PI * 4;
                     armSwapPhase = true;
@@ -1333,7 +1581,7 @@ window.addEventListener('DOMContentLoaded', () => {
                     autoSpinActive = false;
                 }
             } else {
-                state.rootY = terrainRootY(state.posZ);
+                state.rootY = terrainRootY(state.posZ) + 0.10;
                 // When upright (readyState, tilt=0) the full FOOT_OFFSET goes straight
                 // down so the skis sit on the surface. As tilt increases, compensate so
                 // the foot doesn't sink: rootY lifts by FOOT_OFFSET*(1-cos(tilt)).
@@ -1360,9 +1608,10 @@ window.addEventListener('DOMContentLoaded', () => {
                 const spinNorm = ((state.spinAngle % TWO_PI) + TWO_PI) % TWO_PI;
                 const SPIN_TOL = Math.PI / 4; // 45° — must be facing forward
                 const facingForward = spinNorm < SPIN_TOL || spinNorm > TWO_PI - SPIN_TOL;
-                const goodLanding = (norm < LAND_TOL || norm > TWO_PI - LAND_TOL) && facingForward;
+                const autoLand = localStorage.getItem('setting_autoland') === '1';
+                const goodLanding = autoLand || ((norm < LAND_TOL || norm > TWO_PI - LAND_TOL) && facingForward);
 
-                state.rootY      = surY;
+                state.rootY      = surY + 0.10;
                 state.vy         = 0;
                 state.grounded   = true;
                 const capturedSpin = state.spinAngle;
@@ -1384,6 +1633,10 @@ window.addEventListener('DOMContentLoaded', () => {
                     const completedFlips = Math.round(Math.abs(state.flipAngle) / (Math.PI * 2));
                     const spinPoints = [state.spinAtFlipStart, ...state.spinBoundaries];
                     if (spinPoints.length - 1 < completedFlips) spinPoints.push(capturedSpin);
+                    // Capture tuck status for the last (current) flip
+                    const lastFlipTucked = state.currentFlipTucked || state.tuckAmount > 0.3;
+                    const tuckedPerFlip = [...state.perFlipTucked];
+                    if (tuckedPerFlip.length < completedFlips) tuckedPerFlip.push(lastFlipTucked);
                     state.perFlipTwists = [];
                     for (let i = 0; i < spinPoints.length - 1; i++) {
                         state.perFlipTwists.push(Math.round(Math.abs(spinPoints[i + 1] - spinPoints[i]) / (Math.PI * 2)));
@@ -1391,18 +1644,42 @@ window.addEventListener('DOMContentLoaded', () => {
                     // Build trick name
                     const TWIST_NAMES = ['Lay', 'Full', 'Double Full', 'Triple Full'];
                     state.trickName = state.perFlipTwists
-                        .map(t => TWIST_NAMES[Math.min(t, 3)])
+                        .map((t, i) => t === 0 && tuckedPerFlip[i] ? 'Tuck' : TWIST_NAMES[Math.min(t, 3)])
                         .join('-');
                     // ── Competition progression ───────────────────────────────
                     if (assignedTrick !== null) {
-                        const _matched = state.perFlipTwists.join(',') === assignedTrick;
+                        const _matched = matchTrick(state.perFlipTwists, tuckedPerFlip, assignedTrick);
                         compLandingResult = { matched: _matched, neededKey: _matched ? null : assignedTrick };
+                        assignedTrick = null; // clear until next takeoff
                         if (_matched && _compProgression.length) {
                             compTricksLanded++;
-                            assignedTrick = pickNextCompTrick();
-                            if (assignedTrick) {
-                                compHUDEl.textContent = '🏆 Land: ' + trickKeyToName(assignedTrick);
+                            // Check if this was the final trick in the progression
+                            if (compTricksLanded >= _compProgression.length) {
+                                // For ultra: only save trophy on the last jump
+                                const isLastUltraJump = _compParam === 'ultra' && _ultraJump === ULTRA_POOL.length - 1;
+                                if (_compParam !== 'ultra' || isLastUltraJump) {
+                                    const beatenKey = _compParam === 'ultra' ? 'comp_beaten_quad_ultra' : `comp_beaten_${_worldParam}_${_compParam}`;
+                                    const wasNew = localStorage.getItem(beatenKey) !== '1';
+                                    localStorage.setItem(beatenKey, '1');
+                                    // Check if this completes the entire collection
+                                    if (wasNew) {
+                                        const allBase = ['single','double','triple','quad'].every(w =>
+                                            ['easy','medium','hard','hardest'].every(d => localStorage.getItem(`comp_beaten_${w}_${d}`) === '1')
+                                        ) && localStorage.getItem('comp_beaten_quad_ultra') === '1';
+                                        const allQuint = ['easy','medium','hard','hardest'].every(d => localStorage.getItem(`comp_beaten_quint_${d}`) === '1');
+                                        if (allBase && allQuint) window._justCompletedAll = true;
+                                    }
+                                }
+                                compJustBeaten = true;
                             }
+                            compPendingTrick = pickNextCompTrick();
+                        } else {
+                            // Missed trick — reset to start of progression
+                            compTricksLanded = 0;
+                            compPendingTrick = pickNextCompTrick();
+                        }
+                        if (!compJustBeaten) {
+                            // HUD updated to 'Press R' when state.stopped fires at outrun
                         }
                     }
                     // ── Execution score ──────────────────────────────────────
@@ -1416,6 +1693,13 @@ window.addEventListener('DOMContentLoaded', () => {
                     state.crashed = true;
                     state.flipDir = 1;
                     state.vz      = 0; // stop sliding on crash
+                    // Crash — reset comp progression, queue new trick for next jump
+                    if (assignedTrick !== null) {
+                        assignedTrick    = null;
+                        compTricksLanded = 0;
+                        compPendingTrick = pickNextCompTrick();
+                        compHUDEl.textContent = '🏆 Press R to restart...';
+                    }
                     // Snap toward nearest lying-flat angle:
                     // norm < π  → back leading → land on back  (π)
                     // norm >= π → front leading → land on stomach (3π/2 → face down)
@@ -1469,9 +1753,12 @@ window.addEventListener('DOMContentLoaded', () => {
 
         // ── Per-flip twist boundary detector (after spin update) ────────────────
         if (!state.grounded) {
+            if (state.tuckAmount > 0.3) state.currentFlipTucked = true;
             const currentFlipInt = Math.floor(Math.abs(state.flipAngle) / (Math.PI * 2));
             if (currentFlipInt > state.lastFlipInt) {
                 state.spinBoundaries.push(state.spinAngle);
+                state.perFlipTucked.push(state.currentFlipTucked);
+                state.currentFlipTucked = false;
                 state.lastFlipInt = currentFlipInt;
             }
         }
@@ -1537,10 +1824,6 @@ window.addEventListener('DOMContentLoaded', () => {
             else if (state.posZ >= FLAT_Z && state.posZ < KICKER_Z)          tilt = 0;
             else if (state.posZ >= KICKER_Z && state.posZ <= KICKER_END_Z)   tilt = KICKER_ANGLE;
             else if (state.posZ > KICKER_END_Z && state.posZ <= OUTRUN_Z) tilt = -LANDING_ANGLE;
-            else if (IS_D2T && state.posZ > OUTRUN_Z && state.posZ < J2_FLAT_Z)         tilt = -SLOPE_ANGLE;
-            else if (IS_D2T && state.posZ >= J2_FLAT_Z && state.posZ < J2_KICKER_Z)    tilt = 0;
-            else if (IS_D2T && state.posZ >= J2_KICKER_Z && state.posZ <= J2_KICKER_END_Z) tilt = KICKER_ANGLE;
-            else if (IS_D2T && state.posZ > J2_KICKER_END_Z && state.posZ <= J2_OUTRUN_Z)  tilt = -LANDING_ANGLE;
             else if (state.posZ > OUTRUN_Z)                               tilt = 0; // flat outrun
             // During ready-state turn, blend tilt from 0 (upright) to full slope tilt
             if (readyState) tilt = tilt * readyTurnT;
@@ -1565,19 +1848,12 @@ window.addEventListener('DOMContentLoaded', () => {
             camera.beta += (betaTarget - camera.beta) * Math.min(1, 5 * dt);
         }
 
+        // ── Record frame ───────────────────────────────────────────────────
+        if (recordingActive) recordFrame();
+
         // ── HUD ───────────────────────────────────────────────────────────
         const rotations = state.flipAngle / (2 * Math.PI);
-        hud.text = [
-            '─── FLIP ──────────────────────────',
-            `L_flip    : ${state.L_flip.toFixed(3)}  (conserved)`,
-            `I_flip    : ${I.toFixed(3)}`,
-            `ω_flip    : ${omega.toFixed(3)} rad/s`,
-            `Rotations : ${rotations.toFixed(2)}`,
-            `Tuck      : ${(state.tuckAmount * 100).toFixed(0)}%`,
-            '─── SPIN ──────────────────────────',
-            `Spin angle : ${(state.spinAngle  / (Math.PI * 2)).toFixed(2)} rev`,
-            `Spin target: ${(state.spinTarget / (Math.PI * 2)).toFixed(2)} rev`,
-        ].join('\n');
+        hud.text = '';
         hint.text = readyState && readyTurnT === 0.0
             ? '↑: Start run\ndrag: orbit'
             : 'SPACE: tuck\n← then →: left twist\n→ then ←: right twist\n↓: power wrap\ndrag: orbit';

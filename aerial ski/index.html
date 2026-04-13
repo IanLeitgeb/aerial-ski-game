@@ -31,6 +31,92 @@
         #compBeginBtn { background: #1a4a2a; color: #88ffaa; border: 1px solid #44aa66; padding: 9px 28px; font-size: 15px; font-weight: bold; border-radius: 6px; cursor: pointer; margin-right: 12px; }
         #compBeginBtn:hover { background: #1e5a32; }
         #compCancelBtn { background: none; border: none; color: #778899; font-size: 13px; cursor: pointer; text-decoration: underline; }
+        .ultraSection { margin-top: 6px; border-top: 1px solid #2a1a1a; padding-top: 14px; display: flex; justify-content: flex-end; }
+        .ultraSection label { background: #1a0808; border: 1px solid #662222; border-radius: 5px; padding: 6px 16px; cursor: pointer; font-size: 13px; color: #cc4422; font-weight: bold; display: inline-block; transition: background 0.1s; letter-spacing: 0.02em; }
+        .ultraSection label:hover { background: #2a1010; }
+        #cd_ultra:checked ~ .ultraSection label { background: #3a0a0a; border-color: #882222; color: #ff6644; }
+        #trophyBtn { position: absolute; top: 10px; left: 10px; z-index: 10; background: #1a2a1a; color: #ffd700; border: 1px solid #665500; padding: 5px 11px; cursor: pointer; font-size: 17px; border-radius: 6px; line-height: 1; }
+        #trophyBtn:hover { background: #2a3a1a; }
+        #replayBtn { position: absolute; top: 10px; left: 62px; z-index: 10; background: #1a2030; color: #88ccff; border: 1px solid #335566; padding: 5px 11px; cursor: pointer; font-size: 17px; border-radius: 6px; line-height: 1; }
+        #replayBtn:hover:not(:disabled) { background: #243040; }
+        #replayBtn:disabled { opacity: 0.35; cursor: default; }
+        #customBtn { position: absolute; top: 10px; left: 114px; z-index: 10; background: #1a1a2a; color: #ffd700; border: 1px solid #665500; padding: 5px 11px; cursor: pointer; font-size: 17px; border-radius: 6px; line-height: 1; display: none; }
+        #customBtn:hover { background: #2a2a3a; }
+        #settingsBtn { position: absolute; top: 10px; left: 166px; z-index: 10; background: #1a2030; color: #b8d8ff; border: 1px solid #335566; padding: 5px 11px; cursor: pointer; font-size: 14px; border-radius: 6px; line-height: 1; }
+        #settingsBtn:hover { background: #243040; }
+        #settingsModal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.78); z-index: 200; align-items: center; justify-content: center; }
+        #settingsModal.open { display: flex; }
+        #settingsModalBox { background: #0f1e2e; border: 1px solid #445566; border-radius: 12px; padding: 28px 36px; min-width: 300px; color: #b8d8ff; font-family: sans-serif; }
+        #settingsModalBox h2 { font-size: 20px; color: #fff; margin-bottom: 22px; }
+        .settingRow { display: flex; align-items: center; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid #1a2a3a; gap: 24px; }
+        .settingRow:last-of-type { border-bottom: none; }
+        .settingLabel { font-size: 14px; color: #b8d8ff; }
+        .settingDesc { font-size: 12px; color: #556677; margin-top: 3px; }
+        .toggleBtn { background: #1a2a3a; border: 1px solid #445566; color: #556677; font-size: 13px; font-weight: bold; border-radius: 20px; padding: 5px 16px; cursor: pointer; min-width: 60px; text-align: center; transition: background 0.1s, color 0.1s; }
+        .toggleBtn.on { background: #1a4a2a; border-color: #44aa66; color: #88ffaa; }
+        #settingsCloseBtn { display: block; margin: 22px auto 0; background: none; border: none; color: #778899; font-size: 13px; cursor: pointer; text-decoration: underline; }
+        #customModal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.78); z-index: 200; align-items: center; justify-content: center; }
+        #customModal.open { display: flex; }
+        #customModalBox { background: #0f1e2e; border: 1px solid #665500; border-radius: 12px; padding: 28px 36px; min-width: 340px; color: #b8d8ff; font-family: sans-serif; }
+        #customModalBox h2 { font-size: 20px; color: #ffd700; margin-bottom: 22px; }
+        .customSetting { margin-bottom: 18px; }
+        .customSetting label { display: flex; justify-content: space-between; font-size: 13px; color: #778899; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 8px; }
+        .customSetting label span { color: #b8d8ff; font-weight: bold; }
+        .customSetting input[type=range] { width: 100%; accent-color: #ffd700; cursor: pointer; }
+        #customGoBtn { background: #1a3a2a; color: #88ffaa; border: 1px solid #44aa66; padding: 9px 28px; font-size: 15px; font-weight: bold; border-radius: 6px; cursor: pointer; }
+        #customGoBtn:hover { background: #1e5a32; }
+        #customCancelBtn { background: none; border: none; color: #778899; font-size: 13px; cursor: pointer; text-decoration: underline; }
+        #replaySpeedWrap { display: none; position: absolute; left: 18px; top: 50%; transform: translateY(-50%); z-index: 10; flex-direction: column; align-items: center; gap: 10px; background: rgba(0,0,0,0.5); border: 1px solid #335566; border-radius: 10px; padding: 14px 10px; }
+        #replaySpeedWrap.visible { display: flex; }
+        #replaySpeedLabel { font-family: sans-serif; font-size: 12px; color: #88ccff; letter-spacing: 0.06em; text-transform: uppercase; writing-mode: vertical-rl; text-orientation: mixed; transform: rotate(180deg); }
+        #replaySpeedVal { font-family: monospace; font-size: 13px; color: #fff; }
+        #replaySpeed { writing-mode: vertical-lr; direction: rtl; height: 160px; cursor: pointer; accent-color: #88ccff; }
+        #trophyPanel { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.78); z-index: 200; align-items: center; justify-content: center; }
+        #trophyPanel.open { display: flex; }
+        #trophyPanelBox { background: #0f1e2e; border: 1px solid #665500; border-radius: 12px; padding: 28px 36px; min-width: 360px; max-width: 480px; max-height: 80vh; overflow-y: auto; color: #b8d8ff; font-family: sans-serif; }
+        #trophyPanelBox h2 { font-size: 20px; color: #ffd700; margin-bottom: 20px; text-align: center; }
+        .trophyGrid { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 12px; margin-bottom: 10px; }
+        .trophyGroupHeader { grid-column: 1 / -1; font-size: 13px; font-weight: bold; padding: 10px 4px 5px; border-bottom: 1px solid #223344; margin-top: 4px; display: flex; align-items: center; gap: 7px; }
+        .trophyGroupHeader:first-child { margin-top: 0; }
+        .trophyCell { font-size: 14px; padding: 5px 4px; display: flex; align-items: center; gap: 6px; border-bottom: 1px solid #1a2a3a; }
+        .trophyCell .icon { font-size: 18px; width: 22px; text-align: center; }
+        .trophyCancelBtn { background: none; border: none; color: #778899; font-size: 13px; cursor: pointer; text-decoration: underline; display: block; margin: 18px auto 0; }
+        #congratsOverlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.82); z-index: 300; align-items: center; justify-content: center; }
+        #congratsOverlay.open { display: flex; }
+        #congratsBox { background: #0f1e0a; border: 2px solid #ffd700; border-radius: 16px; padding: 40px 52px; text-align: center; font-family: sans-serif; color: #fff; max-width: 420px; box-shadow: 0 0 60px rgba(255,215,0,0.25); }
+        #congratsBox .bigTrophy { font-size: 72px; display: block; margin-bottom: 16px; animation: trophyPop 0.5s cubic-bezier(0.34,1.56,0.64,1) both; }
+        @keyframes trophyPop { from { transform: scale(0.3); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+        #congratsBox h2 { font-size: 28px; color: #ffd700; margin-bottom: 10px; }
+        #congratsBox p { font-size: 16px; color: #aaddcc; margin-bottom: 28px; line-height: 1.5; }
+        #claimTrophyBtn { background: linear-gradient(135deg, #b8860b, #ffd700, #b8860b); color: #0a0a00; font-size: 17px; font-weight: bold; border: none; border-radius: 8px; padding: 13px 36px; cursor: pointer; letter-spacing: 0.04em; box-shadow: 0 2px 16px rgba(255,215,0,0.4); transition: transform 0.1s; }
+        #claimTrophyBtn:hover { transform: scale(1.04); }
+        #grandUnlockOverlay { display: none; position: fixed; inset: 0; z-index: 500; align-items: center; justify-content: center; overflow: hidden; }
+        #grandUnlockOverlay.open { display: flex; }
+        #grandUnlockBg { position: absolute; inset: 0; background: radial-gradient(ellipse at center, rgba(255,230,50,0.18) 0%, rgba(0,0,0,0.96) 70%); animation: grandPulse 2s ease-in-out infinite alternate; }
+        @keyframes grandPulse { from { opacity: 0.7; } to { opacity: 1; } }
+        .grandStar { position: absolute; animation: starFloat linear infinite; opacity: 0; pointer-events: none; }
+        @keyframes starFloat { 0% { transform: translateY(0) rotate(0deg) scale(0.5); opacity: 0; } 15% { opacity: 1; } 85% { opacity: 1; } 100% { transform: translateY(-100vh) rotate(360deg) scale(1.2); opacity: 0; } }
+        #grandUnlockBox { position: relative; background: linear-gradient(160deg, #0a0e1a, #101a0a); border: 2px solid #ffd700; border-radius: 20px; padding: 48px 56px; text-align: center; font-family: sans-serif; color: #fff; max-width: 480px; box-shadow: 0 0 80px rgba(255,215,0,0.5), 0 0 160px rgba(255,215,0,0.2); animation: boxAppear 0.7s cubic-bezier(0.34,1.56,0.64,1) both; }
+        @keyframes boxAppear { from { transform: scale(0.4); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+        #grandUnlockBox .grandIcon { font-size: 80px; display: block; margin-bottom: 18px; animation: trophyPop 0.6s 0.3s cubic-bezier(0.34,1.56,0.64,1) both; }
+        #grandUnlockBox h2 { font-size: 30px; color: #ffd700; margin-bottom: 12px; text-shadow: 0 0 20px rgba(255,215,0,0.8); }
+        #grandUnlockBox .grandSub { font-size: 16px; color: #aaddcc; margin-bottom: 10px; line-height: 1.6; }
+        #grandUnlockBox .grandIntro { font-size: 15px; color: #ffd700; margin: 18px 0 28px; padding: 14px 18px; border: 1px solid #665500; border-radius: 10px; background: rgba(40,30,0,0.5); line-height: 1.6; }
+        #grandClaimBtn { background: linear-gradient(135deg, #b8860b, #ffd700, #b8860b); color: #0a0a00; font-size: 17px; font-weight: bold; border: none; border-radius: 8px; padding: 14px 40px; cursor: pointer; letter-spacing: 0.04em; box-shadow: 0 2px 20px rgba(255,215,0,0.6); transition: transform 0.1s; }
+        #grandClaimBtn:hover { transform: scale(1.05); }
+        #helpBtn { position: absolute; top: 10px; right: 10px; z-index: 10; background: #1a2030; color: #b8d8ff; border: 1px solid #335566; width: 32px; height: 32px; cursor: pointer; font-size: 16px; font-weight: bold; border-radius: 50%; line-height: 30px; text-align: center; padding: 0; }
+        #helpBtn:hover { background: #243040; }
+        #helpModal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.78); z-index: 400; align-items: center; justify-content: center; }
+        #helpModal.open { display: flex; }
+        #helpBox { background: #0f1e2e; border: 1px solid #445566; border-radius: 12px; padding: 28px 36px; min-width: 320px; max-width: 440px; color: #b8d8ff; font-family: sans-serif; font-size: 14px; line-height: 1.7; }
+        #helpBox h2 { font-size: 18px; color: #fff; margin-bottom: 18px; }
+        #helpBox h3 { font-size: 12px; color: #778899; text-transform: uppercase; letter-spacing: 0.07em; margin: 16px 0 8px; }
+        #helpBox table { width: 100%; border-collapse: collapse; }
+        #helpBox td { padding: 3px 6px; }
+        #helpBox td:first-child { font-family: monospace; color: #fff; white-space: nowrap; width: 1%; padding-right: 16px; }
+        #helpBox td:last-child { color: #aac8e8; }
+        #helpCloseBtn { display: block; margin: 22px auto 0; background: none; border: 1px solid #445566; color: #778899; font-size: 13px; border-radius: 5px; padding: 6px 22px; cursor: pointer; }
+        #helpCloseBtn:hover { background: #1a2a3a; color: #b8d8ff; }
         #compHUD { display: none; position: absolute; top: 10px; left: 50%; transform: translateX(-50%); z-index: 10; background: rgba(0,0,0,0.55); border: 1px solid #44aa66; border-radius: 6px; padding: 5px 18px; font-family: sans-serif; font-size: 14px; font-weight: bold; color: #88ffaa; letter-spacing: 0.04em; white-space: nowrap; pointer-events: none; margin-top: 42px; }
         #powerMeter { display: none; position: absolute; bottom: 48px; left: 50%; transform: translateX(-50%); z-index: 10; text-align: center; pointer-events: none; }
         #powerMeterLabel { font-family: sans-serif; font-size: 13px; color: #cce8ff; letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 22px; text-shadow: 0 1px 4px #000; }
@@ -50,7 +136,135 @@
             <div id="powerMeterTicks"></div>
         </div>
     </div>
+    <div id="congratsOverlay">
+        <div id="congratsBox">
+            <span class="bigTrophy">🏆</span>
+            <h2>Competition Complete!</h2>
+            <p id="congratsMsg">You've mastered all the tricks.<br>A trophy has been added to your collection!</p>
+            <button id="claimTrophyBtn">Continue</button>
+        </div>
+    </div>
+    <div id="grandUnlockOverlay">
+        <div id="grandUnlockBg"></div>
+        <div id="grandUnlockBox">
+            <span class="grandIcon">🌟</span>
+            <h2>All Trophies Complete!</h2>
+            <div class="grandSub">You have beaten every world in the game.<br>Now try to make your own.</div>
+            <div class="grandIntro">⭐ <strong>Custom World Unlocked!</strong><br>Design your own hill — set the inrun length, landing length, and flip speed.</div>
+            <button id="grandClaimBtn">Let's Go ▶</button>
+        </div>
+    </div>
     <canvas id="renderCanvas"></canvas>
+    <button id="trophyBtn" title="Achievements">🏆</button>
+    <button id="replayBtn" title="Replay last jump">🔄</button>
+    <button id="customBtn" title="Custom World">⭐</button>
+    <button id="settingsBtn" title="Settings">⚙️ Settings</button>
+    <div id="settingsModal">
+        <div id="settingsModalBox">
+            <h2>⚙️ Settings</h2>
+            <div id="settingsUnlockSection" style="display:none">
+            <div class="settingRow">
+                <div>
+                    <div class="settingLabel">Auto Land</div>
+                    <div class="settingDesc">Land anywhere and ski away, even off the slope</div>
+                </div>
+                <button class="toggleBtn" id="autoLandBtn">OFF</button>
+            </div>
+            <div class="settingRow">
+                <div>
+                    <div class="settingLabel">Super Spin</div>
+                    <div class="settingDesc">2× spin (twist) speed</div>
+                </div>
+                <button class="toggleBtn" id="superSpinBtn">OFF</button>
+            </div>
+            </div>
+            <div style="margin-top:14px; border-top:1px solid #1a2a3a; padding-top:14px;">
+                <div style="font-size:12px;color:#778899;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:12px;">Skier Colours</div>
+                <div class="settingRow">
+                    <div class="settingLabel">Helmet</div>
+                    <input type="color" id="colorHelmet" value="#1a1a1a" style="width:44px;height:28px;border:1px solid #445566;border-radius:4px;cursor:pointer;background:none;padding:2px;">
+                </div>
+                <div class="settingRow">
+                    <div class="settingLabel">Torso</div>
+                    <input type="color" id="colorTorso" value="#1440bf" style="width:44px;height:28px;border:1px solid #445566;border-radius:4px;cursor:pointer;background:none;padding:2px;">
+                </div>
+                <div class="settingRow">
+                    <div class="settingLabel">Arms</div>
+                    <input type="color" id="colorArms" value="#cc0f0f" style="width:44px;height:28px;border:1px solid #445566;border-radius:4px;cursor:pointer;background:none;padding:2px;">
+                </div>
+                <div class="settingRow">
+                    <div class="settingLabel">Legs</div>
+                    <input type="color" id="colorLegs" value="#1a1a1a" style="width:44px;height:28px;border:1px solid #445566;border-radius:4px;cursor:pointer;background:none;padding:2px;">
+                </div>
+                <div style="text-align:center; margin-top:14px;">
+                    <button id="colorApplyBtn" style="background:#1a3a2a;color:#88ffaa;border:1px solid #44aa66;padding:7px 24px;font-size:13px;font-weight:bold;border-radius:6px;cursor:pointer;">Apply</button>
+                </div>
+            </div>
+            <button id="settingsCloseBtn">Close</button>
+        </div>
+    </div>
+    <div id="customModal">
+        <div id="customModalBox">
+            <h2>⭐ Custom World</h2>
+            <div class="customSetting">
+                <label>Inrun Length <span><span id="inrunVal">11</span> m</span></label>
+                <input type="range" id="inrunSlider" min="4" max="100" value="11" step="1">
+            </div>
+            <div class="customSetting">
+                <label>Landing Length <span><span id="landingVal">50</span> m</span></label>
+                <input type="range" id="landingSlider" min="20" max="150" value="50" step="1">
+            </div>
+            <div class="customSetting">
+                <label>Flip Speed <span><span id="flipSpeedVal">1.0</span>×</span></label>
+                <input type="range" id="flipSpeedSlider" min="0.3" max="3.0" value="1.3" step="0.1">
+            </div>
+            <div style="margin-top:22px; display:flex; gap:14px; justify-content:center; align-items:center;">
+                <button id="customGoBtn">Go ▶</button>
+                <button id="customCancelBtn">Cancel</button>
+            </div>
+        </div>
+    </div>
+    <button id="helpBtn" title="Controls">?</button>
+    <div id="helpModal">
+        <div id="helpBox">
+            <h2>Controls</h2>
+            <h3>Inrun</h3>
+            <table>
+                <tr><td>↑</td><td>Start run downhill</td></tr>
+                <tr><td>R</td><td>Reset to top of slope</td></tr>
+                <tr><td>Hold ←</td><td>Raise left arm (inrun setup)</td></tr>
+                <tr><td>Hold →</td><td>Raise right arm (inrun setup)</td></tr>
+            </table>
+            <h3>In Air</h3>
+            <table>
+                <tr><td>SPACE</td><td>Hold to tuck (speeds up flip), release to open</td></tr>
+                <tr><td>← then →</td><td>Left twist</td></tr>
+                <tr><td>→ then ←</td><td>Right twist</td></tr>
+                <tr><td>← + →</td><td>Double twist mode (continuous spin)</td></tr>
+                <tr><td>↓</td><td>Power wrap — 1.3× spin speed</td></tr>
+                <tr><td>↑</td><td>Gradually slow the flip</td></tr>
+            </table>
+            <h3>Camera</h3>
+            <table>
+                <tr><td>Drag</td><td>Orbit camera around skier</td></tr>
+                <tr><td>C</td><td>Toggle follow-cam / free camera</td></tr>
+            </table>
+            <button id="helpCloseBtn">Close</button>
+        </div>
+    </div>
+    <div id="replaySpeedWrap">
+        <div id="replaySpeedLabel">Speed</div>
+        <input id="replaySpeed" type="range" min="0.1" max="3" step="0.05" value="1">
+        <div id="replaySpeedVal">1×</div>
+    </div>
+    <div id="trophyPanel">
+        <div id="trophyPanelBox">
+            <h2>🏆 Trophies</h2>
+            <div class="trophyGrid" id="trophyGrid">
+            </div>
+            <button class="trophyCancelBtn" id="trophyCloseBtn">Close</button>
+        </div>
+    </div>
     <div id="worldMenu">
         <button id="worldBtn">⛷ <span id="worldLabel">Normal</span> ▾</button>
         <button id="compBtn">🏆 Compete</button>
@@ -60,19 +274,22 @@
             <div onclick="location.href='?world=triple'">Triple</div>
             <div onclick="location.href='?world=quad'">Quad</div>
             <div onclick="location.href='?world=d2t'">Double to Triple</div>
+            <div id="quintWorldItem" style="display:none" onclick="location.href='?world=quint'">⭐ Quint</div>
+            <div id="customWorldItem" style="display:none" onclick=""></div>
         </div>
     </div>
     <div id="compHUD"></div>
     <div id="compModal">
         <div id="compModalBox">
             <h2>🏆 Competition Mode</h2>
-            <div class="compSection">
+            <div class="compSection" id="compJumpSection">
                 <label>Jump</label>
                 <div class="compRadioGroup">
                     <input type="radio" name="compWorld" id="cw_single" value="single"><label for="cw_single">Single</label>
                     <input type="radio" name="compWorld" id="cw_double" value="double" checked><label for="cw_double">Double</label>
                     <input type="radio" name="compWorld" id="cw_triple" value="triple"><label for="cw_triple">Triple</label>
                     <input type="radio" name="compWorld" id="cw_quad"   value="quad"><label for="cw_quad">Quad</label>
+                    <input type="radio" name="compWorld" id="cw_quint"  value="quint" style="display:none"><label for="cw_quint" id="lbl_cw_quint" style="display:none">⭐ Quint</label>
                 </div>
             </div>
             <div class="compSection">
@@ -80,8 +297,9 @@
                 <div class="compRadioGroup">
                     <input type="radio" name="compDiff" id="cd_easy"   value="easy" checked><label for="cd_easy">Easy</label>
                     <input type="radio" name="compDiff" id="cd_medium" value="medium"><label for="cd_medium">Medium</label>
-                    <input type="radio" name="compDiff" id="cd_hard"   value="hard"><label for="cd_hard">Hard</label>
-                </div>
+                    <input type="radio" name="compDiff" id="cd_hard"   value="hard"><label for="cd_hard">Hard</label>                    <input type="radio" name="compDiff" id="cd_hardest" value="hardest"><label for="cd_hardest">💪 Hardest</label>                </div>
+                <input type="radio" name="compDiff" id="cd_ultra" value="ultra">
+                <div class="ultraSection"><label for="cd_ultra">☠ Ultra — all jumps, hardest tricks</label></div>
             </div>
             <button id="compBeginBtn">Begin</button>
             <button id="compCancelBtn">Cancel</button>
@@ -91,7 +309,7 @@
         (function() {
             var wp = new URLSearchParams(location.search).get('world') || 'double';
             document.addEventListener('DOMContentLoaded', function() {
-                var labelMap = { single: 'Single', double: 'Double', triple: 'Triple', quad: 'Quad', d2t: 'Double to Triple' };
+                var labelMap = { single: 'Single', double: 'Double', triple: 'Triple', quad: 'Quad', d2t: 'Double to Triple', quint: '⭐ Quint', custom: '⭐ Custom' };
                 document.getElementById('worldLabel').textContent = labelMap[wp] || wp.charAt(0).toUpperCase() + wp.slice(1);
                 var items = document.querySelectorAll('#worldList div');
                 items.forEach(function(el) { if (el.textContent.toLowerCase() === wp || el.textContent === (labelMap[wp] || '')) el.classList.add('active'); });
@@ -107,25 +325,462 @@
                 // Competition modal
                 var compModal = document.getElementById('compModal');
                 document.getElementById('compBtn').addEventListener('click', function() {
-                    // Pre-select current world if applicable (not d2t)
+                    // Show quint option if unlocked
+                    var quintUnlocked = isQuintUnlocked();
+                    document.getElementById('cw_quint').style.display = quintUnlocked ? '' : 'none';
+                    document.getElementById('lbl_cw_quint').style.display = quintUnlocked ? '' : 'none';
+                    // Pre-select current world if applicable
                     var validWorlds = ['single','double','triple','quad'];
+                    if (quintUnlocked) validWorlds.push('quint');
                     if (validWorlds.indexOf(wp) !== -1) {
                         var radio = document.querySelector('input[name=compWorld][value="' + wp + '"]');
                         if (radio) radio.checked = true;
                     }
                     compModal.classList.add('open');
                 });
+                // Toggle Jump section for Ultra; disable ultra when quint selected
+                var jumpSection = document.getElementById('compJumpSection');
+                var ultraRadio = document.getElementById('cd_ultra');
+                document.querySelectorAll('input[name=compDiff]').forEach(function(r) {
+                    r.addEventListener('change', function() {
+                        var isUltra = r.value === 'ultra' && r.checked;
+                        jumpSection.style.opacity = isUltra ? '0.3' : '1';
+                        jumpSection.style.pointerEvents = isUltra ? 'none' : '';
+                    });
+                });
+                document.querySelectorAll('input[name=compWorld]').forEach(function(r) {
+                    r.addEventListener('change', function() {
+                        var isQuint = r.value === 'quint' && r.checked;
+                        ultraRadio.disabled = isQuint;
+                        ultraRadio.parentElement.style.opacity = isQuint ? '0.3' : '';
+                        if (isQuint && ultraRadio.checked) {
+                            document.getElementById('cd_easy').checked = true;
+                            jumpSection.style.opacity = '1';
+                            jumpSection.style.pointerEvents = '';
+                        }
+                    });
+                });
+                // Close handlers
                 document.getElementById('compCancelBtn').addEventListener('click', function() {
                     compModal.classList.remove('open');
                 });
                 compModal.addEventListener('click', function(e) {
-                    if (e.target === compModal) compModal.classList.remove('open');
+                    if (e.target !== compModal) return;
+                    compModal.classList.remove('open');
                 });
+
                 document.getElementById('compBeginBtn').addEventListener('click', function() {
                     var world = document.querySelector('input[name=compWorld]:checked');
                     var diff  = document.querySelector('input[name=compDiff]:checked');
-                    if (world && diff) location.href = '?world=' + world.value + '&comp=' + diff.value;
+                    if (!diff) return;
+                    if (diff.value === 'ultra') {
+                        location.href = '?world=single&comp=ultra&ultrajump=0';
+                    } else if (world) {
+                        location.href = '?world=' + world.value + '&comp=' + diff.value;
+                    }
                 });
+
+                // Trophy panel
+                var trophyPanel = document.getElementById('trophyPanel');
+                var trophyGrid  = document.getElementById('trophyGrid');
+                var COMP_KEYS = [
+                    ['single','Easy'],['single','Medium'],['single','Hard'],['single','Hardest'],
+                    ['double','Easy'],['double','Medium'],['double','Hard'],['double','Hardest'],
+                    ['triple','Easy'],['triple','Medium'],['triple','Hard'],['triple','Hardest'],
+                    ['quad',  'Easy'],['quad',  'Medium'],['quad',  'Hard'],['quad',  'Hardest'],
+                    ['quad',  'Ultra'],
+                ];
+                function allTrophiesEarned() {
+                    return COMP_KEYS.every(function(pair) {
+                        var key = 'comp_beaten_' + pair[0] + '_' + pair[1].toLowerCase();
+                        return localStorage.getItem(key) === '1';
+                    });
+                }
+                function allTrophiesWithQuint() {
+                    if (!allTrophiesEarned()) return false;
+                    return ['easy','medium','hard','hardest'].every(function(d) {
+                        return localStorage.getItem('comp_beaten_quint_' + d) === '1';
+                    });
+                }
+                function isQuintUnlocked() {
+                    return allTrophiesEarned() || localStorage.getItem('quint_unlocked') === '1';
+                }
+                function renderQuintButton() {}
+                function refreshTrophies() {
+                    while (trophyGrid.firstChild) trophyGrid.removeChild(trophyGrid.firstChild);
+                    var diffStyles = {
+                        'Easy':    { icon: '🏆', color: '#cd7f32', glow: 'rgba(205,127,50,0.55)',   label: 'Bronze'   },
+                        'Medium':  { icon: '🏆', color: '#b0bec5', glow: 'rgba(192,192,192,0.55)', label: 'Silver'   },
+                        'Hard':    { icon: '🏆', color: '#ffd700', glow: 'rgba(255,215,0,0.7)',    label: 'Gold ✨'  },
+                        'Hardest': { icon: '💎', color: '#b9f2ff', glow: 'rgba(100,220,255,0.8)',  label: 'Diamond 💎' },
+                        'Ultra':   { icon: '💀', color: '#ff6644', glow: 'rgba(255,80,40,0.8)',    label: '☠ Ultra'  },
+                    };
+                    ['Easy','Medium','Hard','Hardest','Ultra'].forEach(function(diff) {
+                        var ds = diffStyles[diff];
+                        var entries = COMP_KEYS.filter(function(p) { return p[1] === diff; });
+                        var hdr = document.createElement('div');
+                        hdr.className = 'trophyGroupHeader';
+                        hdr.innerHTML = '<span style="font-size:17px">' + ds.icon + '</span><span style="color:' + ds.color + '">' + ds.label + '</span>';
+                        trophyGrid.appendChild(hdr);
+                        entries.forEach(function(pair) {
+                            var world = pair[0];
+                            var key = 'comp_beaten_' + world + '_' + diff.toLowerCase();
+                            var beaten = localStorage.getItem(key) === '1';
+                            var worldLabel = diff === 'Ultra' ? 'All jumps' : world.charAt(0).toUpperCase() + world.slice(1);
+                            var r1 = document.createElement('div'); r1.className = 'trophyCell'; r1.textContent = worldLabel;
+                            var r2 = document.createElement('div'); r2.className = 'trophyCell';
+                            if (beaten) {
+                                r2.innerHTML = '<span class="icon" style="color:' + ds.color + ';filter:drop-shadow(0 0 6px ' + ds.glow + ');font-size:22px">' + ds.icon + '</span><span style="color:' + ds.color + ';font-weight:bold">Earned</span>';
+                            } else {
+                                r2.innerHTML = '<span class="icon" style="opacity:0.2;font-size:22px">' + ds.icon + '</span><span style="color:#445566">Not yet</span>';
+                            }
+                            trophyGrid.appendChild(r1);
+                            trophyGrid.appendChild(r2);
+                        });
+                    });
+                    // Quint trophies — only shown when quint is unlocked
+                    if (isQuintUnlocked()) {
+                        var quintDiffs = ['Easy','Medium','Hard','Hardest'];
+                        var quintDs = { icon: '⭐', color: '#d4aaff', glow: 'rgba(180,100,255,0.8)' };
+                        var sep = document.createElement('div');
+                        sep.className = 'trophyGroupHeader';
+                        sep.style.cssText = 'grid-column:1/-1;border-top:1px solid #2a1060;margin-top:6px;padding-top:8px;';
+                        sep.innerHTML = '<span style="font-size:17px">⭐</span><span style="color:#d4aaff">Quint World</span>';
+                        trophyGrid.appendChild(sep);
+                        quintDiffs.forEach(function(diff) {
+                            var key = 'comp_beaten_quint_' + diff.toLowerCase();
+                            var beaten = localStorage.getItem(key) === '1';
+                            var r1 = document.createElement('div'); r1.className = 'trophyCell'; r1.textContent = diff;
+                            var r2 = document.createElement('div'); r2.className = 'trophyCell';
+                            if (beaten) {
+                                r2.innerHTML = '<span class="icon" style="color:' + quintDs.color + ';filter:drop-shadow(0 0 6px ' + quintDs.glow + ');font-size:22px">' + quintDs.icon + '</span><span style="color:' + quintDs.color + ';font-weight:bold">Earned</span>';
+                            } else {
+                                r2.innerHTML = '<span class="icon" style="opacity:0.2;font-size:22px">' + quintDs.icon + '</span><span style="color:#445566">Not yet</span>';
+                            }
+                            trophyGrid.appendChild(r1);
+                            trophyGrid.appendChild(r2);
+                        });
+
+                        // Teaser for Custom World if quint trophies not all earned yet
+                        if (!allTrophiesWithQuint()) {
+                            var teaser = document.createElement('div');
+                            teaser.style.cssText = 'grid-column:1/-1;margin-top:18px;padding:14px 16px;border:1px dashed #443300;border-radius:8px;background:rgba(40,30,0,0.4);text-align:center;';
+                            teaser.innerHTML = '<div style="font-size:18px;margin-bottom:6px;">🌟</div>'
+                                + '<div style="font-size:13px;color:#998844;font-weight:bold;letter-spacing:0.04em;">One more world to unlock...</div>'
+                                + '<div style="font-size:12px;color:#554433;margin-top:5px;">Earn all Quint trophies to unlock it.</div>';
+                            trophyGrid.appendChild(teaser);
+                        }
+                    }
+                }
+                document.getElementById('trophyBtn').addEventListener('click', function() {
+                    refreshTrophies();
+                    renderQuintButton();
+                    trophyPanel.classList.add('open');
+                });
+                document.getElementById('trophyCloseBtn').addEventListener('click', function() {
+                    trophyPanel.classList.remove('open');
+                });
+                trophyPanel.addEventListener('click', function(e) {
+                    if (e.target === trophyPanel) trophyPanel.classList.remove('open');
+                });
+
+                // Show quint in world menu if unlocked
+                if (isQuintUnlocked()) {
+                    var qi = document.getElementById('quintWorldItem');
+                    if (qi) qi.style.display = '';
+                }
+
+                // Secret words: type while trophy panel is open
+                var secretBuffer = '';
+                var secretTimeout = null;
+                document.addEventListener('keydown', function(e) {
+                    if (!trophyPanel.classList.contains('open')) { secretBuffer = ''; return; }
+                    secretBuffer += e.key.toLowerCase();
+                    if (secretBuffer.length > 9) secretBuffer = secretBuffer.slice(-9);
+                    if (secretTimeout) clearTimeout(secretTimeout);
+                    secretTimeout = setTimeout(function() { secretBuffer = ''; }, 3000);
+
+                    // "quint" — toggle quint unlock
+                    if (secretBuffer.endsWith('quint')) {
+                        secretBuffer = '';
+                        if (localStorage.getItem('quint_unlocked') === '1' && !allTrophiesEarned()) {
+                            localStorage.removeItem('quint_unlocked');
+                            var qi = document.getElementById('quintWorldItem');
+                            if (qi) qi.style.display = 'none';
+                        } else {
+                            localStorage.setItem('quint_unlocked', '1');
+                            var qi = document.getElementById('quintWorldItem');
+                            if (qi) qi.style.display = '';
+                        }
+                        renderQuintButton();
+                        refreshTrophies();
+                    }
+
+                    // "congrats" — show grand unlock overlay
+                    if (secretBuffer.endsWith('congrats')) {
+                        secretBuffer = '';
+                        var guo = document.getElementById('grandUnlockOverlay');
+                        if (guo) {
+                            trophyPanel.classList.remove('open');
+                            guo.classList.add('open');
+                        }
+                    }
+
+                    // "complete" — grant all trophies, or remove 3 if already complete
+                    if (secretBuffer.endsWith('complete')) {
+                        secretBuffer = '';
+                        var allQuintKeys = ['easy','medium','hard','hardest'].map(function(d) {
+                            return 'comp_beaten_quint_' + d;
+                        });
+                        var allKeys = COMP_KEYS.map(function(pair) {
+                            return 'comp_beaten_' + pair[0] + '_' + pair[1].toLowerCase();
+                        }).concat(allQuintKeys);
+
+                        if (allTrophiesWithQuint()) {
+                            // Remove 3 random trophies
+                            var shuffled = allKeys.slice().sort(function() { return Math.random() - 0.5; });
+                            shuffled.slice(0, 3).forEach(function(key) {
+                                localStorage.removeItem(key);
+                            });
+                            // Hide custom button since no longer fully complete
+                            var cb = document.getElementById('customBtn');
+                            if (cb) cb.style.display = 'none';
+                            var us = document.getElementById('settingsUnlockSection');
+                            if (us) us.style.display = 'none';
+                        } else {
+                            allKeys.forEach(function(key) {
+                                localStorage.setItem(key, '1');
+                            });
+                            localStorage.setItem('quint_unlocked', '1');
+                            var qi = document.getElementById('quintWorldItem');
+                            if (qi) qi.style.display = '';
+                            var cb = document.getElementById('customBtn');
+                            if (cb) cb.style.display = 'inline-block';
+                            var sb = document.getElementById('settingsBtn');
+                            if (sb) sb.style.display = 'inline-block';
+                            var us = document.getElementById('settingsUnlockSection');
+                            if (us) us.style.display = '';
+                        }
+                        renderQuintButton();
+                        refreshTrophies();
+                    }
+                });
+
+                // Custom world star button
+                (function() {
+                    function getSavedCustom() {
+                        return {
+                            inrun:     localStorage.getItem('custom_inrun')     || '11',
+                            landing:   localStorage.getItem('custom_landing')   || '50',
+                            flipspeed: localStorage.getItem('custom_flipspeed') || '1.3'
+                        };
+                    }
+
+                    function customUrl() {
+                        var s = getSavedCustom();
+                        return '?world=custom&inrun=' + s.inrun + '&landing=' + s.landing + '&flipspeed=' + s.flipspeed;
+                    }
+
+                    function updateCustomWorldItem() {
+                        var ci = document.getElementById('customWorldItem');
+                        if (!ci) return;
+                        if (allTrophiesWithQuint()) {
+                            ci.style.display = '';
+                            ci.onclick = function() { location.href = customUrl(); };
+                            ci.textContent = '⭐ Custom';
+                            if (wp === 'custom') ci.classList.add('active');
+                        } else {
+                            ci.style.display = 'none';
+                        }
+                    }
+                    updateCustomWorldItem();
+
+                    var customBtn = document.getElementById('customBtn');
+                    if (allTrophiesWithQuint()) customBtn.style.display = 'inline-block';
+
+                    var customModal      = document.getElementById('customModal');
+                    var inrunSlider      = document.getElementById('inrunSlider');
+                    var landingSlider    = document.getElementById('landingSlider');
+                    var flipSpeedSlider  = document.getElementById('flipSpeedSlider');
+                    var inrunValEl       = document.getElementById('inrunVal');
+                    var landingValEl     = document.getElementById('landingVal');
+                    var flipSpeedValEl   = document.getElementById('flipSpeedVal');
+
+                    // Restore saved values into sliders on open
+                    function restoreSliders() {
+                        var s = getSavedCustom();
+                        inrunSlider.value    = s.inrun;
+                        landingSlider.value  = s.landing;
+                        flipSpeedSlider.value = s.flipspeed;
+                        inrunValEl.textContent    = s.inrun;
+                        landingValEl.textContent  = s.landing;
+                        flipSpeedValEl.textContent = parseFloat(s.flipspeed).toFixed(1);
+                    }
+
+                    inrunSlider.addEventListener('input', function() { inrunValEl.textContent = inrunSlider.value; });
+                    landingSlider.addEventListener('input', function() { landingValEl.textContent = landingSlider.value; });
+                    flipSpeedSlider.addEventListener('input', function() { flipSpeedValEl.textContent = parseFloat(flipSpeedSlider.value).toFixed(1); });
+
+                    customBtn.addEventListener('click', function() {
+                        restoreSliders();
+                        customModal.classList.add('open');
+                    });
+                    customModal.addEventListener('click', function(e) {
+                        if (e.target === customModal) customModal.classList.remove('open');
+                    });
+                    document.getElementById('customCancelBtn').addEventListener('click', function() {
+                        customModal.classList.remove('open');
+                    });
+                    document.getElementById('customGoBtn').addEventListener('click', function() {
+                        localStorage.setItem('custom_inrun',     inrunSlider.value);
+                        localStorage.setItem('custom_landing',   landingSlider.value);
+                        localStorage.setItem('custom_flipspeed', flipSpeedSlider.value);
+                        location.href = '?world=custom&inrun=' + inrunSlider.value + '&landing=' + landingSlider.value + '&flipspeed=' + flipSpeedSlider.value;
+                    });
+                })();
+
+                // Settings modal
+                (function() {
+                    var settingsModal = document.getElementById('settingsModal');
+                    var autoLandBtn   = document.getElementById('autoLandBtn');
+                    var superSpinBtn  = document.getElementById('superSpinBtn');
+
+                    function updateAutoLandBtn() {
+                        var on = localStorage.getItem('setting_autoland') === '1';
+                        autoLandBtn.textContent = on ? 'ON' : 'OFF';
+                        autoLandBtn.classList.toggle('on', on);
+                    }
+                    function updateSuperSpinBtn() {
+                        var on = localStorage.getItem('setting_superspin') === '1';
+                        superSpinBtn.textContent = on ? 'ON' : 'OFF';
+                        superSpinBtn.classList.toggle('on', on);
+                    }
+                    updateAutoLandBtn();
+                    updateSuperSpinBtn();
+
+                    var settingsBtn = document.getElementById('settingsBtn');
+                    // settings always visible
+                    var unlockSection = document.getElementById('settingsUnlockSection');
+                    if (allTrophiesWithQuint()) unlockSection.style.display = '';
+
+                    document.getElementById('settingsBtn').addEventListener('click', function() {
+                        settingsModal.classList.add('open');
+                    });
+                    settingsModal.addEventListener('click', function(e) {
+                        if (e.target === settingsModal) settingsModal.classList.remove('open');
+                    });
+                    document.getElementById('settingsCloseBtn').addEventListener('click', function() {
+                        settingsModal.classList.remove('open');
+                    });
+                    autoLandBtn.addEventListener('click', function() {
+                        var on = localStorage.getItem('setting_autoland') === '1';
+                        localStorage.setItem('setting_autoland', on ? '0' : '1');
+                        updateAutoLandBtn();
+                    });
+                    superSpinBtn.addEventListener('click', function() {
+                        var on = localStorage.getItem('setting_superspin') === '1';
+                        localStorage.setItem('setting_superspin', on ? '0' : '1');
+                        updateSuperSpinBtn();
+                    });
+
+                    // Colour pickers
+                    var colorDefs = [
+                        { id: 'colorHelmet', key: 'color_helmet', def: '#1a1a1a' },
+                        { id: 'colorTorso',  key: 'color_torso',  def: '#1440bf' },
+                        { id: 'colorArms',   key: 'color_arms',   def: '#cc0f0f' },
+                        { id: 'colorLegs',   key: 'color_legs',   def: '#1a1a1a' },
+                    ];
+                    colorDefs.forEach(function(c) {
+                        var el = document.getElementById(c.id);
+                        el.value = localStorage.getItem(c.key) || c.def;
+                    });
+                    document.getElementById('colorApplyBtn').addEventListener('click', function() {
+                        colorDefs.forEach(function(c) {
+                            var el = document.getElementById(c.id);
+                            localStorage.setItem(c.key, el.value);
+                        });
+                        if (window.applySkierColors) window.applySkierColors();
+                    });
+                })();
+
+                // Help modal
+                var helpModal = document.getElementById('helpModal');
+                document.getElementById('helpBtn').addEventListener('click', function() {
+                    helpModal.classList.add('open');
+                });
+                document.getElementById('helpCloseBtn').addEventListener('click', function() {
+                    helpModal.classList.remove('open');
+                });
+                helpModal.addEventListener('click', function(e) {
+                    if (e.target === helpModal) helpModal.classList.remove('open');
+                });
+
+                // Congrats overlay
+                var congratsOverlay = document.getElementById('congratsOverlay');
+                var grandUnlockOverlay = document.getElementById('grandUnlockOverlay');
+
+                // Spawn floating stars for grand unlock screen
+                (function() {
+                    var symbols = ['\u2b50','\ud83c\udf1f','\u2728'];
+                    for (var i = 0; i < 20; i++) {
+                        var s = document.createElement('div');
+                        s.className = 'grandStar';
+                        s.textContent = symbols[i % 3];
+                        s.style.left = (Math.random() * 100) + '%';
+                        s.style.bottom = '-40px';
+                        s.style.animationDuration = (5 + Math.random() * 5) + 's';
+                        s.style.animationDelay = (Math.random() * 7) + 's';
+                        s.style.fontSize = (14 + Math.random() * 20) + 'px';
+                        grandUnlockOverlay.appendChild(s);
+                    }
+                })();
+
+                document.getElementById('claimTrophyBtn').addEventListener('click', function() {
+                    congratsOverlay.classList.remove('open');
+                });
+                document.getElementById('grandClaimBtn').addEventListener('click', function() {
+                    grandUnlockOverlay.classList.remove('open');
+                    var cb = document.getElementById('customBtn');
+                    if (cb) cb.style.display = 'inline-block';
+                    var us = document.getElementById('settingsUnlockSection');
+                    if (us) us.style.display = '';
+                    var ci = document.getElementById('customWorldItem');
+                    if (ci) { ci.style.display = ''; ci.textContent = '\u2b50 Custom'; }
+                    // Open the custom world modal (same as clicking the star button)
+                    var customModal = document.getElementById('customModal');
+                    if (customModal) {
+                        // Restore saved slider values
+                        var inrunSlider = document.getElementById('inrunSlider');
+                        var landingSlider = document.getElementById('landingSlider');
+                        var flipSpeedSlider = document.getElementById('flipSpeedSlider');
+                        if (inrunSlider) { inrunSlider.value = localStorage.getItem('custom_inrun') || '11'; document.getElementById('inrunVal').textContent = inrunSlider.value; }
+                        if (landingSlider) { landingSlider.value = localStorage.getItem('custom_landing') || '50'; document.getElementById('landingVal').textContent = landingSlider.value; }
+                        if (flipSpeedSlider) { flipSpeedSlider.value = localStorage.getItem('custom_flipspeed') || '1.3'; document.getElementById('flipSpeedVal').textContent = parseFloat(flipSpeedSlider.value).toFixed(1); }
+                        customModal.classList.add('open');
+                    }
+                });
+                window.showCongratsScreen = function(worldParam, diffParam) {
+                    var beatenKey = diffParam === 'ultra' ? 'comp_beaten_quad_ultra' : 'comp_beaten_' + worldParam + '_' + diffParam;
+                    var alreadyHad = localStorage.getItem(beatenKey) === '1';
+                    var msg;
+                    if (diffParam === 'ultra') {
+                        msg = 'You conquered <strong>☠ Ultra Mode</strong>!<br>' + (alreadyHad ? 'You are still unstoppable.' : 'All 5 jumps completed across every hill. You are unstoppable.');
+                    } else {
+                        var worldNames = { single: 'Single', double: 'Double', triple: 'Triple', quad: 'Quad' };
+                        var diffNames  = { easy: 'Easy', medium: 'Medium', hard: 'Hard', hardest: 'Hardest' };
+                        var wName = worldNames[worldParam] || worldParam;
+                        var dName = diffNames[diffParam]   || diffParam;
+                        msg = 'You completed <strong>' + wName + ' ' + dName + '</strong>!' + (alreadyHad ? '' : '<br>A trophy has been added to your collection.');
+                    }
+                    document.getElementById('congratsMsg').innerHTML = msg;
+                    // Check if game.js flagged a full collection completion
+                    if (window._justCompletedAll) {
+                        window._justCompletedAll = false;
+                        setTimeout(function() { grandUnlockOverlay.classList.add('open'); }, 500);
+                    } else {
+                        congratsOverlay.classList.add('open');
+                    }
+                };
             });
         })();
     </script>
