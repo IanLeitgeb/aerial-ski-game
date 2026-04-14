@@ -572,6 +572,7 @@ const KICKER_Z      = 22;
 const KICKER_END_Z  = 24.5;
 const _worldParam   = new URLSearchParams(location.search).get('world') || 'double';
 const _compParam    = new URLSearchParams(location.search).get('comp');  // null | 'easy' | 'medium' | 'hard' | 'ultra'
+const _olympicsMode = new URLSearchParams(location.search).get('olympics'); // null | 'qual' | 'finals'
 const _ultraJump    = _compParam === 'ultra' ? Math.max(0, parseInt(new URLSearchParams(location.search).get('ultrajump') || '0', 10)) : 0;
 const _customInrun    = _worldParam === 'custom' ? Math.max(4, Math.min(100, parseFloat(new URLSearchParams(location.search).get('inrun')    || '11'))) : 0;
 const _customLanding  = _worldParam === 'custom' ? Math.max(20, Math.min(150, parseFloat(new URLSearchParams(location.search).get('landing')  || '50'))) : 0;
@@ -992,6 +993,9 @@ window.addEventListener('DOMContentLoaded', () => {
         if (e.code === 'KeyR') {
             // In competition mode, only allow reset once stopped or crashed at the bottom
             if (_compParam && !state.stopped && !state.crashed) return;
+            // Olympics mode: block reset once all attempts used
+            if (_olympicsMode && olympicsDone) return;
+            if (_olympicsMode && !state.stopped && !state.crashed) return;
             // Ultra mode: navigate to next world or restart from beginning
             if (_compParam === 'ultra') {
                 if (compLandingResult && compLandingResult.matched) {
@@ -1073,26 +1077,31 @@ window.addEventListener('DOMContentLoaded', () => {
             return;
         }
         if (paused) return;
-        if (e.code === 'Space') {
+        // Mirror Keys setting: swap left/right arrow interpretation
+        const _mirrorKeys = localStorage.getItem('setting_mirrorkeys') === '1';
+        const _kcode = (_mirrorKeys && e.code === 'ArrowLeft') ? 'ArrowRight'
+                     : (_mirrorKeys && e.code === 'ArrowRight') ? 'ArrowLeft'
+                     : e.code;
+        if (_kcode === 'Space') {
             e.preventDefault();
             if (!state.crashed) state.tuckTarget = 1.0;
         }
-        if (e.code === 'ArrowUp' || e.code === 'ArrowDown') {
+        if (_kcode === 'ArrowUp' || _kcode === 'ArrowDown') {
             e.preventDefault();
         }
-        if (e.code === 'ArrowDown' && !state.grounded && !state.crashed) {
+        if (_kcode === 'ArrowDown' && !state.grounded && !state.crashed) {
             powerWrapDown = true;
         }
-        if (e.code === 'ArrowUp' && state.grounded && readyState && readyTurnT === 0.0) {
+        if (_kcode === 'ArrowUp' && state.grounded && readyState && readyTurnT === 0.0) {
             // Begin turn-to-face-downhill animation
             readyTurnT = 0.001; // small non-zero to start animation
         }
-        if (e.code === 'ArrowUp' && !state.grounded && !state.crashed) {
+        if (_kcode === 'ArrowUp' && !state.grounded && !state.crashed) {
             // Raise arms straight up
             state.armRaiseTarget = 1;
             arrowUpDown = true;
         }
-        if (e.code === 'ArrowLeft' && !leftDown && !state.crashed) {
+        if (_kcode === 'ArrowLeft' && !leftDown && !state.crashed) {
             e.preventDefault();
             leftDown = true;
             if (rightDown && !doubleMode) {
@@ -1103,7 +1112,7 @@ window.addEventListener('DOMContentLoaded', () => {
             }
             // else: drop left arm as wind-up, wait for →
         }
-        if (e.code === 'ArrowRight' && !rightDown && !state.crashed) {
+        if (_kcode === 'ArrowRight' && !rightDown && !state.crashed) {
             e.preventDefault();
             rightDown = true;
             if (leftDown && !doubleMode) {
@@ -1116,15 +1125,19 @@ window.addEventListener('DOMContentLoaded', () => {
         }
     });
     window.addEventListener('keyup', e => {
-        if (e.code === 'Space') state.tuckTarget = 0.0;
-        if (e.code === 'ArrowDown') powerWrapDown = false;
-        if (e.code === 'ArrowUp') arrowUpDown = false;
-        if (e.code === 'ArrowLeft' && leftDown) {
+        const _mirrorKeys = localStorage.getItem('setting_mirrorkeys') === '1';
+        const _kcode = (_mirrorKeys && e.code === 'ArrowLeft') ? 'ArrowRight'
+                     : (_mirrorKeys && e.code === 'ArrowRight') ? 'ArrowLeft'
+                     : e.code;
+        if (_kcode === 'Space') state.tuckTarget = 0.0;
+        if (_kcode === 'ArrowDown') powerWrapDown = false;
+        if (_kcode === 'ArrowUp') arrowUpDown = false;
+        if (_kcode === 'ArrowLeft' && leftDown) {
             leftDown = false;
             if (doubleMode) exitDoubleMode();
             else if (secondKeyTimer !== null) { clearTimeout(secondKeyTimer); secondKeyTimer = null; }
         }
-        if (e.code === 'ArrowRight' && rightDown) {
+        if (_kcode === 'ArrowRight' && rightDown) {
             rightDown = false;
             if (doubleMode) exitDoubleMode();
             else if (secondKeyTimer !== null) { clearTimeout(secondKeyTimer); secondKeyTimer = null; }
@@ -1298,6 +1311,51 @@ window.addEventListener('DOMContentLoaded', () => {
             : (compPendingTrick ? `🏆 Trick 1/${_compProgression.length}: ${trickKeyToName(compPendingTrick)}` : '🏆');
         compHUDEl.textContent = _initHudTrick;
         compHUDEl.style.display = 'block';
+    }
+    // ── Olympics mode state ───────────────────────────────────────────────
+    let olympicsAttempts  = _olympicsMode ? parseInt(localStorage.getItem('olympics_attempts') || '0', 10) : 0;
+    let olympicsBestScore = _olympicsMode ? parseFloat(localStorage.getItem('olympics_best_qual') || '0') : 0;
+    let olympicsBestTrick = _olympicsMode ? (localStorage.getItem('olympics_qual_trick') || '–') : '–';
+    let olympicsDone      = false; // true after all attempts used in this session
+    if (_olympicsMode) {
+        compHUDEl.style.display = 'block';
+        if (_olympicsMode === 'qual') {
+            compHUDEl.style.borderColor = '#aa8800';
+            compHUDEl.style.color = '#ffd700';
+            compHUDEl.textContent = `🏅 Qualifier — Attempt ${olympicsAttempts + 1} of 2`;
+        } else {
+            compHUDEl.style.borderColor = '#aa8800';
+            compHUDEl.style.color = '#ffd700';
+            compHUDEl.textContent = '🏅 Finals — Your Run!';
+        }
+    }
+    // ── Olympics attempt handler ──────────────────────────────────────────
+    function _handleOlympicsAttempt(score, trick) {
+        if (_olympicsMode === 'finals') {
+            olympicsDone = true;
+            compHUDEl.textContent = score > 0 ? `🏅 Finals done — ${score.toFixed(1)} pts` : '🏅 Finals — Crash (0 pts)';
+            setTimeout(function() {
+                if (typeof window._olympicsFinalsDone === 'function') window._olympicsFinalsDone(score, trick);
+            }, 1400);
+            return;
+        }
+        // Qualifier
+        olympicsAttempts++;
+        if (score > olympicsBestScore) { olympicsBestScore = score; olympicsBestTrick = trick; }
+        localStorage.setItem('olympics_attempts', String(olympicsAttempts));
+        localStorage.setItem('olympics_best_qual', String(olympicsBestScore));
+        localStorage.setItem('olympics_qual_trick', olympicsBestTrick);
+        if (olympicsAttempts >= 2) {
+            olympicsDone = true;
+            compHUDEl.textContent = `🏅 Qualifier done — Best: ${olympicsBestScore > 0 ? olympicsBestScore.toFixed(1) + ' pts' : 'no score'}`;
+            setTimeout(function() {
+                if (typeof window._olympicsQualDone === 'function') window._olympicsQualDone(olympicsBestScore, olympicsBestTrick);
+            }, 1400);
+        } else {
+            compHUDEl.textContent = score > 0
+                ? `🏅 Attempt 1 — ${score.toFixed(1)} pts · Press R for attempt 2`
+                : '🏅 Attempt 1 — Crash · Press R for attempt 2';
+        }
     }
     function calcDD(perFlipTwists) {
         const key = perFlipTwists.join(',');
@@ -1526,6 +1584,10 @@ window.addEventListener('DOMContentLoaded', () => {
                             compHUDEl.textContent = '☠ Press R for next jump →';
                         }
                     }
+                    // ── Olympics attempt tracking (good landing) ─────────
+                    if (_olympicsMode && !olympicsDone) {
+                        _handleOlympicsAttempt(score, state.trickName);
+                    }
                 }
             }
 
@@ -1646,6 +1708,10 @@ window.addEventListener('DOMContentLoaded', () => {
                     state.trickName = state.perFlipTwists
                         .map((t, i) => t === 0 && tuckedPerFlip[i] ? 'Tuck' : TWIST_NAMES[Math.min(t, 3)])
                         .join('-');
+                    // ── Achievement: Triple Full-Triple Full-Triple Full on triple jump ─
+                    if (_worldParam === 'triple' && state.trickName === 'Triple Full-Triple Full-Triple Full') {
+                        localStorage.setItem('ach_3f3f3f', '1');
+                    }
                     // ── Competition progression ───────────────────────────────
                     if (assignedTrick !== null) {
                         const _matched = matchTrick(state.perFlipTwists, tuckedPerFlip, assignedTrick);
@@ -1699,6 +1765,10 @@ window.addEventListener('DOMContentLoaded', () => {
                         compTricksLanded = 0;
                         compPendingTrick = pickNextCompTrick();
                         compHUDEl.textContent = '🏆 Press R to restart...';
+                    }
+                    // Olympics crash — counts as a 0-score attempt
+                    if (_olympicsMode && !olympicsDone) {
+                        _handleOlympicsAttempt(0, 'Crash');
                     }
                     // Snap toward nearest lying-flat angle:
                     // norm < π  → back leading → land on back  (π)

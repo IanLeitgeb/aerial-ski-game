@@ -80,8 +80,28 @@
         .trophyGroupHeader:first-child { margin-top: 0; }
         .trophyCell { font-size: 14px; padding: 5px 4px; display: flex; align-items: center; gap: 6px; border-bottom: 1px solid #1a2a3a; }
         .trophyCell .icon { font-size: 18px; width: 22px; text-align: center; }
-        .trophyCancelBtn { background: none; border: none; color: #778899; font-size: 13px; cursor: pointer; text-decoration: underline; display: block; margin: 18px auto 0; }
-        #congratsOverlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.82); z-index: 300; align-items: center; justify-content: center; }
+        .trophyCancelBtn { background: none; border: none; color: #778899; font-size: 13px; cursor: pointer; text-decoration: underline; display: block; margin: 18px auto 0; }        /* ── Achievements ── */
+        #trophyPanelHeader { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; }
+        #trophyPanelHeader h2 { margin-bottom: 0; }
+        #achTabBtn { background: #1a2a3a; border: 1px solid #445566; color: #88aacc; font-size: 12px; font-weight: bold; border-radius: 5px; padding: 5px 12px; cursor: pointer; letter-spacing: 0.04em; white-space: nowrap; transition: background 0.1s, color 0.1s; }
+        #achTabBtn:hover { background: #243648; color: #b8d8ff; }
+        #achView { display: none; }
+        #achView.active { display: block; }
+        #trophyGrid.hidden { display: none; }
+        .achItem { display: flex; align-items: flex-start; gap: 14px; padding: 14px 0; border-bottom: 1px solid #1a2a3a; }
+        .achItem:last-child { border-bottom: none; }
+        .achIcon { font-size: 32px; width: 40px; text-align: center; flex-shrink: 0; filter: grayscale(1) opacity(0.3); transition: filter 0.3s; }
+        .achItem.earned .achIcon { filter: none; }
+        .achName { font-size: 14px; font-weight: bold; color: #b8d8ff; margin-bottom: 3px; }
+        .achItem.earned .achName { color: #ffd700; }
+        .achDesc { font-size: 12px; color: #556677; line-height: 1.5; }
+        .achItem.earned .achDesc { color: #88aacc; }
+        .achBadge { display: inline-block; font-size: 10px; font-weight: bold; background: #1a4a2a; color: #88ffaa; border: 1px solid #44aa66; border-radius: 10px; padding: 1px 8px; margin-top: 5px; letter-spacing: 0.05em; }
+        .achItem.earned .achBadge[data-badge="Supreme"] { background: linear-gradient(90deg, #7a5c00, #c9920a, #7a5c00); color: #ffe066; border-color: #ffd700; text-shadow: 0 0 6px #ffd700; }
+        .achItem:not(.earned) .achBadge { background: #1a2a3a; color: #445566; border-color: #334455; }
+        .achSectionTitle { font-size: 11px; color: #445566; text-transform: uppercase; letter-spacing: 0.08em; margin: 4px 0 10px; }
+        #achCount { font-size: 12px; color: #556677; text-align: center; margin-bottom: 14px; }
+        #achCount span { color: #ffd700; font-weight: bold; }        #congratsOverlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.82); z-index: 300; align-items: center; justify-content: center; }
         #congratsOverlay.open { display: flex; }
         #congratsBox { background: #0f1e0a; border: 2px solid #ffd700; border-radius: 16px; padding: 40px 52px; text-align: center; font-family: sans-serif; color: #fff; max-width: 420px; box-shadow: 0 0 60px rgba(255,215,0,0.25); }
         #congratsBox .bigTrophy { font-size: 72px; display: block; margin-bottom: 16px; animation: trophyPop 0.5s cubic-bezier(0.34,1.56,0.64,1) both; }
@@ -106,6 +126,40 @@
         #grandClaimBtn:hover { transform: scale(1.05); }
         #helpBtn { position: absolute; top: 10px; right: 10px; z-index: 10; background: #1a2030; color: #b8d8ff; border: 1px solid #335566; width: 32px; height: 32px; cursor: pointer; font-size: 16px; font-weight: bold; border-radius: 50%; line-height: 30px; text-align: center; padding: 0; }
         #helpBtn:hover { background: #243040; }
+        #olympicsBtn { display: none; position: absolute; top: 10px; right: 52px; z-index: 10; background: linear-gradient(135deg, #1a180a, #1e2a0a); color: #ffd700; border: 1px solid #886600; padding: 5px 11px; cursor: pointer; font-size: 13px; font-weight: bold; border-radius: 6px; line-height: 1; letter-spacing: 0.04em; box-shadow: 0 0 8px rgba(255,215,0,0.15); transition: box-shadow 0.15s; }
+        #olympicsBtn:hover { background: linear-gradient(135deg, #252510, #283a10); box-shadow: 0 0 16px rgba(255,215,0,0.35); }
+        .olym-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.88); z-index: 350; align-items: center; justify-content: center; }
+        .olym-overlay.open { display: flex; }
+        .olym-box { background: linear-gradient(160deg, #090d18, #090f09); border: 2px solid #7a5c00; border-radius: 14px; padding: 26px 30px; min-width: 400px; max-width: 530px; max-height: 88vh; overflow-y: auto; color: #b8d8ff; font-family: sans-serif; position: relative; }
+        .olym-box h2 { font-size: 21px; color: #ffd700; margin: 0 0 2px; text-align: center; text-shadow: 0 0 18px rgba(255,215,0,0.45); }
+        .olym-sub { font-size: 11px; color: #667788; text-align: center; margin-bottom: 16px; letter-spacing: 0.06em; text-transform: uppercase; }
+        .olym-tbl { width: 100%; border-collapse: collapse; font-size: 13px; }
+        .olym-tbl th { font-size: 10px; color: #445566; text-transform: uppercase; letter-spacing: 0.07em; padding: 3px 6px 7px; border-bottom: 1px solid #182330; text-align: left; }
+        .olym-tbl th.r, .olym-tbl td.r { text-align: right; }
+        .olym-tbl td { padding: 5px 6px; border-bottom: 1px solid #0e1820; vertical-align: middle; }
+        .olym-tbl tr:last-child td { border-bottom: none; }
+        .o-rank { font-size: 14px; font-weight: bold; color: #445566; min-width: 24px; display: inline-block; }
+        .o-rank.g { color: #ffd700; }
+        .o-rank.s { color: #b8c8d8; }
+        .o-rank.b { color: #cd7f32; }
+        .o-flag { font-size: 16px; }
+        .o-name { font-weight: bold; color: #a8c8e8; }
+        .o-name.you { color: #66ffcc; }
+        .o-trick { font-size: 11px; color: #445566; margin-top: 1px; }
+        .o-score { font-weight: bold; color: #ffd700; }
+        .o-score.zero { color: #334455; font-style: italic; }
+        .o-row-you { background: rgba(20,80,55,0.25); }
+        .olym-btn-gold { display: block; width: 100%; margin-top: 16px; background: linear-gradient(135deg, #7a5c00, #ffd700, #7a5c00); color: #0a0800; font-size: 15px; font-weight: bold; border: none; border-radius: 8px; padding: 11px 0; cursor: pointer; letter-spacing: 0.05em; box-shadow: 0 2px 14px rgba(255,215,0,0.3); transition: transform 0.1s, box-shadow 0.1s; }
+        .olym-btn-gold:hover { transform: scale(1.02); box-shadow: 0 4px 20px rgba(255,215,0,0.45); }
+        .olym-close { display: block; margin: 10px auto 0; background: none; border: none; color: #445566; font-size: 12px; cursor: pointer; text-decoration: underline; }
+        .olym-phase-tag { display: inline-block; font-size: 10px; font-weight: bold; letter-spacing: 0.06em; padding: 2px 8px; border-radius: 10px; margin-bottom: 12px; }
+        .olym-phase-qual { background: #1a2a3a; color: #6688aa; border: 1px solid #2a3a4a; }
+        .olym-phase-finals { background: #2a1a08; color: #cc8822; border: 1px solid #5a3a00; }
+        .olym-medal-row { display: flex; align-items: center; justify-content: center; gap: 18px; margin-bottom: 14px; }
+        .olym-medal-block { text-align: center; }
+        .olym-medal-block .med-icon { font-size: 28px; }
+        .olym-medal-block .med-name { font-size: 12px; font-weight: bold; color: #b8d8ff; margin-top: 2px; }
+        .olym-medal-block .med-score { font-size: 11px; color: #778899; }
         #helpModal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.78); z-index: 400; align-items: center; justify-content: center; }
         #helpModal.open { display: flex; }
         #helpBox { background: #0f1e2e; border: 1px solid #445566; border-radius: 12px; padding: 28px 36px; min-width: 320px; max-width: 440px; color: #b8d8ff; font-family: sans-serif; font-size: 14px; line-height: 1.7; }
@@ -178,6 +232,13 @@
                 <button class="toggleBtn" id="superSpinBtn">OFF</button>
             </div>
             </div>
+            <div class="settingRow">
+                <div>
+                    <div class="settingLabel">Mirror Keys</div>
+                    <div class="settingDesc">Swap spin direction — → then ← does a right full, ← then → does a left full</div>
+                </div>
+                <button class="toggleBtn" id="mirrorKeysBtn">OFF</button>
+            </div>
             <div style="margin-top:14px; border-top:1px solid #1a2a3a; padding-top:14px;">
                 <div style="font-size:12px;color:#778899;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:12px;">Skier Colours</div>
                 <div class="settingRow">
@@ -199,6 +260,10 @@
                 <div style="text-align:center; margin-top:14px;">
                     <button id="colorApplyBtn" style="background:#1a3a2a;color:#88ffaa;border:1px solid #44aa66;padding:7px 24px;font-size:13px;font-weight:bold;border-radius:6px;cursor:pointer;">Apply</button>
                 </div>
+            </div>
+            <div id="settingsResetSection" style="display:none; margin-top:18px; border-top:1px solid #2a1a1a; padding-top:16px; text-align:center;">
+                <button id="resetProgressBtn" style="background:#1a0808; color:#ff4422; border:1px solid #882222; padding:7px 24px; font-size:13px; font-weight:bold; border-radius:6px; cursor:pointer;">Reset Progress</button>
+                <div style="font-size:11px; color:#554444; margin-top:6px;">Removes all trophies and unlocks. Cannot be undone.</div>
             </div>
             <button id="settingsCloseBtn">Close</button>
         </div>
@@ -225,6 +290,88 @@
         </div>
     </div>
     <button id="helpBtn" title="Controls">?</button>
+    <button id="olympicsBtn" title="Olympics">🏅 Olympics</button>
+
+    <!-- Olympics: welcome splash -->
+    <div id="olympicsWelcomeModal" class="olym-overlay" style="background: radial-gradient(ellipse at 50% 40%, rgba(80,55,0,0.97) 0%, rgba(14,10,0,0.98) 65%);">
+        <div class="olym-box" style="text-align:center; border-color:#ffd700; box-shadow:0 0 70px rgba(255,215,0,0.3);">
+            <div style="font-size:46px; margin-bottom:12px;">🏅🎿🏅</div>
+            <h2 style="font-size:26px; margin-bottom:8px; text-shadow:0 0 30px rgba(255,215,0,0.9);">Aerial Skiing Olympics</h2>
+            <div style="font-size:18px; color:#fff; font-weight:bold; margin:14px 0 8px; text-shadow:0 0 16px rgba(255,215,0,0.5); line-height:1.4;">Congratulations on making<br>it to the Olympics!</div>
+            <div class="olym-sub" style="margin-bottom:24px;">Triple Jump · International Competition</div>
+            <button class="olym-btn-gold" id="olympicsWelcomeContinueBtn" style="max-width:280px; margin:0 auto;">▶ View Leaderboard</button>
+        </div>
+    </div>
+
+    <!-- Olympics: pre-qualifier leaderboard -->
+    <div id="olympicsModal" class="olym-overlay">
+        <div class="olym-box">
+            <h2>🏅 Olympics</h2>
+            <div class="olym-sub">Triple Jump · Qualifier</div>
+            <span class="olym-phase-tag olym-phase-qual">QUALIFYING ROUND — 2 ATTEMPTS</span>
+            <table class="olym-tbl">
+                <thead><tr><th></th><th></th><th>Athlete</th><th>Trick</th><th class="r">Score</th></tr></thead>
+                <tbody id="olympicsPreQualBody"></tbody>
+            </table>
+            <button class="olym-btn-gold" id="olympicsStartQualBtn">▶ Start Qualifier</button>
+            <button class="olym-close" id="olympicsPreQualCloseBtn">Cancel</button>
+        </div>
+    </div>
+
+    <!-- Olympics: post-qualifier results -->
+    <div id="olympicsQualResultModal" class="olym-overlay">
+        <div class="olym-box">
+            <h2>🏅 Qualifier Results</h2>
+            <div class="olym-sub" id="olympicsQualResultSub"></div>
+            <table class="olym-tbl">
+                <thead><tr><th></th><th></th><th>Athlete</th><th>Trick</th><th class="r">Score</th></tr></thead>
+                <tbody id="olympicsQualResultBody"></tbody>
+            </table>
+            <button class="olym-btn-gold" id="olympicsAdvanceBtn" style="display:none">▶ Advance to Finals</button>
+            <div id="olympicsNoQualMsg" style="display:none; text-align:center; margin-top:14px; font-size:13px; color:#cc6644;">You didn't qualify for the finals.</div>
+            <button class="olym-close" id="olympicsQualResultCloseBtn">Close</button>
+        </div>
+    </div>
+
+    <!-- Olympics: pre-finals leaderboard -->
+    <div id="olympicsPreFinalsModal" class="olym-overlay">
+        <div class="olym-box">
+            <h2>🏅 Finals</h2>
+            <div class="olym-sub">Top 8 · 1 Attempt</div>
+            <span class="olym-phase-tag olym-phase-finals">FINALS — YOUR RUN COMES LAST</span>
+            <table class="olym-tbl">
+                <thead><tr><th></th><th></th><th>Athlete</th><th>Trick</th><th class="r">Score</th></tr></thead>
+                <tbody id="olympicsPreFinalBody"></tbody>
+            </table>
+            <button class="olym-btn-gold" id="olympicsStartFinalsBtn">▶ Start Finals Run</button>
+            <button class="olym-close" id="olympicsPreFinalsCloseBtn">Back</button>
+        </div>
+    </div>
+
+    <!-- Olympics: final results -->
+    <div id="olympicsFinalsResultModal" class="olym-overlay">
+        <div class="olym-box">
+            <h2>🏅 Final Results</h2>
+            <div class="olym-sub" id="olympicsFinalResultSub"></div>
+            <div class="olym-medal-row" id="olympicsPodium"></div>
+            <table class="olym-tbl">
+                <thead><tr><th></th><th></th><th>Athlete</th><th>Trick</th><th class="r">Score</th></tr></thead>
+                <tbody id="olympicsFinalResultBody"></tbody>
+            </table>
+            <button class="olym-btn-gold" id="olympicsPlayAgainBtn">🔄 Play Again</button>
+            <button class="olym-close" id="olympicsFinalCloseBtn">Close</button>
+        </div>
+    </div>
+    <!-- Olympics: top-3 congratulations -->
+    <div id="olympicsCongratsModal" class="olym-overlay">
+        <div class="olym-box" style="text-align:center; max-width:420px; border-color:#ffd700; box-shadow:0 0 60px rgba(255,215,0,0.3);">
+            <div id="olympicsCongrMedal" style="font-size:76px; margin-bottom:10px; filter:drop-shadow(0 0 16px rgba(255,215,0,0.7));"></div>
+            <h2 id="olympicsCongrTitle" style="font-size:24px; margin-bottom:8px;"></h2>
+            <div id="olympicsCongrSub" style="font-size:14px; color:#b8d8ff; margin:8px 0 24px;"></div>
+            <button class="olym-btn-gold" id="olympicsCongrViewBtn">▶ View Full Results</button>
+        </div>
+    </div>
+
     <div id="helpModal">
         <div id="helpBox">
             <h2>Controls</h2>
@@ -259,8 +406,14 @@
     </div>
     <div id="trophyPanel">
         <div id="trophyPanelBox">
-            <h2>🏆 Trophies</h2>
-            <div class="trophyGrid" id="trophyGrid">
+            <div id="trophyPanelHeader">
+                <h2 id="trophyPanelTitle">🏆 Trophies</h2>
+                <button id="achTabBtn">🎖 Achievements</button>
+            </div>
+            <div class="trophyGrid" id="trophyGrid"></div>
+            <div id="achView">
+                <div id="achCount">Loading...</div>
+                <div id="achList"></div>
             </div>
             <button class="trophyCancelBtn" id="trophyCloseBtn">Close</button>
         </div>
@@ -273,7 +426,6 @@
             <div onclick="location.href='?world=double'">Double</div>
             <div onclick="location.href='?world=triple'">Triple</div>
             <div onclick="location.href='?world=quad'">Quad</div>
-            <div onclick="location.href='?world=d2t'">Double to Triple</div>
             <div id="quintWorldItem" style="display:none" onclick="location.href='?world=quint'">⭐ Quint</div>
             <div id="customWorldItem" style="display:none" onclick=""></div>
         </div>
@@ -299,7 +451,8 @@
                     <input type="radio" name="compDiff" id="cd_medium" value="medium"><label for="cd_medium">Medium</label>
                     <input type="radio" name="compDiff" id="cd_hard"   value="hard"><label for="cd_hard">Hard</label>                    <input type="radio" name="compDiff" id="cd_hardest" value="hardest"><label for="cd_hardest">💪 Hardest</label>                </div>
                 <input type="radio" name="compDiff" id="cd_ultra" value="ultra">
-                <div class="ultraSection"><label for="cd_ultra">☠ Ultra — all jumps, hardest tricks</label></div>
+                <div class="ultraSection" id="ultraSectionWrap"><label for="cd_ultra">☠ Ultra — all jumps, hardest tricks</label></div>
+                <div id="ultraLockHint" style="display:none; font-size:11px; color:#554433; text-align:right; margin-top:6px; padding-top:6px; border-top:1px solid #2a1a1a;">🔒 Complete all difficulties on every jump to unlock</div>
             </div>
             <button id="compBeginBtn">Begin</button>
             <button id="compCancelBtn">Cancel</button>
@@ -309,7 +462,7 @@
         (function() {
             var wp = new URLSearchParams(location.search).get('world') || 'double';
             document.addEventListener('DOMContentLoaded', function() {
-                var labelMap = { single: 'Single', double: 'Double', triple: 'Triple', quad: 'Quad', d2t: 'Double to Triple', quint: '⭐ Quint', custom: '⭐ Custom' };
+                var labelMap = { single: 'Single', double: 'Double', triple: 'Triple', quad: 'Quad', quint: '⭐ Quint', custom: '⭐ Custom' };
                 document.getElementById('worldLabel').textContent = labelMap[wp] || wp.charAt(0).toUpperCase() + wp.slice(1);
                 var items = document.querySelectorAll('#worldList div');
                 items.forEach(function(el) { if (el.textContent.toLowerCase() === wp || el.textContent === (labelMap[wp] || '')) el.classList.add('active'); });
@@ -329,6 +482,15 @@
                     var quintUnlocked = isQuintUnlocked();
                     document.getElementById('cw_quint').style.display = quintUnlocked ? '' : 'none';
                     document.getElementById('lbl_cw_quint').style.display = quintUnlocked ? '' : 'none';
+                    // Show/hide ultra based on base trophy completion
+                    var ultraUnlocked = allBaseNonUltraEarned();
+                    document.getElementById('ultraSectionWrap').style.display = ultraUnlocked ? '' : 'none';
+                    document.getElementById('ultraLockHint').style.display = ultraUnlocked ? 'none' : '';
+                    if (!ultraUnlocked && document.getElementById('cd_ultra').checked) {
+                        document.getElementById('cd_easy').checked = true;
+                        jumpSection.style.opacity = '1';
+                        jumpSection.style.pointerEvents = '';
+                    }
                     // Pre-select current world if applicable
                     var validWorlds = ['single','double','triple','quad'];
                     if (quintUnlocked) validWorlds.push('quint');
@@ -352,7 +514,7 @@
                     r.addEventListener('change', function() {
                         var isQuint = r.value === 'quint' && r.checked;
                         ultraRadio.disabled = isQuint;
-                        ultraRadio.parentElement.style.opacity = isQuint ? '0.3' : '';
+                        document.getElementById('ultraSectionWrap').style.opacity = isQuint ? '0.3' : '';
                         if (isQuint && ultraRadio.checked) {
                             document.getElementById('cd_easy').checked = true;
                             jumpSection.style.opacity = '1';
@@ -394,6 +556,13 @@
                     return COMP_KEYS.every(function(pair) {
                         var key = 'comp_beaten_' + pair[0] + '_' + pair[1].toLowerCase();
                         return localStorage.getItem(key) === '1';
+                    });
+                }
+                function allBaseNonUltraEarned() {
+                    return ['single','double','triple','quad'].every(function(w) {
+                        return ['easy','medium','hard','hardest'].every(function(d) {
+                            return localStorage.getItem('comp_beaten_' + w + '_' + d) === '1';
+                        });
                     });
                 }
                 function allTrophiesWithQuint() {
@@ -472,7 +641,109 @@
                         }
                     }
                 }
+                // ── Achievements ──────────────────────────────────────────
+                var ACH_DEFS = [
+                    {
+                        key:  'ach_quint_unlocked',
+                        icon: '⭐',
+                        name: 'Unlock the Quint World',
+                        desc: 'Unlock the Quint jump by earning all base trophies.',
+                        badge: 'Unlock',
+                        check: function() { return isQuintUnlocked() || localStorage.getItem('ach_quint_unlocked') === '1'; }
+                    },
+                    {
+                        key:  'ach_3f3f3f',
+                        icon: '🌀',
+                        name: 'The Impossible Full',
+                        desc: 'Land a Triple Full–Triple Full–Triple Full off the Triple jump.',
+                        badge: 'Rare',
+                        check: function() { return localStorage.getItem('ach_3f3f3f') === '1'; }
+                    },
+                    {
+                        key:  'ach_beat_ultra',
+                        icon: '☠️',
+                        name: 'Beat Ultra',
+                        desc: 'Complete the Ultra competition — all jumps, hardest tricks.',
+                        badge: 'Epic',
+                        check: function() { return localStorage.getItem('comp_beaten_quad_ultra') === '1' || localStorage.getItem('ach_beat_ultra') === '1'; }
+                    },
+                    {
+                        key:  'ach_all_trophies',
+                        icon: '🏆',
+                        name: 'Complete Collection',
+                        desc: 'Earn every trophy in the game — all difficulties on every jump including Quint.',
+                        badge: 'Legendary',
+                        check: function() { return allTrophiesWithQuint() || localStorage.getItem('ach_all_trophies') === '1'; }
+                    },
+                    {
+                        key:  'ach_win_olympics',
+                        icon: '🥇',
+                        name: 'Olympic Champion',
+                        desc: 'Finish 1st in the Olympics finals. The greatest achievement in aerial skiing.',
+                        badge: 'Supreme',
+                        check: function() { return localStorage.getItem('ach_win_olympics') === '1'; }
+                    },
+                    {
+                        key:  'ach_reset_game',
+                        icon: '🔄',
+                        name: 'Reset Your Collection',
+                        desc: 'Reset your progress for a prize.',
+                        badge: 'Elite',
+                        check: function() { return localStorage.getItem('ach_reset_game') === '1'; }
+                    },
+                ];
+
+                function renderAchievements() {
+                    var list = document.getElementById('achList');
+                    var countEl = document.getElementById('achCount');
+                    list.innerHTML = '';
+                    var earned = 0;
+                    ACH_DEFS.forEach(function(a) {
+                        var isEarned = a.check();
+                        if (isEarned) {
+                            earned++;
+                            // Permanently stamp the achievement so it survives a reset
+                            localStorage.setItem(a.key, '1');
+                        }
+                        var item = document.createElement('div');
+                        item.className = 'achItem' + (isEarned ? ' earned' : '');
+                        item.innerHTML = '<div class="achIcon">' + a.icon + '</div>'
+                            + '<div><div class="achName">' + a.name + '</div>'
+                            + '<div class="achDesc">' + a.desc + '</div>'
+                            + '<div><span class="achBadge" data-badge="' + a.badge + '">' + a.badge + '</span></div></div>';
+                        list.appendChild(item);
+                    });
+                    countEl.innerHTML = '<span>' + earned + '</span> / ' + ACH_DEFS.length + ' Achievements Earned';
+                }
+
+                var _achViewOpen = false;
+                document.getElementById('achTabBtn').addEventListener('click', function() {
+                    _achViewOpen = !_achViewOpen;
+                    var achView   = document.getElementById('achView');
+                    var grid      = document.getElementById('trophyGrid');
+                    var title     = document.getElementById('trophyPanelTitle');
+                    var btn       = document.getElementById('achTabBtn');
+                    if (_achViewOpen) {
+                        renderAchievements();
+                        achView.classList.add('active');
+                        grid.classList.add('hidden');
+                        title.textContent = '🎖 Achievements';
+                        btn.textContent = '🏆 Trophies';
+                    } else {
+                        achView.classList.remove('active');
+                        grid.classList.remove('hidden');
+                        title.textContent = '🏆 Trophies';
+                        btn.textContent = '🎖 Achievements';
+                    }
+                });
+
                 document.getElementById('trophyBtn').addEventListener('click', function() {
+                    // Always open on trophies tab
+                    _achViewOpen = false;
+                    document.getElementById('achView').classList.remove('active');
+                    document.getElementById('trophyGrid').classList.remove('hidden');
+                    document.getElementById('trophyPanelTitle').textContent = '🏆 Trophies';
+                    document.getElementById('achTabBtn').textContent = '🎖 Achievements';
                     refreshTrophies();
                     renderQuintButton();
                     trophyPanel.classList.add('open');
@@ -644,6 +915,7 @@
                     var settingsModal = document.getElementById('settingsModal');
                     var autoLandBtn   = document.getElementById('autoLandBtn');
                     var superSpinBtn  = document.getElementById('superSpinBtn');
+                    var mirrorKeysBtn = document.getElementById('mirrorKeysBtn');
 
                     function updateAutoLandBtn() {
                         var on = localStorage.getItem('setting_autoland') === '1';
@@ -655,13 +927,21 @@
                         superSpinBtn.textContent = on ? 'ON' : 'OFF';
                         superSpinBtn.classList.toggle('on', on);
                     }
+                    function updateMirrorKeysBtn() {
+                        var on = localStorage.getItem('setting_mirrorkeys') === '1';
+                        mirrorKeysBtn.textContent = on ? 'ON' : 'OFF';
+                        mirrorKeysBtn.classList.toggle('on', on);
+                    }
                     updateAutoLandBtn();
                     updateSuperSpinBtn();
+                    updateMirrorKeysBtn();
 
                     var settingsBtn = document.getElementById('settingsBtn');
                     // settings always visible
                     var unlockSection = document.getElementById('settingsUnlockSection');
+                    var resetSection   = document.getElementById('settingsResetSection');
                     if (allTrophiesWithQuint()) unlockSection.style.display = '';
+                    if (allTrophiesWithQuint()) resetSection.style.display = '';
 
                     document.getElementById('settingsBtn').addEventListener('click', function() {
                         settingsModal.classList.add('open');
@@ -681,6 +961,32 @@
                         var on = localStorage.getItem('setting_superspin') === '1';
                         localStorage.setItem('setting_superspin', on ? '0' : '1');
                         updateSuperSpinBtn();
+                    });
+                    document.getElementById('resetProgressBtn').addEventListener('click', function() {
+                        if (!confirm('Reset all progress? This will remove all trophies and unlock settings. Your custom map settings will be kept.')) return;
+                        // Remove all competition trophies
+                        COMP_KEYS.forEach(function(pair) {
+                            localStorage.removeItem('comp_beaten_' + pair[0] + '_' + pair[1].toLowerCase());
+                        });
+                        ['easy','medium','hard','hardest'].forEach(function(d) {
+                            localStorage.removeItem('comp_beaten_quint_' + d);
+                        });
+                        localStorage.removeItem('quint_unlocked');
+                        localStorage.setItem('ach_reset_game', '1');
+                        // Remove unlocked settings
+                        localStorage.removeItem('setting_autoland');
+                        localStorage.removeItem('setting_superspin');
+                        updateAutoLandBtn();
+                        updateSuperSpinBtn();
+                        unlockSection.style.display = 'none';
+                        resetSection.style.display = 'none';
+                        settingsModal.classList.remove('open');
+                        location.reload();
+                    });
+                    mirrorKeysBtn.addEventListener('click', function() {
+                        var on = localStorage.getItem('setting_mirrorkeys') === '1';
+                        localStorage.setItem('setting_mirrorkeys', on ? '0' : '1');
+                        updateMirrorKeysBtn();
                     });
 
                     // Colour pickers
@@ -759,6 +1065,223 @@
                         customModal.classList.add('open');
                     }
                 });
+                // ── Olympics ──────────────────────────────────────────────
+                (function() {
+                    var OLYMPIC_AI = [
+                        // Top 8 finalists (qual scores ~94–127)
+                        { name: 'Jing Wei',       flag: '🇨🇳', qualTrick: 'Double Full–Full–Double Full', qualScore: 127.4, finalsTrick: 'Double Full–Triple Full–Full', finalsScore: 131.2 },
+                        { name: 'Mia Sørensen',   flag: '🇸🇪', qualTrick: 'Double Full–Full–Double Full', qualScore: 118.2, finalsTrick: 'Full–Triple Full–Double Full',   finalsScore: 124.6 },
+                        { name: 'Pavel Korolev',  flag: '🇷🇺', qualTrick: 'Double Full–Full–Full',        qualScore: 112.6, finalsTrick: 'Double Full–Double Full–Full',   finalsScore: 116.8 },
+                        { name: 'Laura Schneider',flag: '🇩🇪', qualTrick: 'Double Full–Double Full–Full', qualScore: 108.4, finalsTrick: 'Double Full–Full–Double Full',   finalsScore: 121.3 },
+                        { name: 'Kenji Tanaka',   flag: '🇯🇵', qualTrick: 'Full–Full–Full',              qualScore: 103.7, finalsTrick: 'Double Full–Full–Full',           finalsScore: 109.2 },
+                        { name: 'Anya Petrov',    flag: '🇷🇺', qualTrick: 'Double Full–Full–Full',        qualScore:  99.8, finalsTrick: 'Double Full–Double Full–Full',   finalsScore: 104.1 },
+                        { name: 'Erik Johansson', flag: '🇸🇪', qualTrick: 'Full–Full–Full',              qualScore:  96.3, finalsTrick: 'Full–Full–Full',                  finalsScore:  91.7 },
+                        { name: 'Sara Mäkinen',   flag: '🇫🇮', qualTrick: 'Full–Full–Full',              qualScore:  94.1, finalsTrick: 'Double Full–Full–Full',           finalsScore:  97.8 },
+                        // Non-finalists (scores 55–91)
+                        { name: 'Luca Bianchi',   flag: '🇮🇹', qualTrick: 'Full–Full–Full',              qualScore:  91.4 },
+                        { name: 'Chen Yue',       flag: '🇨🇳', qualTrick: 'Full–Full–Full',              qualScore:  88.7 },
+                        { name: 'Hana Novak',     flag: '🇨🇿', qualTrick: 'Full–Full–Lay',               qualScore:  85.2 },
+                        { name: 'Marc Dubois',    flag: '🇫🇷', qualTrick: 'Full–Full–Lay',               qualScore:  82.6 },
+                        { name: 'Sofia Reyes',    flag: '🇲🇽', qualTrick: 'Full–Lay–Full',               qualScore:  80.1 },
+                        { name: 'Dmitri Volkov',  flag: '🇷🇺', qualTrick: 'Full–Full–Lay',               qualScore:  77.9 },
+                        { name: 'Yuki Hayashi',   flag: '🇯🇵', qualTrick: 'Full–Lay–Full',               qualScore:  75.4 },
+                        { name: 'Anna Berg',      flag: '🇩🇪', qualTrick: 'Lay–Full–Full',               qualScore:  72.8 },
+                        { name: 'Tom Clarke',     flag: '🇬🇧', qualTrick: 'Full–Lay–Lay',                qualScore:  70.3 },
+                        { name: 'Nina Larsen',    flag: '🇩🇰', qualTrick: 'Lay–Full–Lay',                qualScore:  67.6 },
+                        { name: 'Alex Müller',    flag: '🇦🇹', qualTrick: 'Lay–Lay–Full',                qualScore:  64.9 },
+                        { name: 'Ji-won Park',    flag: '🇰🇷', qualTrick: 'Lay–Full–Lay',                qualScore:  62.4 },
+                        { name: 'Ingrid Olsen',   flag: '🇳🇴', qualTrick: 'Lay–Lay–Full',                qualScore:  60.1 },
+                        { name: 'Carlo Rossi',    flag: '🇮🇹', qualTrick: 'Lay–Lay–Lay',                 qualScore:  58.7 },
+                        { name: 'Lea Fischer',    flag: '🇨🇭', qualTrick: 'Lay–Lay–Lay',                 qualScore:  57.3 },
+                        { name: 'Ben Taylor',     flag: '🇦🇺', qualTrick: 'Lay–Lay–Lay',                 qualScore:  55.8 },
+                    ];
+
+                    function rankLabel(n) {
+                        if (n === 1) return '<span class="o-rank g">🥇</span>';
+                        if (n === 2) return '<span class="o-rank s">🥈</span>';
+                        if (n === 3) return '<span class="o-rank b">🥉</span>';
+                        return '<span class="o-rank">' + n + '</span>';
+                    }
+
+                    function buildTable(tbody, rows) {
+                        // rows: [{rank, flag, name, trick, score, isYou}]
+                        tbody.innerHTML = '';
+                        rows.forEach(function(r) {
+                            var tr = document.createElement('tr');
+                            if (r.isYou) tr.classList.add('o-row-you');
+                            var scoreHtml = (r.score === 0 && r.isYou) ? '<span class="o-score zero">–</span>'
+                                          : '<span class="o-score' + (r.score === 0 ? ' zero' : '') + '">' + (r.score === 0 ? '0.0' : r.score.toFixed(1)) + '</span>';
+                            tr.innerHTML = '<td>' + rankLabel(r.rank) + '</td>'
+                                + '<td class="o-flag">' + r.flag + '</td>'
+                                + '<td><div class="o-name' + (r.isYou ? ' you' : '') + '">' + r.name + '</div>'
+                                + '<div class="o-trick">' + r.trick + '</div></td>'
+                                + '<td class="r">' + scoreHtml + '</td>';
+                            tbody.appendChild(tr);
+                        });
+                    }
+
+                    function makeQualRows(playerScore, playerTrick) {
+                        var entries = OLYMPIC_AI.map(function(a) {
+                            return { name: a.name, flag: a.flag, trick: a.qualTrick, score: a.qualScore, isYou: false };
+                        });
+                        entries.push({ name: 'You', flag: '🎿', trick: playerTrick || '–', score: playerScore, isYou: true });
+                        entries.sort(function(a, b) { return b.score - a.score; });
+                        return entries.map(function(e, i) { return Object.assign({ rank: i + 1 }, e); });
+                    }
+
+                    function getTop8(playerQualScore, playerQualTrick) {
+                        var all = makeQualRows(playerQualScore, playerQualTrick);
+                        return all.slice(0, 8);
+                    }
+
+                    function makeFinalsRows(playerFinalScore, playerFinalTrick, top8) {
+                        var entries = top8.map(function(e) {
+                            if (e.isYou) return { name: 'You', flag: '🎿', trick: playerFinalTrick || e.trick, score: playerFinalScore, isYou: true };
+                            var ai = OLYMPIC_AI.find(function(a) { return a.name === e.name; });
+                            return { name: e.name, flag: e.flag, trick: ai.finalsTrick || e.trick, score: ai.finalsScore, isYou: false };
+                        });
+                        entries.sort(function(a, b) { return b.score - a.score; });
+                        return entries.map(function(e, i) { return Object.assign({ rank: i + 1 }, e); });
+                    }
+
+                    // Show/hide button
+                    var olympicsBtn = document.getElementById('olympicsBtn');
+                    if (localStorage.getItem('ach_reset_game') === '1') olympicsBtn.style.display = 'inline-block';
+
+                    function openModal(id) { document.getElementById(id).classList.add('open'); }
+                    function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+
+                    // ── Open pre-qual board ──
+                    olympicsBtn.addEventListener('click', function() {
+                        // Reset any prior attempt state for a fresh session
+                        localStorage.removeItem('olympics_attempts');
+                        localStorage.removeItem('olympics_best_qual');
+                        localStorage.removeItem('olympics_qual_trick');
+                        localStorage.removeItem('olympics_final_score');
+                        localStorage.removeItem('olympics_final_trick');
+                        var rows = makeQualRows(0, '–');
+                        buildTable(document.getElementById('olympicsPreQualBody'), rows);
+                        openModal('olympicsWelcomeModal');
+                    });
+                    document.getElementById('olympicsWelcomeContinueBtn').addEventListener('click', function() {
+                        closeModal('olympicsWelcomeModal');
+                        openModal('olympicsModal');
+                    });
+                    document.getElementById('olympicsPreQualCloseBtn').addEventListener('click', function() { closeModal('olympicsModal'); });
+                    document.getElementById('olympicsModal').addEventListener('click', function(e) { if (e.target === this) closeModal('olympicsModal'); });
+
+                    document.getElementById('olympicsStartQualBtn').addEventListener('click', function() {
+                        localStorage.setItem('olympics_phase', 'qual');
+                        localStorage.setItem('olympics_attempts', '0');
+                        localStorage.setItem('olympics_best_qual', '0');
+                        location.href = '?world=triple&olympics=qual';
+                    });
+
+                    // ── Called from game.js after both qual attempts ──
+                    window._olympicsQualDone = function(bestScore, bestTrick) {
+                        localStorage.setItem('olympics_best_qual', String(bestScore));
+                        localStorage.setItem('olympics_qual_trick', bestTrick || '–');
+                        var rows = makeQualRows(bestScore, bestTrick);
+                        buildTable(document.getElementById('olympicsQualResultBody'), rows);
+                        var playerRank = rows.find(function(r) { return r.isYou; }).rank;
+                        var sub = document.getElementById('olympicsQualResultSub');
+                        sub.textContent = 'Your score: ' + bestScore.toFixed(1) + ' — Ranked ' + playerRank + ' of 25';
+                        var qualified = playerRank <= 8;
+                        document.getElementById('olympicsAdvanceBtn').style.display = qualified ? 'block' : 'none';
+                        document.getElementById('olympicsNoQualMsg').style.display = qualified ? 'none' : 'block';
+                        closeModal('olympicsModal');
+                        openModal('olympicsQualResultModal');
+                    };
+
+                    document.getElementById('olympicsQualResultCloseBtn').addEventListener('click', function() { closeModal('olympicsQualResultModal'); });
+                    document.getElementById('olympicsQualResultModal').addEventListener('click', function(e) { if (e.target === this) closeModal('olympicsQualResultModal'); });
+
+                    document.getElementById('olympicsAdvanceBtn').addEventListener('click', function() {
+                        closeModal('olympicsQualResultModal');
+                        // Build pre-finals board: top 8, show AI finals scores already, player shows qual score (TBD)
+                        var playerQualScore = parseFloat(localStorage.getItem('olympics_best_qual') || '0');
+                        var playerQualTrick = localStorage.getItem('olympics_qual_trick') || '–';
+                        var top8 = getTop8(playerQualScore, playerQualTrick);
+                        // For pre-finals: show AI finalist scores (already locked in), player shows qual score
+                        var preFinalsRows = top8.map(function(e, i) {
+                            if (e.isYou) return e; // qual score shown
+                            var ai = OLYMPIC_AI.find(function(a) { return a.name === e.name; });
+                            return { rank: e.rank, name: e.name, flag: e.flag, trick: ai.finalsTrick, score: ai.finalsScore, isYou: false };
+                        });
+                        // Re-sort by finals score but keep player at bottom (TBD)
+                        var aiRows = preFinalsRows.filter(function(r) { return !r.isYou; });
+                        var youRow = preFinalsRows.find(function(r) { return r.isYou; });
+                        aiRows.sort(function(a, b) { return b.score - a.score; });
+                        aiRows.forEach(function(r, i) { r.rank = i + 1; });
+                        youRow.rank = '–';
+                        youRow.score = 0;
+                        youRow.trick = '–';
+                        var displayRows = aiRows.concat([youRow]);
+                        buildTable(document.getElementById('olympicsPreFinalBody'), displayRows);
+                        openModal('olympicsPreFinalsModal');
+                    });
+
+                    document.getElementById('olympicsPreFinalsCloseBtn').addEventListener('click', function() { closeModal('olympicsPreFinalsModal'); });
+                    document.getElementById('olympicsPreFinalsModal').addEventListener('click', function(e) { if (e.target === this) closeModal('olympicsPreFinalsModal'); });
+
+                    document.getElementById('olympicsStartFinalsBtn').addEventListener('click', function() {
+                        localStorage.setItem('olympics_phase', 'finals');
+                        location.href = '?world=triple&olympics=finals';
+                    });
+
+                    // ── Called from game.js after finals attempt ──
+                    window._olympicsFinalsDone = function(score, trick) {
+                        localStorage.setItem('olympics_final_score', String(score));
+                        localStorage.setItem('olympics_final_trick', trick || '–');
+                        var playerQualScore = parseFloat(localStorage.getItem('olympics_best_qual') || '0');
+                        var playerQualTrick = localStorage.getItem('olympics_qual_trick') || '–';
+                        var top8 = getTop8(playerQualScore, playerQualTrick);
+                        var rows = makeFinalsRows(score, trick, top8);
+                        buildTable(document.getElementById('olympicsFinalResultBody'), rows);
+                        var playerRank = rows.find(function(r) { return r.isYou; }).rank;
+                        if (playerRank === 1) localStorage.setItem('ach_win_olympics', '1');
+                        var sub = document.getElementById('olympicsFinalResultSub');
+                        sub.textContent = 'Your score: ' + score.toFixed(1) + ' — Finished ' + playerRank + (playerRank===1?' st':playerRank===2?' nd':playerRank===3?' rd':' th') + ' of 8';
+                        // Podium
+                        var podium = document.getElementById('olympicsPodium');
+                        podium.innerHTML = '';
+                        var medals = [{ icon:'🥇', cls:'g' }, { icon:'🥈', cls:'s' }, { icon:'🥉', cls:'b' }];
+                        [1,2,3].forEach(function(rank) {
+                            var r = rows.find(function(x) { return x.rank === rank; });
+                            if (!r) return;
+                            var d = document.createElement('div');
+                            d.className = 'olym-medal-block';
+                            d.innerHTML = '<div class="med-icon">' + medals[rank-1].icon + '</div>'
+                                + '<div class="med-name' + (r.isYou ? ' o-name you' : '') + '">' + r.name + '</div>'
+                                + '<div class="med-score">' + r.score.toFixed(1) + '</div>';
+                            podium.appendChild(d);
+                        });
+                        closeModal('olympicsPreFinalsModal');
+                        if (playerRank <= 3) {
+                            var congrMedals = ['🥇', '🥈', '🥉'];
+                            var congrTitles = ['You Won Gold!', 'You Won Silver!', 'You Won Bronze!'];
+                            var congrSubs = ['Olympic Champion \u2014 you stood at the top of the podium!', 'An incredible performance \u2014 you finished 2nd in the World!', 'Amazing effort \u2014 you finished 3rd in the World!'];
+                            document.getElementById('olympicsCongrMedal').textContent = congrMedals[playerRank - 1];
+                            document.getElementById('olympicsCongrTitle').textContent = congrTitles[playerRank - 1];
+                            document.getElementById('olympicsCongrSub').textContent = congrSubs[playerRank - 1];
+                            openModal('olympicsCongratsModal');
+                        } else {
+                            openModal('olympicsFinalsResultModal');
+                        }
+                    };
+
+                    document.getElementById('olympicsFinalCloseBtn').addEventListener('click', function() { closeModal('olympicsFinalsResultModal'); });
+                    document.getElementById('olympicsFinalsResultModal').addEventListener('click', function(e) { if (e.target === this) closeModal('olympicsFinalsResultModal'); });
+                    document.getElementById('olympicsCongrViewBtn').addEventListener('click', function() {
+                        closeModal('olympicsCongratsModal');
+                        openModal('olympicsFinalsResultModal');
+                    });
+                    document.getElementById('olympicsPlayAgainBtn').addEventListener('click', function() {
+                        closeModal('olympicsFinalsResultModal');
+                        location.href = '?world=triple';
+                    });
+                })();
+
                 window.showCongratsScreen = function(worldParam, diffParam) {
                     var beatenKey = diffParam === 'ultra' ? 'comp_beaten_quad_ultra' : 'comp_beaten_' + worldParam + '_' + diffParam;
                     var alreadyHad = localStorage.getItem(beatenKey) === '1';
