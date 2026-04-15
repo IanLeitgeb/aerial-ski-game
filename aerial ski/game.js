@@ -1,5 +1,10 @@
 'use strict';
 
+// ── Safe localStorage wrapper (some browsers restrict it for file:// URLs) ─
+function _lsGet(key) { try { return _lsGet(key); } catch(e) { return null; } }
+function _lsSet(key, val) { try { _lsSet(key, val); } catch(e) {} }
+function _lsRemove(key) { try { _lsRemove(key); } catch(e) {} }
+
 // ── Colour helpers ─────────────────────────────────────────────────────────
 function _hexToRgb(hex) {
     var r = parseInt(hex.slice(1,3),16)/255;
@@ -8,10 +13,10 @@ function _hexToRgb(hex) {
     return [r, g, b];
 }
 const _CC = {
-    helmet: _hexToRgb(localStorage.getItem('color_helmet') || '#1a1a1a'),
-    torso:  _hexToRgb(localStorage.getItem('color_torso')  || '#1440bf'),
-    arms:   _hexToRgb(localStorage.getItem('color_arms')   || '#cc0f0f'),
-    legs:   _hexToRgb(localStorage.getItem('color_legs')   || '#1a1a1a'),
+    helmet: _hexToRgb(_lsGet('color_helmet') || '#1a1a1a'),
+    torso:  _hexToRgb(_lsGet('color_torso')  || '#1440bf'),
+    arms:   _hexToRgb(_lsGet('color_arms')   || '#cc0f0f'),
+    legs:   _hexToRgb(_lsGet('color_legs')   || '#1a1a1a'),
 };
 
 // ── Segment definitions ────────────────────────────────────────────────────
@@ -611,7 +616,13 @@ function terrainAccelZ(z) {
 // ── Entry point ────────────────────────────────────────────────────────────
 window.addEventListener('DOMContentLoaded', () => {
     const canvas = document.getElementById('renderCanvas');
-    const engine = new BABYLON.Engine(canvas, true, { preserveDrawingBuffer: true });
+    // Detect WebGL support before starting — shows a clear error on old/unsupported hardware
+    if (!BABYLON.Engine.isSupported()) {
+        canvas.style.display = 'none';
+        document.body.insertAdjacentHTML('beforeend', '<div style="display:flex;align-items:center;justify-content:center;height:100vh;background:#000;font-family:sans-serif;color:#b8d8ff;text-align:center;padding:20px"><div><div style="font-size:48px;margin-bottom:20px">⛷</div><h2 style="color:#fff;margin-bottom:12px">WebGL not available</h2><p style="color:#778899;max-width:400px;line-height:1.6">This game needs WebGL (hardware-accelerated graphics).<br><br>Please try:<br>• Enabling hardware acceleration in your browser settings<br>• Updating your graphics drivers<br>• Using <strong style="color:#b8d8ff">Chrome</strong> or <strong style="color:#b8d8ff">Firefox</strong></p></div></div>');
+        return;
+    }
+    const engine = new BABYLON.Engine(canvas, true, { preserveDrawingBuffer: true, failIfMajorPerformanceCaveat: false });
 
     // ── Scene ───────────────────────────────────────────────────────────────
     const scene = new BABYLON.Scene(engine);
@@ -651,12 +662,20 @@ window.addEventListener('DOMContentLoaded', () => {
     hemi.groundColor = new BABYLON.Color3(0.2, 0.2, 0.3); // subtle cool fill from below
 
     // ── Depth of field pipeline (active only in behind-character view) ────────
-    const dofPipeline = new BABYLON.DefaultRenderingPipeline('dof', true, scene, [camera]);
-    dofPipeline.depthOfFieldEnabled  = false;
-    dofPipeline.depthOfFieldBlurLevel = BABYLON.DepthOfFieldEffectBlurLevel.Medium;
-    dofPipeline.depthOfField.fStop        = 1.4;
-    dofPipeline.depthOfField.focalLength  = 50;   // mm — tighter focus
-    dofPipeline.depthOfField.focusDistance = 10000; // mm — distance to character (~10 world units)
+    // Use hdr=false to avoid requiring WebGL2; DOF is disabled by default anyway
+    let dofPipeline = null;
+    try {
+        dofPipeline = new BABYLON.DefaultRenderingPipeline('dof', false, scene, [camera]);
+        dofPipeline.depthOfFieldEnabled  = false;
+        dofPipeline.depthOfFieldBlurLevel = BABYLON.DepthOfFieldEffectBlurLevel.Medium;
+        if (dofPipeline.depthOfField) {
+            dofPipeline.depthOfField.fStop        = 1.4;
+            dofPipeline.depthOfField.focalLength  = 50;
+            dofPipeline.depthOfField.focusDistance = 10000;
+        }
+    } catch(e) {
+        dofPipeline = null; // Silently skip DOF if pipeline fails (some GPU drivers)
+    }
 
     // ── Character ─────────────────────────────────────────────────────────────
     const character = buildCharacter(scene);
@@ -673,10 +692,10 @@ window.addEventListener('DOMContentLoaded', () => {
         }
         var m = window._characterMeshes;
         if (!m) return;
-        var helmetC = hexToC3(localStorage.getItem('color_helmet') || '#1a1a1a');
-        var torsoC  = hexToC3(localStorage.getItem('color_torso')  || '#1440bf');
-        var armsC   = hexToC3(localStorage.getItem('color_arms')   || '#cc0f0f');
-        var legsC   = hexToC3(localStorage.getItem('color_legs')   || '#1a1a1a');
+        var helmetC = hexToC3(_lsGet('color_helmet') || '#1a1a1a');
+        var torsoC  = hexToC3(_lsGet('color_torso')  || '#1440bf');
+        var armsC   = hexToC3(_lsGet('color_arms')   || '#cc0f0f');
+        var legsC   = hexToC3(_lsGet('color_legs')   || '#1a1a1a');
         if (m['head']  && m['head'].material)  m['head'].material.diffuseColor  = helmetC;
         if (m['torso'] && m['torso'].material) m['torso'].material.diffuseColor = torsoC;
         ['upperArmL','upperArmR','lowerArmL','lowerArmR'].forEach(function(n) {
@@ -844,7 +863,7 @@ window.addEventListener('DOMContentLoaded', () => {
     const MAX_OMEGA = 9.75;            // rad/s cap — limits tucked flip speed
     const I0 = computeI(0);            // I at tuck = 0 (fully extended)
 
-    const SPIN_SPEED    = Math.PI * 2.0 * (_worldParam === 'custom' ? _customFlipSpeed : _worldParam === 'quint' ? 1.45 : _worldParam === 'quad' ? 1.3 : _worldParam === 'triple' ? 1.3 : _worldParam === 'single' ? 0.68 : 1.0) * (localStorage.getItem('setting_superspin') === '1' ? 2.0 : 1.0); // rad/s ~= 1.0 full twist/second
+    const SPIN_SPEED    = Math.PI * 2.0 * (_worldParam === 'custom' ? _customFlipSpeed : _worldParam === 'quint' ? 1.45 : _worldParam === 'quad' ? 1.3 : _worldParam === 'triple' ? 1.3 : _worldParam === 'single' ? 0.68 : 1.0) * (_lsGet('setting_superspin') === '1' ? 2.0 : 1.0); // rad/s ~= 1.0 full twist/second
     const ARM_DROP_RATE = 4.0;            // arm transitions in ~0.25 s
     const GRAVITY       = 14.0;           // world-units / s²
 
@@ -964,7 +983,7 @@ window.addEventListener('DOMContentLoaded', () => {
     camera.beta  = Math.PI / 3.2 - 2 * Math.PI / 180;
     camera.mode  = BABYLON.Camera.PERSPECTIVE_CAMERA;
     camera.fov   = 0.9;
-    dofPipeline.depthOfFieldEnabled = true;
+    if (dofPipeline) dofPipeline.depthOfFieldEnabled = true;
 
 
     // ── Input ─────────────────────────────────────────────────────────────────
@@ -1064,7 +1083,7 @@ window.addEventListener('DOMContentLoaded', () => {
                 camera.beta  = Math.PI / 3.2 - 2 * Math.PI / 180;
                 camera.mode  = BABYLON.Camera.PERSPECTIVE_CAMERA;
                 camera.fov   = 0.9; // ~52°
-                dofPipeline.depthOfFieldEnabled = true;
+                if (dofPipeline) dofPipeline.depthOfFieldEnabled = true;
             } else {
                 // Return to fixed starting side view: ortho, no DOF
                 camera.alpha  = Math.PI;
@@ -1072,13 +1091,13 @@ window.addEventListener('DOMContentLoaded', () => {
                 camera.target = BABYLON.Vector3.Zero();
                 camera.mode   = BABYLON.Camera.ORTHOGRAPHIC_CAMERA;
                 setOrtho(3.0);
-                dofPipeline.depthOfFieldEnabled = false;
+                if (dofPipeline) dofPipeline.depthOfFieldEnabled = false;
             }
             return;
         }
         if (paused) return;
         // Mirror Keys setting: swap left/right arrow interpretation
-        const _mirrorKeys = localStorage.getItem('setting_mirrorkeys') === '1';
+        const _mirrorKeys = _lsGet('setting_mirrorkeys') === '1';
         const _kcode = (_mirrorKeys && e.code === 'ArrowLeft') ? 'ArrowRight'
                      : (_mirrorKeys && e.code === 'ArrowRight') ? 'ArrowLeft'
                      : e.code;
@@ -1125,7 +1144,7 @@ window.addEventListener('DOMContentLoaded', () => {
         }
     });
     window.addEventListener('keyup', e => {
-        const _mirrorKeys = localStorage.getItem('setting_mirrorkeys') === '1';
+        const _mirrorKeys = _lsGet('setting_mirrorkeys') === '1';
         const _kcode = (_mirrorKeys && e.code === 'ArrowLeft') ? 'ArrowRight'
                      : (_mirrorKeys && e.code === 'ArrowRight') ? 'ArrowLeft'
                      : e.code;
@@ -1231,7 +1250,7 @@ window.addEventListener('DOMContentLoaded', () => {
         '3,1,1,1':6.30, '1,3,1,1':6.25, '1,1,3,1':6.20, '1,1,1,3':6.10,
     };
     const HS_KEY = `hs_${_worldParam}`;
-    let highScore = parseFloat(localStorage.getItem(HS_KEY) || '0');
+    let highScore = parseFloat(_lsGet(HS_KEY) || '0');
 
     // ── Competition mode ──────────────────────────────────────────────────────
     const COMP_POOLS = {
@@ -1313,9 +1332,9 @@ window.addEventListener('DOMContentLoaded', () => {
         compHUDEl.style.display = 'block';
     }
     // ── Olympics mode state ───────────────────────────────────────────────
-    let olympicsAttempts  = _olympicsMode ? parseInt(localStorage.getItem('olympics_attempts') || '0', 10) : 0;
-    let olympicsBestScore = _olympicsMode ? parseFloat(localStorage.getItem('olympics_best_qual') || '0') : 0;
-    let olympicsBestTrick = _olympicsMode ? (localStorage.getItem('olympics_qual_trick') || '–') : '–';
+    let olympicsAttempts  = _olympicsMode ? parseInt(_lsGet('olympics_attempts') || '0', 10) : 0;
+    let olympicsBestScore = _olympicsMode ? parseFloat(_lsGet('olympics_best_qual') || '0') : 0;
+    let olympicsBestTrick = _olympicsMode ? (_lsGet('olympics_qual_trick') || '–') : '–';
     let olympicsDone      = false; // true after all attempts used in this session
     if (_olympicsMode) {
         compHUDEl.style.display = 'block';
@@ -1342,9 +1361,9 @@ window.addEventListener('DOMContentLoaded', () => {
         // Qualifier
         olympicsAttempts++;
         if (score > olympicsBestScore) { olympicsBestScore = score; olympicsBestTrick = trick; }
-        localStorage.setItem('olympics_attempts', String(olympicsAttempts));
-        localStorage.setItem('olympics_best_qual', String(olympicsBestScore));
-        localStorage.setItem('olympics_qual_trick', olympicsBestTrick);
+        _lsSet('olympics_attempts', String(olympicsAttempts));
+        _lsSet('olympics_best_qual', String(olympicsBestScore));
+        _lsSet('olympics_qual_trick', olympicsBestTrick);
         if (olympicsAttempts >= 2) {
             olympicsDone = true;
             compHUDEl.textContent = `🏅 Qualifier done — Best: ${olympicsBestScore > 0 ? olympicsBestScore.toFixed(1) + ' pts' : 'no score'}`;
@@ -1559,7 +1578,7 @@ window.addEventListener('DOMContentLoaded', () => {
                     const dd    = calcDD(state.perFlipTwists);
                     const score = Math.round(dd * state.execution * 10) / 10;
                     const isNew = score > highScore;
-                    if (isNew) { highScore = score; localStorage.setItem(HS_KEY, score); }
+                    if (isNew) { highScore = score; _lsSet(HS_KEY, score); }
                     bbName.text  = state.trickName;
                     bbSub.text   = _compParam ? '' : `${totalFlips} flip${totalFlips !== 1 ? 's' : ''} · ${totalTwists} twist${totalTwists !== 1 ? 's' : ''}  ·  DD ${dd}  ×  exec ${state.execution}`;
                     bbScore.text = _compParam ? '' : (isNew ? `★ NEW BEST  ${score}` : `${score}  (best: ${highScore})`);
@@ -1670,7 +1689,7 @@ window.addEventListener('DOMContentLoaded', () => {
                 const spinNorm = ((state.spinAngle % TWO_PI) + TWO_PI) % TWO_PI;
                 const SPIN_TOL = Math.PI / 4; // 45° — must be facing forward
                 const facingForward = spinNorm < SPIN_TOL || spinNorm > TWO_PI - SPIN_TOL;
-                const autoLand = localStorage.getItem('setting_autoland') === '1';
+                const autoLand = _lsGet('setting_autoland') === '1';
                 const goodLanding = autoLand || ((norm < LAND_TOL || norm > TWO_PI - LAND_TOL) && facingForward);
 
                 state.rootY      = surY + 0.10;
@@ -1710,7 +1729,7 @@ window.addEventListener('DOMContentLoaded', () => {
                         .join('-');
                     // ── Achievement: Triple Full-Triple Full-Triple Full on triple jump ─
                     if (_worldParam === 'triple' && state.trickName === 'Triple Full-Triple Full-Triple Full') {
-                        localStorage.setItem('ach_3f3f3f', '1');
+                        _lsSet('ach_3f3f3f', '1');
                     }
                     // ── Competition progression ───────────────────────────────
                     if (assignedTrick !== null) {
@@ -1725,14 +1744,14 @@ window.addEventListener('DOMContentLoaded', () => {
                                 const isLastUltraJump = _compParam === 'ultra' && _ultraJump === ULTRA_POOL.length - 1;
                                 if (_compParam !== 'ultra' || isLastUltraJump) {
                                     const beatenKey = _compParam === 'ultra' ? 'comp_beaten_quad_ultra' : `comp_beaten_${_worldParam}_${_compParam}`;
-                                    const wasNew = localStorage.getItem(beatenKey) !== '1';
-                                    localStorage.setItem(beatenKey, '1');
+                                    const wasNew = _lsGet(beatenKey) !== '1';
+                                    _lsSet(beatenKey, '1');
                                     // Check if this completes the entire collection
                                     if (wasNew) {
                                         const allBase = ['single','double','triple','quad'].every(w =>
-                                            ['easy','medium','hard','hardest'].every(d => localStorage.getItem(`comp_beaten_${w}_${d}`) === '1')
-                                        ) && localStorage.getItem('comp_beaten_quad_ultra') === '1';
-                                        const allQuint = ['easy','medium','hard','hardest'].every(d => localStorage.getItem(`comp_beaten_quint_${d}`) === '1');
+                                            ['easy','medium','hard','hardest'].every(d => _lsGet(`comp_beaten_${w}_${d}`) === '1')
+                                        ) && _lsGet('comp_beaten_quad_ultra') === '1';
+                                        const allQuint = ['easy','medium','hard','hardest'].every(d => _lsGet(`comp_beaten_quint_${d}`) === '1');
                                         if (allBase && allQuint) window._justCompletedAll = true;
                                     }
                                 }

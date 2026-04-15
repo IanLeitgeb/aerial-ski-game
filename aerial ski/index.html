@@ -70,7 +70,7 @@
         #replaySpeedWrap.visible { display: flex; }
         #replaySpeedLabel { font-family: sans-serif; font-size: 12px; color: #88ccff; letter-spacing: 0.06em; text-transform: uppercase; writing-mode: vertical-rl; text-orientation: mixed; transform: rotate(180deg); }
         #replaySpeedVal { font-family: monospace; font-size: 13px; color: #fff; }
-        #replaySpeed { writing-mode: vertical-lr; direction: rtl; height: 160px; cursor: pointer; accent-color: #88ccff; }
+        #replaySpeed { writing-mode: vertical-lr; direction: rtl; height: 160px; cursor: pointer; accent-color: #88ccff; appearance: slider-vertical; -webkit-appearance: slider-vertical; }
         #trophyPanel { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.78); z-index: 200; align-items: center; justify-content: center; }
         #trophyPanel.open { display: flex; }
         #trophyPanelBox { background: #0f1e2e; border: 1px solid #665500; border-radius: 12px; padding: 28px 36px; min-width: 360px; max-width: 480px; max-height: 80vh; overflow-y: auto; color: #b8d8ff; font-family: sans-serif; }
@@ -401,7 +401,7 @@
     </div>
     <div id="replaySpeedWrap">
         <div id="replaySpeedLabel">Speed</div>
-        <input id="replaySpeed" type="range" min="0.1" max="3" step="0.05" value="1">
+        <input id="replaySpeed" type="range" min="0.1" max="3" step="0.05" value="1" orient="vertical">
         <div id="replaySpeedVal">1×</div>
     </div>
     <div id="trophyPanel">
@@ -459,6 +459,10 @@
         </div>
     </div>
     <script>
+        // Safe localStorage helpers (guards against SecurityError on file:// in strict browsers)
+        function _lsGet(k) { try { return _lsGet(k); } catch(e) { return null; } }
+        function _lsSet(k, v) { try { _lsSet(k, v); } catch(e) {} }
+        function _lsRemove(k) { try { _lsRemove(k); } catch(e) {} }
         (function() {
             var wp = new URLSearchParams(location.search).get('world') || 'double';
             document.addEventListener('DOMContentLoaded', function() {
@@ -555,24 +559,24 @@
                 function allTrophiesEarned() {
                     return COMP_KEYS.every(function(pair) {
                         var key = 'comp_beaten_' + pair[0] + '_' + pair[1].toLowerCase();
-                        return localStorage.getItem(key) === '1';
+                        return _lsGet(key) === '1';
                     });
                 }
                 function allBaseNonUltraEarned() {
                     return ['single','double','triple','quad'].every(function(w) {
                         return ['easy','medium','hard','hardest'].every(function(d) {
-                            return localStorage.getItem('comp_beaten_' + w + '_' + d) === '1';
+                            return _lsGet('comp_beaten_' + w + '_' + d) === '1';
                         });
                     });
                 }
                 function allTrophiesWithQuint() {
                     if (!allTrophiesEarned()) return false;
                     return ['easy','medium','hard','hardest'].every(function(d) {
-                        return localStorage.getItem('comp_beaten_quint_' + d) === '1';
+                        return _lsGet('comp_beaten_quint_' + d) === '1';
                     });
                 }
                 function isQuintUnlocked() {
-                    return allTrophiesEarned() || localStorage.getItem('quint_unlocked') === '1';
+                    return allTrophiesEarned() || _lsGet('quint_unlocked') === '1';
                 }
                 function renderQuintButton() {}
                 function refreshTrophies() {
@@ -594,7 +598,7 @@
                         entries.forEach(function(pair) {
                             var world = pair[0];
                             var key = 'comp_beaten_' + world + '_' + diff.toLowerCase();
-                            var beaten = localStorage.getItem(key) === '1';
+                            var beaten = _lsGet(key) === '1';
                             var worldLabel = diff === 'Ultra' ? 'All jumps' : world.charAt(0).toUpperCase() + world.slice(1);
                             var r1 = document.createElement('div'); r1.className = 'trophyCell'; r1.textContent = worldLabel;
                             var r2 = document.createElement('div'); r2.className = 'trophyCell';
@@ -618,7 +622,7 @@
                         trophyGrid.appendChild(sep);
                         quintDiffs.forEach(function(diff) {
                             var key = 'comp_beaten_quint_' + diff.toLowerCase();
-                            var beaten = localStorage.getItem(key) === '1';
+                            var beaten = _lsGet(key) === '1';
                             var r1 = document.createElement('div'); r1.className = 'trophyCell'; r1.textContent = diff;
                             var r2 = document.createElement('div'); r2.className = 'trophyCell';
                             if (beaten) {
@@ -649,7 +653,7 @@
                         name: 'Unlock the Quint World',
                         desc: 'Unlock the Quint jump by earning all base trophies.',
                         badge: 'Unlock',
-                        check: function() { return isQuintUnlocked() || localStorage.getItem('ach_quint_unlocked') === '1'; }
+                        check: function() { return isQuintUnlocked() || _lsGet('ach_quint_unlocked') === '1'; }
                     },
                     {
                         key:  'ach_3f3f3f',
@@ -657,7 +661,7 @@
                         name: 'The Impossible Full',
                         desc: 'Land a Triple Full–Triple Full–Triple Full off the Triple jump.',
                         badge: 'Rare',
-                        check: function() { return localStorage.getItem('ach_3f3f3f') === '1'; }
+                        check: function() { return _lsGet('ach_3f3f3f') === '1'; }
                     },
                     {
                         key:  'ach_beat_ultra',
@@ -665,7 +669,7 @@
                         name: 'Beat Ultra',
                         desc: 'Complete the Ultra competition — all jumps, hardest tricks.',
                         badge: 'Epic',
-                        check: function() { return localStorage.getItem('comp_beaten_quad_ultra') === '1' || localStorage.getItem('ach_beat_ultra') === '1'; }
+                        check: function() { return _lsGet('comp_beaten_quad_ultra') === '1' || _lsGet('ach_beat_ultra') === '1'; }
                     },
                     {
                         key:  'ach_all_trophies',
@@ -673,7 +677,7 @@
                         name: 'Complete Collection',
                         desc: 'Earn every trophy in the game — all difficulties on every jump including Quint.',
                         badge: 'Legendary',
-                        check: function() { return allTrophiesWithQuint() || localStorage.getItem('ach_all_trophies') === '1'; }
+                        check: function() { return allTrophiesWithQuint() || _lsGet('ach_all_trophies') === '1'; }
                     },
                     {
                         key:  'ach_win_olympics',
@@ -681,7 +685,7 @@
                         name: 'Olympic Champion',
                         desc: 'Finish 1st in the Olympics finals. The greatest achievement in aerial skiing.',
                         badge: 'Supreme',
-                        check: function() { return localStorage.getItem('ach_win_olympics') === '1'; }
+                        check: function() { return _lsGet('ach_win_olympics') === '1'; }
                     },
                     {
                         key:  'ach_reset_game',
@@ -689,7 +693,7 @@
                         name: 'Reset Your Collection',
                         desc: 'Reset your progress for a prize.',
                         badge: 'Elite',
-                        check: function() { return localStorage.getItem('ach_reset_game') === '1'; }
+                        check: function() { return _lsGet('ach_reset_game') === '1'; }
                     },
                 ];
 
@@ -703,7 +707,7 @@
                         if (isEarned) {
                             earned++;
                             // Permanently stamp the achievement so it survives a reset
-                            localStorage.setItem(a.key, '1');
+                            _lsSet(a.key, '1');
                         }
                         var item = document.createElement('div');
                         item.className = 'achItem' + (isEarned ? ' earned' : '');
@@ -774,12 +778,12 @@
                     // "quint" — toggle quint unlock
                     if (secretBuffer.endsWith('quint')) {
                         secretBuffer = '';
-                        if (localStorage.getItem('quint_unlocked') === '1' && !allTrophiesEarned()) {
-                            localStorage.removeItem('quint_unlocked');
+                        if (_lsGet('quint_unlocked') === '1' && !allTrophiesEarned()) {
+                            _lsRemove('quint_unlocked');
                             var qi = document.getElementById('quintWorldItem');
                             if (qi) qi.style.display = 'none';
                         } else {
-                            localStorage.setItem('quint_unlocked', '1');
+                            _lsSet('quint_unlocked', '1');
                             var qi = document.getElementById('quintWorldItem');
                             if (qi) qi.style.display = '';
                         }
@@ -811,7 +815,7 @@
                             // Remove 3 random trophies
                             var shuffled = allKeys.slice().sort(function() { return Math.random() - 0.5; });
                             shuffled.slice(0, 3).forEach(function(key) {
-                                localStorage.removeItem(key);
+                                _lsRemove(key);
                             });
                             // Hide custom button since no longer fully complete
                             var cb = document.getElementById('customBtn');
@@ -820,9 +824,9 @@
                             if (us) us.style.display = 'none';
                         } else {
                             allKeys.forEach(function(key) {
-                                localStorage.setItem(key, '1');
+                                _lsSet(key, '1');
                             });
-                            localStorage.setItem('quint_unlocked', '1');
+                            _lsSet('quint_unlocked', '1');
                             var qi = document.getElementById('quintWorldItem');
                             if (qi) qi.style.display = '';
                             var cb = document.getElementById('customBtn');
@@ -841,9 +845,9 @@
                 (function() {
                     function getSavedCustom() {
                         return {
-                            inrun:     localStorage.getItem('custom_inrun')     || '11',
-                            landing:   localStorage.getItem('custom_landing')   || '50',
-                            flipspeed: localStorage.getItem('custom_flipspeed') || '1.3'
+                            inrun:     _lsGet('custom_inrun')     || '11',
+                            landing:   _lsGet('custom_landing')   || '50',
+                            flipspeed: _lsGet('custom_flipspeed') || '1.3'
                         };
                     }
 
@@ -903,9 +907,9 @@
                         customModal.classList.remove('open');
                     });
                     document.getElementById('customGoBtn').addEventListener('click', function() {
-                        localStorage.setItem('custom_inrun',     inrunSlider.value);
-                        localStorage.setItem('custom_landing',   landingSlider.value);
-                        localStorage.setItem('custom_flipspeed', flipSpeedSlider.value);
+                        _lsSet('custom_inrun',     inrunSlider.value);
+                        _lsSet('custom_landing',   landingSlider.value);
+                        _lsSet('custom_flipspeed', flipSpeedSlider.value);
                         location.href = '?world=custom&inrun=' + inrunSlider.value + '&landing=' + landingSlider.value + '&flipspeed=' + flipSpeedSlider.value;
                     });
                 })();
@@ -918,17 +922,17 @@
                     var mirrorKeysBtn = document.getElementById('mirrorKeysBtn');
 
                     function updateAutoLandBtn() {
-                        var on = localStorage.getItem('setting_autoland') === '1';
+                        var on = _lsGet('setting_autoland') === '1';
                         autoLandBtn.textContent = on ? 'ON' : 'OFF';
                         autoLandBtn.classList.toggle('on', on);
                     }
                     function updateSuperSpinBtn() {
-                        var on = localStorage.getItem('setting_superspin') === '1';
+                        var on = _lsGet('setting_superspin') === '1';
                         superSpinBtn.textContent = on ? 'ON' : 'OFF';
                         superSpinBtn.classList.toggle('on', on);
                     }
                     function updateMirrorKeysBtn() {
-                        var on = localStorage.getItem('setting_mirrorkeys') === '1';
+                        var on = _lsGet('setting_mirrorkeys') === '1';
                         mirrorKeysBtn.textContent = on ? 'ON' : 'OFF';
                         mirrorKeysBtn.classList.toggle('on', on);
                     }
@@ -953,29 +957,29 @@
                         settingsModal.classList.remove('open');
                     });
                     autoLandBtn.addEventListener('click', function() {
-                        var on = localStorage.getItem('setting_autoland') === '1';
-                        localStorage.setItem('setting_autoland', on ? '0' : '1');
+                        var on = _lsGet('setting_autoland') === '1';
+                        _lsSet('setting_autoland', on ? '0' : '1');
                         updateAutoLandBtn();
                     });
                     superSpinBtn.addEventListener('click', function() {
-                        var on = localStorage.getItem('setting_superspin') === '1';
-                        localStorage.setItem('setting_superspin', on ? '0' : '1');
+                        var on = _lsGet('setting_superspin') === '1';
+                        _lsSet('setting_superspin', on ? '0' : '1');
                         updateSuperSpinBtn();
                     });
                     document.getElementById('resetProgressBtn').addEventListener('click', function() {
                         if (!confirm('Reset all progress? This will remove all trophies and unlock settings. Your custom map settings will be kept.')) return;
                         // Remove all competition trophies
                         COMP_KEYS.forEach(function(pair) {
-                            localStorage.removeItem('comp_beaten_' + pair[0] + '_' + pair[1].toLowerCase());
+                            _lsRemove('comp_beaten_' + pair[0] + '_' + pair[1].toLowerCase());
                         });
                         ['easy','medium','hard','hardest'].forEach(function(d) {
-                            localStorage.removeItem('comp_beaten_quint_' + d);
+                            _lsRemove('comp_beaten_quint_' + d);
                         });
-                        localStorage.removeItem('quint_unlocked');
-                        localStorage.setItem('ach_reset_game', '1');
+                        _lsRemove('quint_unlocked');
+                        _lsSet('ach_reset_game', '1');
                         // Remove unlocked settings
-                        localStorage.removeItem('setting_autoland');
-                        localStorage.removeItem('setting_superspin');
+                        _lsRemove('setting_autoland');
+                        _lsRemove('setting_superspin');
                         updateAutoLandBtn();
                         updateSuperSpinBtn();
                         unlockSection.style.display = 'none';
@@ -984,8 +988,8 @@
                         location.reload();
                     });
                     mirrorKeysBtn.addEventListener('click', function() {
-                        var on = localStorage.getItem('setting_mirrorkeys') === '1';
-                        localStorage.setItem('setting_mirrorkeys', on ? '0' : '1');
+                        var on = _lsGet('setting_mirrorkeys') === '1';
+                        _lsSet('setting_mirrorkeys', on ? '0' : '1');
                         updateMirrorKeysBtn();
                     });
 
@@ -998,12 +1002,12 @@
                     ];
                     colorDefs.forEach(function(c) {
                         var el = document.getElementById(c.id);
-                        el.value = localStorage.getItem(c.key) || c.def;
+                        el.value = _lsGet(c.key) || c.def;
                     });
                     document.getElementById('colorApplyBtn').addEventListener('click', function() {
                         colorDefs.forEach(function(c) {
                             var el = document.getElementById(c.id);
-                            localStorage.setItem(c.key, el.value);
+                            _lsSet(c.key, el.value);
                         });
                         if (window.applySkierColors) window.applySkierColors();
                     });
@@ -1059,9 +1063,9 @@
                         var inrunSlider = document.getElementById('inrunSlider');
                         var landingSlider = document.getElementById('landingSlider');
                         var flipSpeedSlider = document.getElementById('flipSpeedSlider');
-                        if (inrunSlider) { inrunSlider.value = localStorage.getItem('custom_inrun') || '11'; document.getElementById('inrunVal').textContent = inrunSlider.value; }
-                        if (landingSlider) { landingSlider.value = localStorage.getItem('custom_landing') || '50'; document.getElementById('landingVal').textContent = landingSlider.value; }
-                        if (flipSpeedSlider) { flipSpeedSlider.value = localStorage.getItem('custom_flipspeed') || '1.3'; document.getElementById('flipSpeedVal').textContent = parseFloat(flipSpeedSlider.value).toFixed(1); }
+                        if (inrunSlider) { inrunSlider.value = _lsGet('custom_inrun') || '11'; document.getElementById('inrunVal').textContent = inrunSlider.value; }
+                        if (landingSlider) { landingSlider.value = _lsGet('custom_landing') || '50'; document.getElementById('landingVal').textContent = landingSlider.value; }
+                        if (flipSpeedSlider) { flipSpeedSlider.value = _lsGet('custom_flipspeed') || '1.3'; document.getElementById('flipSpeedVal').textContent = parseFloat(flipSpeedSlider.value).toFixed(1); }
                         customModal.classList.add('open');
                     }
                 });
@@ -1146,7 +1150,7 @@
 
                     // Show/hide button
                     var olympicsBtn = document.getElementById('olympicsBtn');
-                    if (localStorage.getItem('ach_reset_game') === '1') olympicsBtn.style.display = 'inline-block';
+                    if (_lsGet('ach_reset_game') === '1') olympicsBtn.style.display = 'inline-block';
 
                     function openModal(id) { document.getElementById(id).classList.add('open'); }
                     function closeModal(id) { document.getElementById(id).classList.remove('open'); }
@@ -1154,11 +1158,11 @@
                     // ── Open pre-qual board ──
                     olympicsBtn.addEventListener('click', function() {
                         // Reset any prior attempt state for a fresh session
-                        localStorage.removeItem('olympics_attempts');
-                        localStorage.removeItem('olympics_best_qual');
-                        localStorage.removeItem('olympics_qual_trick');
-                        localStorage.removeItem('olympics_final_score');
-                        localStorage.removeItem('olympics_final_trick');
+                        _lsRemove('olympics_attempts');
+                        _lsRemove('olympics_best_qual');
+                        _lsRemove('olympics_qual_trick');
+                        _lsRemove('olympics_final_score');
+                        _lsRemove('olympics_final_trick');
                         var rows = makeQualRows(0, '–');
                         buildTable(document.getElementById('olympicsPreQualBody'), rows);
                         openModal('olympicsWelcomeModal');
@@ -1171,16 +1175,16 @@
                     document.getElementById('olympicsModal').addEventListener('click', function(e) { if (e.target === this) closeModal('olympicsModal'); });
 
                     document.getElementById('olympicsStartQualBtn').addEventListener('click', function() {
-                        localStorage.setItem('olympics_phase', 'qual');
-                        localStorage.setItem('olympics_attempts', '0');
-                        localStorage.setItem('olympics_best_qual', '0');
+                        _lsSet('olympics_phase', 'qual');
+                        _lsSet('olympics_attempts', '0');
+                        _lsSet('olympics_best_qual', '0');
                         location.href = '?world=triple&olympics=qual';
                     });
 
                     // ── Called from game.js after both qual attempts ──
                     window._olympicsQualDone = function(bestScore, bestTrick) {
-                        localStorage.setItem('olympics_best_qual', String(bestScore));
-                        localStorage.setItem('olympics_qual_trick', bestTrick || '–');
+                        _lsSet('olympics_best_qual', String(bestScore));
+                        _lsSet('olympics_qual_trick', bestTrick || '–');
                         var rows = makeQualRows(bestScore, bestTrick);
                         buildTable(document.getElementById('olympicsQualResultBody'), rows);
                         var playerRank = rows.find(function(r) { return r.isYou; }).rank;
@@ -1199,8 +1203,8 @@
                     document.getElementById('olympicsAdvanceBtn').addEventListener('click', function() {
                         closeModal('olympicsQualResultModal');
                         // Build pre-finals board: top 8, show AI finals scores already, player shows qual score (TBD)
-                        var playerQualScore = parseFloat(localStorage.getItem('olympics_best_qual') || '0');
-                        var playerQualTrick = localStorage.getItem('olympics_qual_trick') || '–';
+                        var playerQualScore = parseFloat(_lsGet('olympics_best_qual') || '0');
+                        var playerQualTrick = _lsGet('olympics_qual_trick') || '–';
                         var top8 = getTop8(playerQualScore, playerQualTrick);
                         // For pre-finals: show AI finalist scores (already locked in), player shows qual score
                         var preFinalsRows = top8.map(function(e, i) {
@@ -1225,21 +1229,21 @@
                     document.getElementById('olympicsPreFinalsModal').addEventListener('click', function(e) { if (e.target === this) closeModal('olympicsPreFinalsModal'); });
 
                     document.getElementById('olympicsStartFinalsBtn').addEventListener('click', function() {
-                        localStorage.setItem('olympics_phase', 'finals');
+                        _lsSet('olympics_phase', 'finals');
                         location.href = '?world=triple&olympics=finals';
                     });
 
                     // ── Called from game.js after finals attempt ──
                     window._olympicsFinalsDone = function(score, trick) {
-                        localStorage.setItem('olympics_final_score', String(score));
-                        localStorage.setItem('olympics_final_trick', trick || '–');
-                        var playerQualScore = parseFloat(localStorage.getItem('olympics_best_qual') || '0');
-                        var playerQualTrick = localStorage.getItem('olympics_qual_trick') || '–';
+                        _lsSet('olympics_final_score', String(score));
+                        _lsSet('olympics_final_trick', trick || '–');
+                        var playerQualScore = parseFloat(_lsGet('olympics_best_qual') || '0');
+                        var playerQualTrick = _lsGet('olympics_qual_trick') || '–';
                         var top8 = getTop8(playerQualScore, playerQualTrick);
                         var rows = makeFinalsRows(score, trick, top8);
                         buildTable(document.getElementById('olympicsFinalResultBody'), rows);
                         var playerRank = rows.find(function(r) { return r.isYou; }).rank;
-                        if (playerRank === 1) localStorage.setItem('ach_win_olympics', '1');
+                        if (playerRank === 1) _lsSet('ach_win_olympics', '1');
                         var sub = document.getElementById('olympicsFinalResultSub');
                         sub.textContent = 'Your score: ' + score.toFixed(1) + ' — Finished ' + playerRank + (playerRank===1?' st':playerRank===2?' nd':playerRank===3?' rd':' th') + ' of 8';
                         // Podium
@@ -1284,7 +1288,7 @@
 
                 window.showCongratsScreen = function(worldParam, diffParam) {
                     var beatenKey = diffParam === 'ultra' ? 'comp_beaten_quad_ultra' : 'comp_beaten_' + worldParam + '_' + diffParam;
-                    var alreadyHad = localStorage.getItem(beatenKey) === '1';
+                    var alreadyHad = _lsGet(beatenKey) === '1';
                     var msg;
                     if (diffParam === 'ultra') {
                         msg = 'You conquered <strong>☠ Ultra Mode</strong>!<br>' + (alreadyHad ? 'You are still unstoppable.' : 'All 5 jumps completed across every hill. You are unstoppable.');
@@ -1309,6 +1313,13 @@
     </script>
     <script src="https://cdn.babylonjs.com/babylon.js"></script>
     <script src="https://cdn.babylonjs.com/gui/babylon.gui.min.js"></script>
+    <script>
+        // Guard: show a friendly error if Babylon.js failed to load
+        // (e.g. no internet, firewall blocking CDN, very old browser)
+        if (typeof BABYLON === 'undefined') {
+            document.body.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100vh;background:#000;font-family:sans-serif;color:#b8d8ff;text-align:center;padding:20px"><div><div style="font-size:48px;margin-bottom:20px">⛷</div><h2 style="color:#fff;margin-bottom:12px">Could not load game engine</h2><p style="color:#778899;max-width:400px;line-height:1.6">The game requires an internet connection to load its 3D engine (Babylon.js).<br><br>Please make sure you are connected to the internet and reload the page.<br><br>If you keep seeing this, try opening the file in <strong style="color:#b8d8ff">Chrome</strong> or <strong style="color:#b8d8ff">Firefox</strong>.</p></div></div>';
+        }
+    </script>
     <script src="game.js"></script>
 </body>
 </html>
