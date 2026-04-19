@@ -578,6 +578,7 @@ const KICKER_END_Z  = 24.5;
 const _worldParam   = new URLSearchParams(location.search).get('world') || 'double';
 const _compParam    = new URLSearchParams(location.search).get('comp');  // null | 'easy' | 'medium' | 'hard' | 'ultra'
 const _olympicsMode = new URLSearchParams(location.search).get('olympics'); // null | 'qual' | 'finals'
+const _realisticMode = new URLSearchParams(location.search).get('mode') === 'realistic';
 const _ultraJump    = _compParam === 'ultra' ? Math.max(0, parseInt(new URLSearchParams(location.search).get('ultrajump') || '0', 10)) : 0;
 const _customInrun    = _worldParam === 'custom' ? Math.max(4, Math.min(100, parseFloat(new URLSearchParams(location.search).get('inrun')    || '11'))) : 0;
 const _customLanding  = _worldParam === 'custom' ? Math.max(20, Math.min(150, parseFloat(new URLSearchParams(location.search).get('landing')  || '50'))) : 0;
@@ -1576,8 +1577,8 @@ window.addEventListener('DOMContentLoaded', () => {
                     bbName.text  = state.trickName;
                     bbSub.text   = _compParam ? '' : `${totalFlips} flip${totalFlips !== 1 ? 's' : ''} · ${totalTwists} twist${totalTwists !== 1 ? 's' : ''}  ·  DD ${dd}  ×  exec ${state.execution}`;
                     bbScore.text = _compParam ? '' : (isNew ? `★ NEW BEST  ${score}` : `${score}  (best: ${highScore})`);
-                    bbSub.isVisible   = !_compParam;
-                    bbScore.isVisible = !_compParam;
+                    bbSub.isVisible   = !_compParam && !_realisticMode;
+                    bbScore.isVisible = !_compParam && !_realisticMode;
                     if (compLandingResult !== null) {
                         bbComp.text      = compLandingResult.matched ? '✓ Trick Complete!' : `✗ Needed: ${trickKeyToName(compLandingResult.neededKey)}`;
                         bbComp.color     = compLandingResult.matched ? '#00ff88' : '#ff6644';

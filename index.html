@@ -17,6 +17,8 @@
         #worldList div.active { color: #fff; font-weight: bold; }
         #compBtn { background: #1a2a1a; color: #88ffaa; border: 1px solid #336633; padding: 5px 14px; cursor: pointer; font-size: 13px; border-radius: 4px; letter-spacing: 0.03em; margin-left: 8px; }
         #compBtn:hover { background: #243a24; }
+        #menuBtn { background: #1a1a2a; color: #b8d8ff; border: 1px solid #335566; padding: 5px 14px; cursor: pointer; font-size: 13px; border-radius: 4px; letter-spacing: 0.03em; margin-left: 8px; }
+        #menuBtn:hover { background: #24243a; }
         #compModal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.75); z-index: 100; align-items: center; justify-content: center; }
         #compModal.open { display: flex; }
         #compModalBox { background: #0f1e2e; border: 1px solid #445566; border-radius: 12px; padding: 28px 36px; min-width: 340px; color: #b8d8ff; font-family: sans-serif; }
@@ -126,6 +128,22 @@
         #grandClaimBtn:hover { transform: scale(1.05); }
         #helpBtn { position: absolute; top: 10px; right: 10px; z-index: 10; background: #1a2030; color: #b8d8ff; border: 1px solid #335566; width: 32px; height: 32px; cursor: pointer; font-size: 16px; font-weight: bold; border-radius: 50%; line-height: 30px; text-align: center; padding: 0; }
         #helpBtn:hover { background: #243040; }
+        #qualifyBtn { display: none; position: absolute; top: 10px; right: 160px; z-index: 10; background: #1a2030; color: #88ccff; border: 1px solid #335566; padding: 5px 11px; cursor: pointer; font-size: 13px; font-weight: bold; border-radius: 6px; line-height: 1; letter-spacing: 0.03em; }
+        #qualifyBtn:hover { background: #243040; }
+        #qualifyModal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.82); z-index: 300; align-items: flex-start; justify-content: center; padding-top: 40px; }
+        #qualifyModal.open { display: flex; }
+        #qualifyModalBox { background: #0a121e; border: 1px solid #335566; border-radius: 14px; padding: 24px 28px 28px; width: 480px; max-height: 80vh; overflow-y: auto; color: #b8d8ff; font-family: sans-serif; }
+        #qualifyModalBox h2 { font-size: 19px; color: #88ccff; margin-bottom: 4px; }
+        #qualifyModalBox .q-sub { font-size: 11px; color: #445566; text-transform: uppercase; letter-spacing: 0.07em; margin-bottom: 18px; }
+        .q-group { margin-bottom: 18px; }
+        .q-group-header { font-size: 12px; font-weight: bold; color: #445566; text-transform: uppercase; letter-spacing: 0.1em; padding: 6px 0 4px; border-bottom: 1px solid #182530; margin-bottom: 6px; }
+        .q-row { display: flex; align-items: center; padding: 5px 6px; border-radius: 5px; cursor: default; gap: 10px; border-bottom: 1px solid #0e1820; }
+        .q-row:last-child { border-bottom: none; }
+        .q-row:hover { background: #0f1e30; }
+        .q-name { flex: 1; font-size: 13px; color: #a8c8e8; }
+        .q-dd { font-size: 13px; font-weight: bold; color: #ffd700; min-width: 36px; text-align: right; }
+        .q-bar { height: 6px; border-radius: 3px; background: linear-gradient(90deg, #1a4a6a, #4499cc); min-width: 4px; }
+        #qualifyCloseBtn { display: block; margin: 16px auto 0; background: none; border: none; color: #445566; font-size: 12px; cursor: pointer; text-decoration: underline; }
         #olympicsBtn { display: none; position: absolute; top: 10px; right: 52px; z-index: 10; background: linear-gradient(135deg, #1a180a, #1e2a0a); color: #ffd700; border: 1px solid #886600; padding: 5px 11px; cursor: pointer; font-size: 13px; font-weight: bold; border-radius: 6px; line-height: 1; letter-spacing: 0.04em; box-shadow: 0 0 8px rgba(255,215,0,0.15); transition: box-shadow 0.15s; }
         #olympicsBtn:hover { background: linear-gradient(135deg, #252510, #283a10); box-shadow: 0 0 16px rgba(255,215,0,0.35); }
         .olym-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.88); z-index: 350; align-items: center; justify-content: center; }
@@ -297,6 +315,16 @@
         </div>
     </div>
     <button id="helpBtn" title="Controls">?</button>
+    <button id="qualifyBtn" title="Trick list by DD">📊 Qualify</button>
+    <!-- Qualify modal -->
+    <div id="qualifyModal">
+        <div id="qualifyModalBox">
+            <h2>📊 Trick Reference</h2>
+            <div class="q-sub">All tricks sorted by Degree of Difficulty</div>
+            <div id="qualifyList"></div>
+            <button id="qualifyCloseBtn">Close</button>
+        </div>
+    </div>
     <button id="olympicsBtn" title="Olympics">🏅 Olympics</button>
 
     <!-- Olympics: trick picker (shown before each run) -->
@@ -464,6 +492,7 @@
     <div id="worldMenu">
         <button id="worldBtn">⛷ <span id="worldLabel">Normal</span> ▾</button>
         <button id="compBtn">🏆 Compete</button>
+        <button id="menuBtn">☰ Menu</button>
         <div id="worldList">
             <div onclick="location.href='?world=single'">Single</div>
             <div onclick="location.href='?world=double'">Double</div>
@@ -508,9 +537,31 @@
         function _lsRemove(k) { try { localStorage.removeItem(k); } catch(e) {} }
         (function() {
             var wp = new URLSearchParams(location.search).get('world') || 'double';
+            var _realisticMode = new URLSearchParams(location.search).get('mode') === 'realistic';
             document.addEventListener('DOMContentLoaded', function() {
                 var labelMap = { single: 'Single', double: 'Double', triple: 'Triple', quad: 'Quad', quint: '⭐ Quint', custom: '⭐ Custom' };
                 document.getElementById('worldLabel').textContent = labelMap[wp] || wp.charAt(0).toUpperCase() + wp.slice(1);
+
+                // ── Realistic mode: hide competitive UI ──────────────────
+                if (_realisticMode) {
+                    ['trophyBtn','customBtn','settingsBtn','compBtn','olympicsBtn','helpBtn','compHUD','powerMeter',
+                     'congratsOverlay','grandUnlockOverlay','quintWorldItem','customWorldItem'].forEach(function(id) {
+                        var el = document.getElementById(id);
+                        if (el) el.style.display = 'none';
+                    });
+                    // Show qualify button in realistic mode
+                    var qb = document.getElementById('qualifyBtn');
+                    if (qb) qb.style.display = 'inline-block';
+                    // Hide quad world in realistic mode
+                    document.querySelectorAll('#worldList div').forEach(function(el) {
+                        if (el.textContent.trim() === 'Quad') el.style.display = 'none';
+                    });
+                    // Patch world list links to preserve mode=realistic
+                    document.querySelectorAll('#worldList div[onclick]').forEach(function(el) {
+                        var href = el.getAttribute('onclick').match(/'([^']+)'/);
+                        if (href) el.setAttribute('onclick', "location.href='" + href[1] + "&mode=realistic'");
+                    });
+                }
                 var items = document.querySelectorAll('#worldList div');
                 items.forEach(function(el) { if (el.textContent.toLowerCase() === wp || el.textContent === (labelMap[wp] || '')) el.classList.add('active'); });
                 document.getElementById('worldBtn').addEventListener('click', function() {
@@ -587,6 +638,11 @@
                     } else if (world) {
                         location.href = '?world=' + world.value + '&comp=' + diff.value;
                     }
+                });
+
+                // Menu button — back to main menu
+                document.getElementById('menuBtn').addEventListener('click', function() {
+                    location.href = 'menu.html';
                 });
 
                 // Trophy panel
@@ -795,7 +851,7 @@
                 });
 
                 // Show quint in world menu if unlocked
-                if (isQuintUnlocked()) {
+                if (isQuintUnlocked() && !_realisticMode) {
                     var qi = document.getElementById('quintWorldItem');
                     if (qi) qi.style.display = '';
                 }
@@ -820,7 +876,7 @@
                         } else {
                             _lsSet('quint_unlocked', '1');
                             var qi = document.getElementById('quintWorldItem');
-                            if (qi) qi.style.display = '';
+                            if (qi && !_realisticMode) qi.style.display = '';
                         }
                         renderQuintButton();
                         refreshTrophies();
@@ -852,7 +908,7 @@
                         });
                         _lsSet('quint_unlocked', '1');
                         var qi = document.getElementById('quintWorldItem');
-                        if (qi) qi.style.display = '';
+                        if (qi && !_realisticMode) qi.style.display = '';
                         var cb = document.getElementById('customBtn');
                         if (cb) cb.style.display = 'inline-block';
                         var sb = document.getElementById('settingsBtn');
@@ -884,7 +940,7 @@
                     function updateCustomWorldItem() {
                         var ci = document.getElementById('customWorldItem');
                         if (!ci) return;
-                        if (allTrophiesWithQuint()) {
+                        if (allTrophiesWithQuint() && !_realisticMode) {
                             ci.style.display = '';
                             ci.onclick = function() { location.href = customUrl(); };
                             ci.textContent = '⭐ Custom';
@@ -896,7 +952,7 @@
                     updateCustomWorldItem();
 
                     var customBtn = document.getElementById('customBtn');
-                    if (allTrophiesWithQuint()) customBtn.style.display = 'inline-block';
+                    if (allTrophiesWithQuint() && !_realisticMode) customBtn.style.display = 'inline-block';
 
                     var customModal      = document.getElementById('customModal');
                     var inrunSlider      = document.getElementById('inrunSlider');
@@ -1049,6 +1105,73 @@
                     if (e.target === helpModal) helpModal.classList.remove('open');
                 });
 
+                // Qualify modal — trick reference sorted by DD
+                (function() {
+                    var TWIST_NAMES = ['Lay', 'Full', 'Double Full', 'Triple Full'];
+                    var NAME_OVERRIDES = { 'lay_tuck': 'Lay Tuck', 'lay_tuck_full': 'Lay Tuck Full', 'lay_full_tuck': 'Lay Full Tuck' };
+                    var FLIP_COUNTS = { 'lay_tuck': 2, 'lay_tuck_full': 3, 'lay_full_tuck': 3 };
+                    function keyToName(key) {
+                        if (NAME_OVERRIDES[key]) return NAME_OVERRIDES[key];
+                        return key.split(',').map(function(n) { return TWIST_NAMES[+n] || n; }).join('-');
+                    }
+                    function isValidTrick(key) {
+                        if (NAME_OVERRIDES[key]) return true;
+                        var parts = key.split(',').map(Number);
+                        for (var i = 0; i < parts.length - 1; i++) {
+                            if (parts[i] > 0 && parts[i + 1] === 0) return false;
+                        }
+                        return true;
+                    }
+                    var DD_TABLE = {
+                        '0':1.70,'1':2.00,'2':2.30,'3':2.60,
+                        'lay_tuck':1.90,
+                        '0,0':2.10,'0,1':2.50,'1,0':2.50,'1,1':3.15,'0,2':3.00,'2,0':3.00,'1,2':3.50,'2,1':3.50,'2,2':4.00,'0,3':3.30,'3,0':3.30,'1,3':3.80,'3,1':3.80,'2,3':4.30,'3,2':4.30,'3,3':4.70,
+                        'lay_tuck_full':3.00,'lay_full_tuck':3.00,
+                        '0,0,0':2.90,'1,0,0':3.30,'0,1,0':3.30,'0,0,1':3.20,'1,1,0':3.80,'1,0,1':3.75,'0,1,1':3.75,'1,1,1':4.425,'2,0,0':3.50,'0,2,0':3.50,'0,0,2':3.40,'2,1,0':4.00,'1,2,0':4.00,'0,2,1':4.00,'0,1,2':3.90,'1,0,2':3.90,'2,0,1':3.95,'2,1,1':4.20,'1,2,1':4.20,'1,1,2':4.10,'2,2,0':4.50,'0,2,2':4.50,'2,0,2':4.45,'2,2,1':4.80,'2,1,2':4.75,'1,2,2':4.75,'2,2,2':5.10,'3,1,1':4.60,'1,3,1':4.60,'1,1,3':4.50,
+                        '0,0,0,0':3.50,'1,0,0,0':3.90,'0,1,0,0':3.90,'0,0,1,0':3.90,'0,0,0,1':3.80,'1,1,0,0':4.40,'1,0,1,0':4.35,'1,0,0,1':4.30,'0,1,1,0':4.40,'0,1,0,1':4.35,'0,0,1,1':4.30,'1,1,1,0':5.00,'1,1,0,1':4.95,'1,0,1,1':4.95,'0,1,1,1':4.95,'1,1,1,1':5.80,'2,0,0,0':4.10,'0,2,0,0':4.10,'0,0,2,0':4.00,'0,0,0,2':4.00,'2,1,0,0':4.60,'1,2,0,0':4.60,'2,0,1,0':4.55,'0,2,1,0':4.55,'2,0,0,1':4.50,'0,2,0,1':4.50,'1,0,2,0':4.50,'0,1,2,0':4.50,'1,0,0,2':4.45,'0,1,0,2':4.45,'0,0,2,1':4.45,'0,0,1,2':4.40,'2,1,1,0':5.10,'1,2,1,0':5.10,'1,1,2,0':5.10,'2,1,0,1':5.05,'1,2,0,1':5.00,'2,0,1,1':5.00,'0,2,1,1':5.00,'0,1,2,1':5.00,'1,0,2,1':5.00,'1,1,0,2':4.95,'1,0,1,2':4.95,'0,1,1,2':4.95,'2,1,1,1':5.95,'1,2,1,1':5.90,'1,1,2,1':5.90,'1,1,1,2':5.85,'2,2,0,0':5.10,'2,0,2,0':5.05,'2,0,0,2':5.00,'0,2,2,0':5.10,'0,2,0,2':5.00,'0,0,2,2':4.95,'2,2,1,0':5.60,'2,2,0,1':5.55,'2,1,2,0':5.55,'2,0,2,1':5.50,'2,1,0,2':5.45,'2,0,1,2':5.45,'1,2,2,0':5.55,'0,2,2,1':5.50,'1,2,0,2':5.45,'0,2,1,2':5.45,'1,0,2,2':5.45,'0,1,2,2':5.45,'2,2,1,1':6.10,'2,1,2,1':6.05,'2,1,1,2':6.00,'1,2,2,1':6.05,'1,2,1,2':6.00,'1,1,2,2':5.95,'2,2,2,0':5.70,'2,2,0,2':5.65,'2,0,2,2':5.65,'0,2,2,2':5.65,'2,2,2,1':6.40,'2,2,1,2':6.35,'2,1,2,2':6.30,'1,2,2,2':6.30,'2,2,2,2':6.80,'3,0,0,0':4.30,'0,3,0,0':4.30,'0,0,3,0':4.20,'0,0,0,3':4.15,'3,1,0,0':4.85,'1,3,0,0':4.85,'3,0,1,0':4.80,'0,3,1,0':4.80,'3,0,0,1':4.75,'0,3,0,1':4.75,'1,0,3,0':4.75,'0,1,3,0':4.75,'0,0,3,1':4.65,'1,0,0,3':4.65,'0,1,0,3':4.60,'0,0,1,3':4.55,'3,1,1,0':5.50,'3,1,0,1':5.40,'3,0,1,1':5.35,'1,3,1,0':5.50,'1,3,0,1':5.40,'0,3,1,1':5.35,'1,1,3,0':5.45,'1,0,3,1':5.35,'0,1,3,1':5.40,'1,1,0,3':5.25,'1,0,1,3':5.25,'0,1,1,3':5.25,'3,1,1,1':6.30,'1,3,1,1':6.25,'1,1,3,1':6.20,'1,1,1,3':6.10
+                    };
+                    var groupNames = ['Single', 'Double', 'Triple'];
+                    var groups = [[], [], []];
+                    Object.keys(DD_TABLE).forEach(function(key) {
+                        var flips = FLIP_COUNTS[key] || key.split(',').length;
+                        if (flips >= 1 && flips <= 3 && isValidTrick(key)) {
+                            groups[flips - 1].push({ key: key, name: keyToName(key), dd: DD_TABLE[key] });
+                        }
+                    });
+                    var maxDD = 6.80;
+                    var qualifyList = document.getElementById('qualifyList');
+                    groups.forEach(function(group, gi) {
+                        group.sort(function(a, b) { return a.dd - b.dd; });
+                        var div = document.createElement('div');
+                        div.className = 'q-group';
+                        var hdr = document.createElement('div');
+                        hdr.className = 'q-group-header';
+                        hdr.textContent = groupNames[gi] + ' (' + group.length + ' tricks)';
+                        div.appendChild(hdr);
+                        group.forEach(function(t) {
+                            var row = document.createElement('div');
+                            row.className = 'q-row';
+                            var barW = Math.round((t.dd / maxDD) * 120);
+                            row.innerHTML = '<div class="q-name">' + t.name + '</div>'
+                                + '<div class="q-bar" style="width:' + barW + 'px"></div>'
+                                + '<div class="q-dd">' + t.dd.toFixed(3).replace(/\.?0+$/, '') + '</div>';
+                            div.appendChild(row);
+                        });
+                        qualifyList.appendChild(div);
+                    });
+
+                    var qualifyModal = document.getElementById('qualifyModal');
+                    document.getElementById('qualifyBtn').addEventListener('click', function() {
+                        qualifyModal.classList.add('open');
+                    });
+                    document.getElementById('qualifyCloseBtn').addEventListener('click', function() {
+                        qualifyModal.classList.remove('open');
+                    });
+                    qualifyModal.addEventListener('click', function(e) {
+                        if (e.target === qualifyModal) qualifyModal.classList.remove('open');
+                    });
+                })();
+
                 // Congrats overlay
                 var congratsOverlay = document.getElementById('congratsOverlay');
                 var grandUnlockOverlay = document.getElementById('grandUnlockOverlay');
@@ -1079,7 +1202,7 @@
                     var us = document.getElementById('settingsUnlockSection');
                     if (us) us.style.display = '';
                     var ci = document.getElementById('customWorldItem');
-                    if (ci) { ci.style.display = ''; ci.textContent = '\u2b50 Custom'; }
+                    if (ci && !_realisticMode) { ci.style.display = ''; ci.textContent = '\u2b50 Custom'; }
                     var ob = document.getElementById('olympicsBtn');
                     if (ob) ob.style.display = 'inline-block';
                     // Open the custom world modal (same as clicking the star button)
@@ -1242,7 +1365,7 @@
 
                     // Show/hide button
                     var olympicsBtn = document.getElementById('olympicsBtn');
-                    if (allTrophiesWithQuint()) olympicsBtn.style.display = 'inline-block';
+                    if (allTrophiesWithQuint() && !_realisticMode) olympicsBtn.style.display = 'inline-block';
 
                     function openModal(id) { document.getElementById(id).classList.add('open'); }
                     function closeModal(id) { document.getElementById(id).classList.remove('open'); }
