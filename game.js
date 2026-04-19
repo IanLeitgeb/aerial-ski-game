@@ -1,9 +1,9 @@
 'use strict';
 
 // ── Safe localStorage wrapper (some browsers restrict it for file:// URLs) ─
-function _lsGet(key) { try { return _lsGet(key); } catch(e) { return null; } }
-function _lsSet(key, val) { try { _lsSet(key, val); } catch(e) {} }
-function _lsRemove(key) { try { _lsRemove(key); } catch(e) {} }
+function _lsGet(key) { try { return localStorage.getItem(key); } catch(e) { return null; } }
+function _lsSet(key, val) { try { localStorage.setItem(key, val); } catch(e) {} }
+function _lsRemove(key) { try { localStorage.removeItem(key); } catch(e) {} }
 
 // ── Colour helpers ─────────────────────────────────────────────────────────
 function _hexToRgb(hex) {
@@ -1015,6 +1015,11 @@ window.addEventListener('DOMContentLoaded', () => {
             // Olympics mode: block reset once all attempts used
             if (_olympicsMode && olympicsDone) return;
             if (_olympicsMode && !state.stopped && !state.crashed) return;
+            // Olympics qual attempt 2: navigate back so trick picker can show
+            if (_olympicsMode === 'qual' && olympicsAttempts >= 1) {
+                location.href = '?world=triple&olympics=qual';
+                return;
+            }
             // Ultra mode: navigate to next world or restart from beginning
             if (_compParam === 'ultra') {
                 if (compLandingResult && compLandingResult.matched) {
@@ -1072,27 +1077,11 @@ window.addEventListener('DOMContentLoaded', () => {
             if (_compParam && compPendingTrick) {
                 compHUDEl.textContent = compHudLabel(compPendingTrick);
             }
+
             readyState = true; readyTurnT = 0.0;
             return;
         }
         if (e.code === 'KeyC') {
-            cameraFollow = !cameraFollow;
-            if (cameraFollow) {
-                // Switch to behind-character view: perspective + DOF
-                camera.alpha = -Math.PI / 2;
-                camera.beta  = Math.PI / 3.2 - 2 * Math.PI / 180;
-                camera.mode  = BABYLON.Camera.PERSPECTIVE_CAMERA;
-                camera.fov   = 0.9; // ~52°
-                if (dofPipeline) dofPipeline.depthOfFieldEnabled = true;
-            } else {
-                // Return to fixed starting side view: ortho, no DOF
-                camera.alpha  = Math.PI;
-                camera.beta   = Math.PI / 2;
-                camera.target = BABYLON.Vector3.Zero();
-                camera.mode   = BABYLON.Camera.ORTHOGRAPHIC_CAMERA;
-                setOrtho(3.0);
-                if (dofPipeline) dofPipeline.depthOfFieldEnabled = false;
-            }
             return;
         }
         if (paused) return;
@@ -1321,6 +1310,12 @@ window.addEventListener('DOMContentLoaded', () => {
     }
     let assignedTrick    = null; // revealed at takeoff
     let compPendingTrick = _compProgression.length ? pickNextCompTrick() : null; // queued until next jump
+    // ── Olympics chosen trick ─────────────────────────────────────────────
+    const _olympicsChosenTrick = _olympicsMode ? (_lsGet('olympics_chosen_trick') || null) : null;
+    if (_olympicsChosenTrick) {
+        compPendingTrick = _olympicsChosenTrick;
+        _lsRemove('olympics_trick_picked'); // clear the "picked" guard now we've consumed it
+    }
     let compLandingResult = null; // { matched: bool, neededKey: string|null }
     let compJustBeaten    = false; // true after final trick landed, until stop
     const compHUDEl = document.getElementById('compHUD');
@@ -1338,14 +1333,13 @@ window.addEventListener('DOMContentLoaded', () => {
     let olympicsDone      = false; // true after all attempts used in this session
     if (_olympicsMode) {
         compHUDEl.style.display = 'block';
+        compHUDEl.style.borderColor = '#aa8800';
+        compHUDEl.style.color = '#ffd700';
+        const _chosenName = _olympicsChosenTrick ? trickKeyToName(_olympicsChosenTrick) : '–';
         if (_olympicsMode === 'qual') {
-            compHUDEl.style.borderColor = '#aa8800';
-            compHUDEl.style.color = '#ffd700';
-            compHUDEl.textContent = `🏅 Qualifier — Attempt ${olympicsAttempts + 1} of 2`;
+            compHUDEl.textContent = `🏅 Qualifier (${olympicsAttempts + 1}/2) — ${_chosenName}`;
         } else {
-            compHUDEl.style.borderColor = '#aa8800';
-            compHUDEl.style.color = '#ffd700';
-            compHUDEl.textContent = '🏅 Finals — Your Run!';
+            compHUDEl.textContent = `🏅 Finals — ${_chosenName}`;
         }
     }
     // ── Olympics attempt handler ──────────────────────────────────────────
@@ -1372,8 +1366,8 @@ window.addEventListener('DOMContentLoaded', () => {
             }, 1400);
         } else {
             compHUDEl.textContent = score > 0
-                ? `🏅 Attempt 1 — ${score.toFixed(1)} pts · Press R for attempt 2`
-                : '🏅 Attempt 1 — Crash · Press R for attempt 2';
+                ? `🏅 Attempt 1 — ${score.toFixed(1)} pts · Press R to pick trick for attempt 2`
+                : '🏅 Attempt 1 — Crash · Press R to pick trick for attempt 2';
         }
     }
     function calcDD(perFlipTwists) {
@@ -1605,7 +1599,8 @@ window.addEventListener('DOMContentLoaded', () => {
                     }
                     // ── Olympics attempt tracking (good landing) ─────────
                     if (_olympicsMode && !olympicsDone) {
-                        _handleOlympicsAttempt(score, state.trickName);
+                        const _trickMatched = !compLandingResult || compLandingResult.matched;
+                        _handleOlympicsAttempt(_trickMatched ? score : 0, _trickMatched ? state.trickName : 'Wrong Trick');
                     }
                 }
             }
@@ -1640,7 +1635,11 @@ window.addEventListener('DOMContentLoaded', () => {
                 if (compPendingTrick !== null) {
                     assignedTrick    = compPendingTrick;
                     compPendingTrick = null;
-                    compHUDEl.textContent = compHudLabel(assignedTrick);
+                    if (_olympicsMode) {
+                        compHUDEl.textContent = `🏅 ${_olympicsMode === 'finals' ? 'Finals' : 'Qualifier'} — ${trickKeyToName(assignedTrick)}`;
+                    } else {
+                        compHUDEl.textContent = compHudLabel(assignedTrick);
+                    }
                 }
                 // Apply flip power: 3rd dash (75%) = world-normal flip speed
                 if (crossingJ1) {
@@ -1680,6 +1679,11 @@ window.addEventListener('DOMContentLoaded', () => {
             state.posZ  += state.vz * dt;
             // Track air time and tuck time for execution scoring
             state.airTime    += dt;
+            // Keep Olympics trick name visible during flight
+            if (_olympicsMode && assignedTrick && !olympicsDone) {
+                const _phase = _olympicsMode === 'finals' ? 'Finals' : `Qual ${olympicsAttempts + 1}/2`;
+                compHUDEl.textContent = `🏅 ${_phase} — ${trickKeyToName(assignedTrick)}`;
+            }
 
             const surY   = terrainRootY(state.posZ);
             if (state.rootY <= surY) {
@@ -1783,7 +1787,7 @@ window.addEventListener('DOMContentLoaded', () => {
                         assignedTrick    = null;
                         compTricksLanded = 0;
                         compPendingTrick = pickNextCompTrick();
-                        compHUDEl.textContent = '🏆 Press R to restart...';
+                        if (!_olympicsMode) compHUDEl.textContent = '🏆 Press R to restart...';
                     }
                     // Olympics crash — counts as a 0-score attempt
                     if (_olympicsMode && !olympicsDone) {

@@ -158,6 +158,13 @@
         .olym-medal-row { display: flex; align-items: center; justify-content: center; gap: 18px; margin-bottom: 14px; }
         .olym-medal-block { text-align: center; }
         .olym-medal-block .med-icon { font-size: 28px; }
+        /* ── Trick Picker ── */
+        .trick-picker-row { display: flex; align-items: center; gap: 6px; margin-bottom: 12px; }
+        .trick-picker-label { font-size: 12px; color: #ffd700; font-weight: bold; width: 46px; flex-shrink: 0; text-align: right; padding-right: 8px; }
+        .trick-picker-btn { flex: 1; padding: 7px 4px; font-size: 12px; font-weight: bold; border: 1px solid #2a3a4a; border-radius: 6px; background: #0d1620; color: #445566; cursor: pointer; transition: background 0.1s, color 0.1s, border-color 0.1s; text-align: center; }
+        .trick-picker-btn:hover { background: #1a2a3a; color: #88aacc; }
+        .trick-picker-btn.selected { background: #0a2a1a; border-color: #ffd700; color: #ffd700; box-shadow: 0 0 6px rgba(255,215,0,0.35); }
+        #trickPickerSummary { text-align: center; font-size: 14px; color: #66ffcc; font-weight: bold; margin: 14px 0 4px; min-height: 20px; }
         .olym-medal-block .med-name { font-size: 12px; font-weight: bold; color: #b8d8ff; margin-top: 2px; }
         .olym-medal-block .med-score { font-size: 11px; color: #778899; }
         #helpModal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.78); z-index: 400; align-items: center; justify-content: center; }
@@ -292,6 +299,43 @@
     <button id="helpBtn" title="Controls">?</button>
     <button id="olympicsBtn" title="Olympics">🏅 Olympics</button>
 
+    <!-- Olympics: trick picker (shown before each run) -->
+    <div id="olympicsTrickPickerModal" class="olym-overlay">
+        <div class="olym-box" style="min-width:440px; max-width:500px;">
+            <h2>🎿 Choose Your Trick</h2>
+            <div class="olym-sub" id="trickPickerSubtitle">Triple Jump · Select one option per flip</div>
+            <div style="margin: 18px 0 6px;">
+                <div class="trick-picker-row">
+                    <div class="trick-picker-label">Flip 1</div>
+                    <button class="trick-picker-btn" data-flip="0" data-val="t">Tuck</button>
+                    <button class="trick-picker-btn" data-flip="0" data-val="0">Lay</button>
+                    <button class="trick-picker-btn selected" data-flip="0" data-val="1">Full</button>
+                    <button class="trick-picker-btn" data-flip="0" data-val="2">Double Full</button>
+                    <button class="trick-picker-btn" data-flip="0" data-val="3">Triple Full</button>
+                </div>
+                <div class="trick-picker-row">
+                    <div class="trick-picker-label">Flip 2</div>
+                    <button class="trick-picker-btn" data-flip="1" data-val="t">Tuck</button>
+                    <button class="trick-picker-btn" data-flip="1" data-val="0">Lay</button>
+                    <button class="trick-picker-btn selected" data-flip="1" data-val="1">Full</button>
+                    <button class="trick-picker-btn" data-flip="1" data-val="2">Double Full</button>
+                    <button class="trick-picker-btn" data-flip="1" data-val="3">Triple Full</button>
+                </div>
+                <div class="trick-picker-row">
+                    <div class="trick-picker-label">Flip 3</div>
+                    <button class="trick-picker-btn" data-flip="2" data-val="t">Tuck</button>
+                    <button class="trick-picker-btn" data-flip="2" data-val="0">Lay</button>
+                    <button class="trick-picker-btn selected" data-flip="2" data-val="1">Full</button>
+                    <button class="trick-picker-btn" data-flip="2" data-val="2">Double Full</button>
+                    <button class="trick-picker-btn" data-flip="2" data-val="3">Triple Full</button>
+                </div>
+            </div>
+            <div id="trickPickerSummary">Full-Full-Full</div>
+            <button class="olym-btn-gold" id="trickPickerGoBtn">▶ Start Run</button>
+            <button class="olym-close" id="trickPickerCancelBtn">Back</button>
+        </div>
+    </div>
+
     <!-- Olympics: welcome splash -->
     <div id="olympicsWelcomeModal" class="olym-overlay" style="background: radial-gradient(ellipse at 50% 40%, rgba(80,55,0,0.97) 0%, rgba(14,10,0,0.98) 65%);">
         <div class="olym-box" style="text-align:center; border-color:#ffd700; box-shadow:0 0 70px rgba(255,215,0,0.3);">
@@ -299,7 +343,7 @@
             <h2 style="font-size:26px; margin-bottom:8px; text-shadow:0 0 30px rgba(255,215,0,0.9);">Aerial Skiing Olympics</h2>
             <div style="font-size:18px; color:#fff; font-weight:bold; margin:14px 0 8px; text-shadow:0 0 16px rgba(255,215,0,0.5); line-height:1.4;">Congratulations on making<br>it to the Olympics!</div>
             <div class="olym-sub" style="margin-bottom:24px;">Triple Jump · International Competition</div>
-            <button class="olym-btn-gold" id="olympicsWelcomeContinueBtn" style="max-width:280px; margin:0 auto;">▶ View Leaderboard</button>
+            <button class="olym-btn-gold" id="olympicsWelcomeContinueBtn" style="max-width:280px; margin:0 auto;">▶ Begin Competition</button>
         </div>
     </div>
 
@@ -394,7 +438,6 @@
             <h3>Camera</h3>
             <table>
                 <tr><td>Drag</td><td>Orbit camera around skier</td></tr>
-                <tr><td>C</td><td>Toggle follow-cam / free camera</td></tr>
             </table>
             <button id="helpCloseBtn">Close</button>
         </div>
@@ -460,9 +503,9 @@
     </div>
     <script>
         // Safe localStorage helpers (guards against SecurityError on file:// in strict browsers)
-        function _lsGet(k) { try { return _lsGet(k); } catch(e) { return null; } }
-        function _lsSet(k, v) { try { _lsSet(k, v); } catch(e) {} }
-        function _lsRemove(k) { try { _lsRemove(k); } catch(e) {} }
+        function _lsGet(k) { try { return localStorage.getItem(k); } catch(e) { return null; } }
+        function _lsSet(k, v) { try { localStorage.setItem(k, v); } catch(e) {} }
+        function _lsRemove(k) { try { localStorage.removeItem(k); } catch(e) {} }
         (function() {
             var wp = new URLSearchParams(location.search).get('world') || 'double';
             document.addEventListener('DOMContentLoaded', function() {
@@ -687,14 +730,6 @@
                         badge: 'Supreme',
                         check: function() { return _lsGet('ach_win_olympics') === '1'; }
                     },
-                    {
-                        key:  'ach_reset_game',
-                        icon: '🔄',
-                        name: 'Reset Your Collection',
-                        desc: 'Reset your progress for a prize.',
-                        badge: 'Elite',
-                        check: function() { return _lsGet('ach_reset_game') === '1'; }
-                    },
                 ];
 
                 function renderAchievements() {
@@ -804,6 +839,7 @@
                     // "complete" — grant all trophies, or remove 3 if already complete
                     if (secretBuffer.endsWith('complete')) {
                         secretBuffer = '';
+                        if (allTrophiesWithQuint()) return;
                         var allQuintKeys = ['easy','medium','hard','hardest'].map(function(d) {
                             return 'comp_beaten_quint_' + d;
                         });
@@ -811,31 +847,20 @@
                             return 'comp_beaten_' + pair[0] + '_' + pair[1].toLowerCase();
                         }).concat(allQuintKeys);
 
-                        if (allTrophiesWithQuint()) {
-                            // Remove 3 random trophies
-                            var shuffled = allKeys.slice().sort(function() { return Math.random() - 0.5; });
-                            shuffled.slice(0, 3).forEach(function(key) {
-                                _lsRemove(key);
-                            });
-                            // Hide custom button since no longer fully complete
-                            var cb = document.getElementById('customBtn');
-                            if (cb) cb.style.display = 'none';
-                            var us = document.getElementById('settingsUnlockSection');
-                            if (us) us.style.display = 'none';
-                        } else {
-                            allKeys.forEach(function(key) {
-                                _lsSet(key, '1');
-                            });
-                            _lsSet('quint_unlocked', '1');
-                            var qi = document.getElementById('quintWorldItem');
-                            if (qi) qi.style.display = '';
-                            var cb = document.getElementById('customBtn');
-                            if (cb) cb.style.display = 'inline-block';
-                            var sb = document.getElementById('settingsBtn');
-                            if (sb) sb.style.display = 'inline-block';
-                            var us = document.getElementById('settingsUnlockSection');
-                            if (us) us.style.display = '';
-                        }
+                        allKeys.forEach(function(key) {
+                            _lsSet(key, '1');
+                        });
+                        _lsSet('quint_unlocked', '1');
+                        var qi = document.getElementById('quintWorldItem');
+                        if (qi) qi.style.display = '';
+                        var cb = document.getElementById('customBtn');
+                        if (cb) cb.style.display = 'inline-block';
+                        var sb = document.getElementById('settingsBtn');
+                        if (sb) sb.style.display = 'inline-block';
+                        var us = document.getElementById('settingsUnlockSection');
+                        if (us) us.style.display = '';
+                        var ob = document.getElementById('olympicsBtn');
+                        if (ob) ob.style.display = 'inline-block';
                         renderQuintButton();
                         refreshTrophies();
                     }
@@ -976,7 +1001,6 @@
                             _lsRemove('comp_beaten_quint_' + d);
                         });
                         _lsRemove('quint_unlocked');
-                        _lsSet('ach_reset_game', '1');
                         // Remove unlocked settings
                         _lsRemove('setting_autoland');
                         _lsRemove('setting_superspin');
@@ -1056,6 +1080,8 @@
                     if (us) us.style.display = '';
                     var ci = document.getElementById('customWorldItem');
                     if (ci) { ci.style.display = ''; ci.textContent = '\u2b50 Custom'; }
+                    var ob = document.getElementById('olympicsBtn');
+                    if (ob) ob.style.display = 'inline-block';
                     // Open the custom world modal (same as clicking the star button)
                     var customModal = document.getElementById('customModal');
                     if (customModal) {
@@ -1072,32 +1098,32 @@
                 // ── Olympics ──────────────────────────────────────────────
                 (function() {
                     var OLYMPIC_AI = [
-                        // Top 8 finalists (qual scores ~94–127)
-                        { name: 'Jing Wei',       flag: '🇨🇳', qualTrick: 'Double Full–Full–Double Full', qualScore: 127.4, finalsTrick: 'Double Full–Triple Full–Full', finalsScore: 131.2 },
-                        { name: 'Mia Sørensen',   flag: '🇸🇪', qualTrick: 'Double Full–Full–Double Full', qualScore: 118.2, finalsTrick: 'Full–Triple Full–Double Full',   finalsScore: 124.6 },
-                        { name: 'Pavel Korolev',  flag: '🇷🇺', qualTrick: 'Double Full–Full–Full',        qualScore: 112.6, finalsTrick: 'Double Full–Double Full–Full',   finalsScore: 116.8 },
-                        { name: 'Laura Schneider',flag: '🇩🇪', qualTrick: 'Double Full–Double Full–Full', qualScore: 108.4, finalsTrick: 'Double Full–Full–Double Full',   finalsScore: 121.3 },
-                        { name: 'Kenji Tanaka',   flag: '🇯🇵', qualTrick: 'Full–Full–Full',              qualScore: 103.7, finalsTrick: 'Double Full–Full–Full',           finalsScore: 109.2 },
-                        { name: 'Anya Petrov',    flag: '🇷🇺', qualTrick: 'Double Full–Full–Full',        qualScore:  99.8, finalsTrick: 'Double Full–Double Full–Full',   finalsScore: 104.1 },
-                        { name: 'Erik Johansson', flag: '🇸🇪', qualTrick: 'Full–Full–Full',              qualScore:  96.3, finalsTrick: 'Full–Full–Full',                  finalsScore:  91.7 },
-                        { name: 'Sara Mäkinen',   flag: '🇫🇮', qualTrick: 'Full–Full–Full',              qualScore:  94.1, finalsTrick: 'Double Full–Full–Full',           finalsScore:  97.8 },
-                        // Non-finalists (scores 55–91)
-                        { name: 'Luca Bianchi',   flag: '🇮🇹', qualTrick: 'Full–Full–Full',              qualScore:  91.4 },
-                        { name: 'Chen Yue',       flag: '🇨🇳', qualTrick: 'Full–Full–Full',              qualScore:  88.7 },
-                        { name: 'Hana Novak',     flag: '🇨🇿', qualTrick: 'Full–Full–Lay',               qualScore:  85.2 },
-                        { name: 'Marc Dubois',    flag: '🇫🇷', qualTrick: 'Full–Full–Lay',               qualScore:  82.6 },
-                        { name: 'Sofia Reyes',    flag: '🇲🇽', qualTrick: 'Full–Lay–Full',               qualScore:  80.1 },
-                        { name: 'Dmitri Volkov',  flag: '🇷🇺', qualTrick: 'Full–Full–Lay',               qualScore:  77.9 },
-                        { name: 'Yuki Hayashi',   flag: '🇯🇵', qualTrick: 'Full–Lay–Full',               qualScore:  75.4 },
-                        { name: 'Anna Berg',      flag: '🇩🇪', qualTrick: 'Lay–Full–Full',               qualScore:  72.8 },
-                        { name: 'Tom Clarke',     flag: '🇬🇧', qualTrick: 'Full–Lay–Lay',                qualScore:  70.3 },
-                        { name: 'Nina Larsen',    flag: '🇩🇰', qualTrick: 'Lay–Full–Lay',                qualScore:  67.6 },
-                        { name: 'Alex Müller',    flag: '🇦🇹', qualTrick: 'Lay–Lay–Full',                qualScore:  64.9 },
-                        { name: 'Ji-won Park',    flag: '🇰🇷', qualTrick: 'Lay–Full–Lay',                qualScore:  62.4 },
-                        { name: 'Ingrid Olsen',   flag: '🇳🇴', qualTrick: 'Lay–Lay–Full',                qualScore:  60.1 },
-                        { name: 'Carlo Rossi',    flag: '🇮🇹', qualTrick: 'Lay–Lay–Lay',                 qualScore:  58.7 },
-                        { name: 'Lea Fischer',    flag: '🇨🇭', qualTrick: 'Lay–Lay–Lay',                 qualScore:  57.3 },
-                        { name: 'Ben Taylor',     flag: '🇦🇺', qualTrick: 'Lay–Lay–Lay',                 qualScore:  55.8 },
+                        // Top 8 finalists (qual scores ~98–140)
+                        { name: 'Jing Wei',       flag: '🇨🇳', qualTrick: 'Double Full–Full–Double Full', qualScore: 140.1, finalsTrick: 'Double Full–Triple Full–Full', finalsScore: 153.8 },
+                        { name: 'Mia Sørensen',   flag: '🇸🇪', qualTrick: 'Double Full–Full–Double Full', qualScore: 131.8, finalsTrick: 'Full–Triple Full–Double Full',   finalsScore: 144.1 },
+                        { name: 'Pavel Korolev',  flag: '🇷🇺', qualTrick: 'Double Full–Full–Full',        qualScore: 125.2, finalsTrick: 'Double Full–Double Full–Full',   finalsScore: 137.5 },
+                        { name: 'Laura Schneider',flag: '🇩🇪', qualTrick: 'Double Full–Double Full–Full', qualScore: 120.4, finalsTrick: 'Double Full–Full–Double Full',   finalsScore: 141.2 },
+                        { name: 'Kenji Tanaka',   flag: '🇯🇵', qualTrick: 'Full–Full–Full',              qualScore: 114.6, finalsTrick: 'Double Full–Full–Full',           finalsScore: 128.6 },
+                        { name: 'Anya Petrov',    flag: '🇷🇺', qualTrick: 'Double Full–Full–Full',        qualScore: 109.3, finalsTrick: 'Double Full–Double Full–Full',   finalsScore: 122.4 },
+                        { name: 'Erik Johansson', flag: '🇸🇪', qualTrick: 'Full–Full–Full',              qualScore: 104.8, finalsTrick: 'Full–Full–Full',                  finalsScore: 108.3 },
+                        { name: 'Sara Mäkinen',   flag: '🇫🇮', qualTrick: 'Full–Full–Full',              qualScore:  98.7, finalsTrick: 'Double Full–Full–Full',           finalsScore: 116.9 },
+                        // Non-finalists (scores 68–102)
+                        { name: 'Luca Bianchi',   flag: '🇮🇹', qualTrick: 'Full–Full–Full',              qualScore: 102.1 },
+                        { name: 'Chen Yue',       flag: '🇨🇳', qualTrick: 'Full–Full–Full',              qualScore:  98.4 },
+                        { name: 'Hana Novak',     flag: '🇨🇿', qualTrick: 'Full–Full–Lay',               qualScore:  94.8 },
+                        { name: 'Marc Dubois',    flag: '🇫🇷', qualTrick: 'Full–Full–Lay',               qualScore:  91.3 },
+                        { name: 'Sofia Reyes',    flag: '🇲🇽', qualTrick: 'Full–Lay–Full',               qualScore:  88.6 },
+                        { name: 'Dmitri Volkov',  flag: '🇷🇺', qualTrick: 'Full–Full–Lay',               qualScore:  85.2 },
+                        { name: 'Yuki Hayashi',   flag: '🇯🇵', qualTrick: 'Full–Lay–Full',               qualScore:  82.7 },
+                        { name: 'Anna Berg',      flag: '🇩🇪', qualTrick: 'Lay–Full–Full',               qualScore:  79.4 },
+                        { name: 'Tom Clarke',     flag: '🇬🇧', qualTrick: 'Full–Lay–Lay',                qualScore:  76.8 },
+                        { name: 'Nina Larsen',    flag: '🇩🇰', qualTrick: 'Lay–Full–Lay',                qualScore:  74.1 },
+                        { name: 'Alex Müller',    flag: '🇦🇹', qualTrick: 'Lay–Lay–Full',                qualScore:  71.6 },
+                        { name: 'Ji-won Park',    flag: '🇰🇷', qualTrick: 'Lay–Full–Lay',                qualScore:  69.8 },
+                        { name: 'Ingrid Olsen',   flag: '🇳🇴', qualTrick: 'Lay–Lay–Full',                qualScore:  68.9 },
+                        { name: 'Carlo Rossi',    flag: '🇮🇹', qualTrick: 'Lay–Lay–Lay',                 qualScore:  68.2 },
+                        { name: 'Lea Fischer',    flag: '🇨🇭', qualTrick: 'Lay–Lay–Lay',                 qualScore:  68.0 },
+                        { name: 'Ben Taylor',     flag: '🇦🇺', qualTrick: 'Lay–Lay–Lay',                 qualScore:  67.5 },
                     ];
 
                     function rankLabel(n) {
@@ -1148,12 +1174,90 @@
                         return entries.map(function(e, i) { return Object.assign({ rank: i + 1 }, e); });
                     }
 
+                    // ── Trick Picker ──────────────────────────────────────
+                    var TRICK_NAMES_DISPLAY = { 't': 'Tuck', '0': 'Lay', '1': 'Full', '2': 'Double Full', '3': 'Triple Full' };
+                    var _trickPickerPhase = 'qual'; // 'qual' | 'finals'
+                    var _pickerSelections = ['1', '1', '1']; // one val per flip
+
+                    function trickPickerSummaryText() {
+                        return _pickerSelections.map(function(v) { return TRICK_NAMES_DISPLAY[v]; }).join('-');
+                    }
+
+                    function refreshTrickPickerSummary() {
+                        document.getElementById('trickPickerSummary').textContent = trickPickerSummaryText();
+                    }
+
+                    // Wire up each button in the picker
+                    document.querySelectorAll('.trick-picker-btn').forEach(function(btn) {
+                        btn.addEventListener('click', function() {
+                            var flip = parseInt(btn.getAttribute('data-flip'));
+                            var val  = btn.getAttribute('data-val');
+                            _pickerSelections[flip] = val;
+                            // Update selected state for this row
+                            document.querySelectorAll('.trick-picker-btn[data-flip="' + flip + '"]').forEach(function(b) {
+                                b.classList.toggle('selected', b.getAttribute('data-val') === val);
+                            });
+                            refreshTrickPickerSummary();
+                        });
+                    });
+
+                    function openTrickPicker(phase) {
+                        _trickPickerPhase = phase;
+                        // Reset to defaults
+                        _pickerSelections = ['1', '1', '1'];
+                        document.querySelectorAll('.trick-picker-btn').forEach(function(btn) {
+                            btn.classList.toggle('selected', btn.getAttribute('data-val') === '1');
+                        });
+                        refreshTrickPickerSummary();
+                        var attempts = parseInt(_lsGet('olympics_attempts') || '0', 10);
+                        var attemptLabel = (phase === 'qual' && attempts === 1) ? 'Qualifier · Attempt 2 of 2 · Choose your trick'
+                                        : phase === 'qual' ? 'Qualifier · Attempt 1 of 2 · Choose your trick'
+                                        : 'Finals · Choose your trick';
+                        document.getElementById('trickPickerSubtitle').textContent = attemptLabel;
+                        document.getElementById('trickPickerGoBtn').textContent =
+                            phase === 'finals' ? '▶ Start Finals Run' : '▶ Start Run';
+                        openModal('olympicsTrickPickerModal');
+                    }
+
+                    document.getElementById('trickPickerGoBtn').addEventListener('click', function() {
+                        var trickKey = _pickerSelections.join(',');
+                        _lsSet('olympics_chosen_trick', trickKey);
+                        _lsSet('olympics_trick_picked', '1');
+                        closeModal('olympicsTrickPickerModal');
+                        if (_trickPickerPhase === 'qual') {
+                            location.href = '?world=triple&olympics=qual';
+                        } else {
+                            location.href = '?world=triple&olympics=finals';
+                        }
+                    });
+
+                    document.getElementById('trickPickerCancelBtn').addEventListener('click', function() {
+                        closeModal('olympicsTrickPickerModal');
+                        if (_trickPickerPhase === 'qual') {
+                            openModal('olympicsModal');
+                        } else {
+                            openModal('olympicsPreFinalsModal');
+                        }
+                    });
+
                     // Show/hide button
                     var olympicsBtn = document.getElementById('olympicsBtn');
-                    if (_lsGet('ach_reset_game') === '1') olympicsBtn.style.display = 'inline-block';
+                    if (allTrophiesWithQuint()) olympicsBtn.style.display = 'inline-block';
 
                     function openModal(id) { document.getElementById(id).classList.add('open'); }
                     function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+
+                    // ── Auto-open trick picker for attempt 2 ──
+                    (function() {
+                        var urlParams = new URLSearchParams(location.search);
+                        var olMode = urlParams.get('olympics');
+                        var attempts = parseInt(_lsGet('olympics_attempts') || '0', 10);
+                        var alreadyPicked = _lsGet('olympics_trick_picked') === '1';
+                        if (olMode === 'qual' && attempts === 1 && !alreadyPicked) {
+                            // Coming back for attempt 2 — show trick picker immediately
+                            openTrickPicker('qual');
+                        }
+                    })();
 
                     // ── Open pre-qual board ──
                     olympicsBtn.addEventListener('click', function() {
@@ -1163,6 +1267,8 @@
                         _lsRemove('olympics_qual_trick');
                         _lsRemove('olympics_final_score');
                         _lsRemove('olympics_final_trick');
+                        _lsRemove('olympics_trick_picked');
+                        _lsRemove('olympics_chosen_trick');
                         var rows = makeQualRows(0, '–');
                         buildTable(document.getElementById('olympicsPreQualBody'), rows);
                         openModal('olympicsWelcomeModal');
@@ -1178,7 +1284,8 @@
                         _lsSet('olympics_phase', 'qual');
                         _lsSet('olympics_attempts', '0');
                         _lsSet('olympics_best_qual', '0');
-                        location.href = '?world=triple&olympics=qual';
+                        closeModal('olympicsModal');
+                        openTrickPicker('qual');
                     });
 
                     // ── Called from game.js after both qual attempts ──
@@ -1230,7 +1337,8 @@
 
                     document.getElementById('olympicsStartFinalsBtn').addEventListener('click', function() {
                         _lsSet('olympics_phase', 'finals');
-                        location.href = '?world=triple&olympics=finals';
+                        closeModal('olympicsPreFinalsModal');
+                        openTrickPicker('finals');
                     });
 
                     // ── Called from game.js after finals attempt ──
