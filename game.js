@@ -683,6 +683,24 @@ window.addEventListener('DOMContentLoaded', () => {
     applyPose(character.meshes, 0, 1, 1); // start fully extended, arms down
     window._characterMeshes = character.meshes;
 
+    // Expose live game state for tutorial and other overlays
+    window._getGameState = function() {
+        return {
+            grounded: state.grounded,
+            crashed: state.crashed,
+            stopped: state.stopped,
+            posZ: state.posZ,
+            airTime: state.airTime,
+            tuckAmount: state.tuckAmount,
+            spinAngle: state.spinAngle,
+            trickName: state.trickName,
+            readyState: readyState,
+            KICKER_END_Z: KICKER_END_Z,
+            FLAT_Z: FLAT_Z,
+            flipPower: flipPower,
+        };
+    };
+
     window.applySkierColors = function() {
         function hexToC3(hex) {
             return new BABYLON.Color3(
@@ -1013,6 +1031,8 @@ window.addEventListener('DOMContentLoaded', () => {
         if (e.code === 'KeyR') {
             // In competition mode, only allow reset once stopped or crashed at the bottom
             if (_compParam && !state.stopped && !state.crashed) return;
+            // Realistic FIS mode: block reset until the player has picked their next trick
+            if (_realisticMode && window._fisWaitingForPick) return;
             // Olympics mode: block reset once all attempts used
             if (_olympicsMode && olympicsDone) return;
             if (_olympicsMode && !state.stopped && !state.crashed) return;
@@ -1175,11 +1195,12 @@ window.addEventListener('DOMContentLoaded', () => {
         '1,1,1':4.425,
         '2,0,0':3.50, '0,2,0':3.50, '0,0,2':3.40,
         '2,1,0':4.00, '1,2,0':4.00, '0,2,1':4.00, '0,1,2':3.90, '1,0,2':3.90, '2,0,1':3.95,
-        '2,1,1':4.20, '1,2,1':4.20, '1,1,2':4.10,
-        '2,2,0':4.50, '0,2,2':4.50, '2,0,2':4.45,
-        '2,2,1':4.80, '2,1,2':4.75, '1,2,2':4.75,
-        '2,2,2':5.10,
-        '3,1,1':4.60, '1,3,1':4.60, '1,1,3':4.50,
+        '2,1,1':4.75, '1,2,1':4.75, '1,1,2':4.65,
+        '2,2,0':5.00, '0,2,2':5.00, '2,0,2':4.90,
+        '2,2,1':5.25, '2,1,2':5.20, '1,2,2':5.20,
+        '2,2,2':5.70,
+        '2,3,2':6.30,
+        '3,1,1':5.05, '1,3,1':5.05, '1,1,3':4.95,
         // Quads — lays and single-fulls
         '0,0,0,0':3.50,
         '1,0,0,0':3.90, '0,1,0,0':3.90, '0,0,1,0':3.90, '0,0,0,1':3.80,
@@ -1482,8 +1503,9 @@ window.addEventListener('DOMContentLoaded', () => {
     // ── Physics / render loop ─────────────────────────────────────────────────
     // Tuck transitions over 1/TUCK_RATE seconds (0.17 s)
     scene.registerBeforeRender(() => {
-        const dt = engine.getDeltaTime() / 1000; // seconds
-        if (paused || dt <= 0 || dt > 0.1) return; // skip when paused / stalled
+        const rawDt = engine.getDeltaTime() / 1000; // seconds
+        const dt = rawDt * (window._tutorialTimeScale !== undefined ? window._tutorialTimeScale : 1.0);
+        if (paused || rawDt <= 0 || rawDt > 0.1) return; // skip when paused / stalled
 
         // ── Replay playback ────────────────────────────────────────────────
         if (replayActive) {
@@ -1567,6 +1589,7 @@ window.addEventListener('DOMContentLoaded', () => {
                 state.vz = 0;
                 if (!state.stopped && !state.crashed && state.trickName) {
                     state.stopped = true;
+                    if (typeof window._onSkierStopped === 'function') window._onSkierStopped();
                     stopRecording();
                     const totalFlips  = state.perFlipTwists.length;
                     const totalTwists = state.perFlipTwists.reduce((a, b) => a + b, 0);
@@ -1773,9 +1796,23 @@ window.addEventListener('DOMContentLoaded', () => {
                         }
                     }
                     // ── Execution score ──────────────────────────────────────
-                    // Clean landing = 30; crash = 0 (handled in else branch)
-                    state.execution = 30;
+                    // Forward lean (norm in [0, LAND_TOL]) scores highest — max forward = 30, upright = 15.
+                    // Backward lean (norm in (TWO_PI-LAND_TOL, TWO_PI]) scores lowest — max backward = 0.
+                    let execRaw;
+                    if (autoLand) {
+                        execRaw = 30;
+                    } else if (norm <= LAND_TOL) {
+                        // Forward lean: norm=0 (upright) → 29, norm=LAND_TOL (max forward) → 30
+                        const fwd = norm / LAND_TOL;
+                        execRaw = 29 + 1 * fwd;
+                    } else {
+                        // Backward lean: norm=TWO_PI-LAND_TOL (max backward) → 25, norm near TWO_PI (nearly upright) → 29
+                        const bwd = (norm - (TWO_PI - LAND_TOL)) / LAND_TOL;
+                        execRaw = 25 + 4 * bwd;
+                    }
+                    state.execution = Math.max(0, Math.round(execRaw * 10) / 10);
                     state.crashed   = false;
+                    if (typeof window._onQualifyLanded === 'function') window._onQualifyLanded(state.perFlipTwists, tuckedPerFlip.slice(), state.execution);
                     state.flipAngle = 0;
                     state.flipDir   = 1;
                     // preserve vz so skier glides away down the landing slope
@@ -1794,6 +1831,8 @@ window.addEventListener('DOMContentLoaded', () => {
                     if (_olympicsMode && !olympicsDone) {
                         _handleOlympicsAttempt(0, 'Crash');
                     }
+                    // Realistic mode qualification crash hook
+                    if (typeof window._onQualifyCrash === 'function') window._onQualifyCrash();
                     // Snap toward nearest lying-flat angle:
                     // norm < π  → back leading → land on back  (π)
                     // norm >= π → front leading → land on stomach (3π/2 → face down)

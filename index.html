@@ -17,7 +17,7 @@
         #worldList div.active { color: #fff; font-weight: bold; }
         #compBtn { background: #1a2a1a; color: #88ffaa; border: 1px solid #336633; padding: 5px 14px; cursor: pointer; font-size: 13px; border-radius: 4px; letter-spacing: 0.03em; margin-left: 8px; }
         #compBtn:hover { background: #243a24; }
-        #menuBtn { background: #1a1a2a; color: #b8d8ff; border: 1px solid #335566; padding: 5px 14px; cursor: pointer; font-size: 13px; border-radius: 4px; letter-spacing: 0.03em; margin-left: 8px; }
+        #menuBtn { position: absolute; top: 10px; right: 52px; z-index: 10; background: #1a1a2a; color: #b8d8ff; border: 1px solid #335566; padding: 5px 14px; cursor: pointer; font-size: 13px; border-radius: 4px; letter-spacing: 0.03em; }
         #menuBtn:hover { background: #24243a; }
         #compModal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.75); z-index: 100; align-items: center; justify-content: center; }
         #compModal.open { display: flex; }
@@ -128,7 +128,7 @@
         #grandClaimBtn:hover { transform: scale(1.05); }
         #helpBtn { position: absolute; top: 10px; right: 10px; z-index: 10; background: #1a2030; color: #b8d8ff; border: 1px solid #335566; width: 32px; height: 32px; cursor: pointer; font-size: 16px; font-weight: bold; border-radius: 50%; line-height: 30px; text-align: center; padding: 0; }
         #helpBtn:hover { background: #243040; }
-        #qualifyBtn { display: none; position: absolute; top: 10px; right: 160px; z-index: 10; background: #1a2030; color: #88ccff; border: 1px solid #335566; padding: 5px 11px; cursor: pointer; font-size: 13px; font-weight: bold; border-radius: 6px; line-height: 1; letter-spacing: 0.03em; }
+        #qualifyBtn { display: none; background: #1a2030; color: #88ccff; border: 1px solid #335566; padding: 5px 11px; cursor: pointer; font-size: 13px; font-weight: bold; border-radius: 6px; line-height: 1; letter-spacing: 0.03em; margin-left: 8px; }
         #qualifyBtn:hover { background: #243040; }
         #qualifyModal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.82); z-index: 300; align-items: flex-start; justify-content: center; padding-top: 40px; }
         #qualifyModal.open { display: flex; }
@@ -143,8 +143,99 @@
         .q-name { flex: 1; font-size: 13px; color: #a8c8e8; }
         .q-dd { font-size: 13px; font-weight: bold; color: #ffd700; min-width: 36px; text-align: right; }
         .q-bar { height: 6px; border-radius: 3px; background: linear-gradient(90deg, #1a4a6a, #4499cc); min-width: 4px; }
+        #qualifyHUD { display: none; position: absolute; top: 10px; left: 50%; transform: translateX(-50%); z-index: 10; background: rgba(0,0,0,0.55); border: 1px solid #3399aa; border-radius: 6px; padding: 5px 18px; font-family: sans-serif; font-size: 14px; font-weight: bold; color: #88ccff; letter-spacing: 0.04em; white-space: nowrap; pointer-events: none; margin-top: 42px; }
+        .q-row.q-qualified { opacity: 0.65; }
+        .q-row.q-qualified .q-name { color: #44aa66; }
+        .q-row.q-qualified .q-dd { color: #44aa66; }
+        .q-row.q-current { background: rgba(30,80,120,0.4); border-radius: 5px; }
+        .q-row.q-current .q-name { color: #88ccff; font-weight: bold; }
+        .q-row.q-next { cursor: pointer; }
+        .q-row.q-next .q-name::before { content: '▶ '; color: #ffd700; font-size: 11px; }
+        .q-row.q-next:hover { background: #0f2030; }
+        .q-row.q-other-world { cursor: pointer; opacity: 0.6; }
+        .q-row.q-other-world:hover { opacity: 1; background: #0f1e30; }
+        .q-row.q-other-world .q-name::before { content: '→ '; color: #88aacc; font-size: 11px; }
         #qualifyCloseBtn { display: block; margin: 16px auto 0; background: none; border: none; color: #445566; font-size: 12px; cursor: pointer; text-decoration: underline; }
-        #olympicsBtn { display: none; position: absolute; top: 10px; right: 52px; z-index: 10; background: linear-gradient(135deg, #1a180a, #1e2a0a); color: #ffd700; border: 1px solid #886600; padding: 5px 11px; cursor: pointer; font-size: 13px; font-weight: bold; border-radius: 6px; line-height: 1; letter-spacing: 0.04em; box-shadow: 0 0 8px rgba(255,215,0,0.15); transition: box-shadow 0.15s; }
+        /* ── FIS Competition System ── */
+        #fisBtn { display: none; background: #1a2010; color: #aadd88; border: 1px solid #446622; padding: 5px 14px; cursor: pointer; font-size: 13px; border-radius: 4px; letter-spacing: 0.03em; margin-left: 8px; }
+        #fisBtn:hover { background: #243018; }
+        #fisHUD2 { display: none; position: absolute; top: 10px; left: 50%; transform: translateX(-50%); z-index: 10; background: rgba(0,0,0,0.6); border: 1px solid #446622; border-radius: 6px; padding: 5px 18px; font-family: sans-serif; font-size: 14px; font-weight: bold; color: #aadd88; letter-spacing: 0.03em; white-space: nowrap; pointer-events: none; margin-top: 70px; }
+        #fisRunScoreboard { display: none; position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%); z-index: 50; background: rgba(5,15,5,0.92); border: 1px solid #446622; border-radius: 12px; padding: 22px 36px 20px; font-family: sans-serif; color: #b8d8b0; text-align: center; min-width: 260px; pointer-events: none; }
+
+        /* ── Tutorial overlay ── */
+        #tutorialOverlay { display: none; position: absolute; bottom: 120px; left: 50%; transform: translateX(-50%); z-index: 60; font-family: sans-serif; text-align: center; pointer-events: none; }
+        #tutorialOverlay.active { display: block; }
+        #tutStep { background: rgba(10,18,30,0.88); border: 1px solid rgba(255,200,80,0.45); border-radius: 12px; padding: 14px 28px 12px; color: #fff; font-size: 15px; line-height: 1.55; min-width: 320px; max-width: 480px; }
+        #tutStep .tut-num { font-size: 11px; color: #ffcc66; text-transform: uppercase; letter-spacing: .09em; margin-bottom: 6px; }
+        #tutStep .tut-main { font-size: 16px; font-weight: bold; color: #fff; margin-bottom: 4px; }
+        #tutStep .tut-sub { font-size: 13px; color: #aabbcc; }
+        #tutStep kbd { display: inline-block; background: #223; border: 1px solid #556; border-radius: 4px; padding: 1px 7px; font-size: 12px; color: #ddeeff; margin: 0 2px; }
+        #tutProgress { display: flex; gap: 6px; justify-content: center; margin-top: 10px; }
+        .tut-dot { width: 8px; height: 8px; border-radius: 50%; background: rgba(255,200,80,0.25); transition: background .3s; }
+        .tut-dot.done { background: #ffcc66; }
+        .tut-dot.active { background: #fff; }
+        #fisRunScoreboard.open { display: block; }
+        #fisRunScoreboard .frs-title { font-size: 12px; color: #668844; text-transform: uppercase; letter-spacing: .07em; margin-bottom: 10px; }
+        #fisRunScoreboard .frs-score { font-size: 38px; font-weight: bold; color: #aadd88; letter-spacing: .02em; }
+        #fisRunScoreboard .frs-trick { font-size: 13px; color: #88aa66; margin-top: 6px; }
+        #fisRunScoreboard .frs-next { font-size: 11px; color: #446622; margin-top: 12px; }
+        #fisTrickPick { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.82); z-index: 310; align-items: flex-start; justify-content: center; padding-top: 30px; }
+        #fisTrickPick.open { display: flex; }
+        #fisTrickPickBox { background: #090f06; border: 1px solid #446622; border-radius: 14px; padding: 22px 28px 26px; width: 520px; max-height: 84vh; overflow-y: auto; color: #b8d8b0; font-family: sans-serif; }
+        .ftp-header { display: flex; align-items: center; margin-bottom: 6px; }
+        .ftp-header h2 { font-size: 18px; color: #aadd88; margin: 0; }
+        .ftp-subtitle { font-size: 12px; color: #668844; margin-bottom: 18px; }
+        .ftp-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+        .ftp-card { border: 1px solid #446622; border-radius: 10px; padding: 14px 16px; background: #0d1a08; cursor: pointer; transition: background .12s, border-color .12s; }
+        .ftp-card:hover { background: #132008; border-color: #88dd44; }
+        .ftp-card-name { font-size: 14px; font-weight: bold; color: #cceeaa; margin-bottom: 4px; }
+        .ftp-card-dd { font-size: 11px; color: #668844; }
+        .fis-result-section { font-size: 13px; color: #8aaa66; text-transform: uppercase; letter-spacing: .06em; margin: 10px 0 4px; }
+        .fis-finals-row td { color: #ccee88; }
+        #fisModal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.82); z-index: 300; align-items: flex-start; justify-content: center; padding-top: 30px; }
+        #fisModal.open { display: flex; }
+        #fisModalBox { background: #090f06; border: 1px solid #446622; border-radius: 14px; padding: 22px 28px 26px; width: 560px; max-height: 84vh; overflow-y: auto; color: #b8d8b0; font-family: sans-serif; }
+        .fis-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; flex-wrap: wrap; gap: 10px; }
+        .fis-header h2 { font-size: 18px; color: #aadd88; margin: 0; }
+        .fis-tabs { display: flex; gap: 6px; }
+        .fis-tab { background: #111a0a; border: 1px solid #334422; border-radius: 5px; color: #668844; font-size: 12px; font-weight: bold; padding: 5px 12px; cursor: pointer; letter-spacing: 0.04em; transition: background 0.1s; }
+        .fis-tab:hover { background: #1a2a10; }
+        .fis-tab.active { background: #1a3a0a; border-color: #66aa44; color: #aadd88; }
+        .fis-stats-bar { font-size: 12px; color: #668844; margin-bottom: 14px; padding: 8px 12px; background: #0d1a08; border-radius: 6px; border: 1px solid #223318; }
+        .fis-stats-bar b { color: #aadd88; }
+        .fis-event-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 14px; }
+        .fis-event-card { border: 1px solid #223318; border-radius: 10px; padding: 12px 14px; background: #0d1a08; transition: background 0.12s, border-color 0.12s; }
+        .fis-available { cursor: pointer; border-color: #446622; }
+        .fis-available:hover { background: #132008; border-color: #66aa44; }
+        .fis-done { opacity: 0.75; }
+        .fis-locked { opacity: 0.32; }
+        .fis-unavailable { opacity: 0.5; }
+        .fis-ev-flag { font-size: 22px; line-height: 1; margin-bottom: 4px; }
+        .fis-ev-venue { font-size: 14px; font-weight: bold; color: #cceeaa; margin-bottom: 2px; }
+        .fis-ev-country { font-size: 11px; color: #557744; margin-bottom: 6px; }
+        .fis-ev-status { font-size: 12px; color: #557744; }
+        .fis-ev-avail { color: #88dd44; font-weight: bold; }
+        .fis-ev-done { color: #66aa44; }
+        .fis-single-card { border: 1px solid #446622; border-radius: 12px; padding: 20px 22px; background: #0d1a08; margin-bottom: 10px; }
+        .fis-single-card.fis-available { cursor: pointer; }
+        .fis-single-card.fis-available:hover { background: #132008; border-color: #88dd44; }
+        .fis-lock-msg { color: #446622; font-size: 13px; padding: 20px; text-align: center; }
+        .fis-result-title { font-size: 16px; color: #aadd88; margin: 0 0 12px; }
+        .fis-result-you { font-size: 13px; color: #99cc77; margin-bottom: 14px; padding: 10px 14px; background: #0d1a08; border-radius: 7px; border: 1px solid #334422; }
+        .fis-result-you b { color: #aadd88; }
+        .fis-pts-badge { background: #1a3a08; border: 1px solid #66aa44; border-radius: 4px; color: #aadd88; font-size: 12px; font-weight: bold; padding: 2px 8px; }
+        .fis-result-table { width: 100%; border-collapse: collapse; font-size: 13px; margin-bottom: 6px; }
+        .fis-result-table th { font-size: 10px; color: #446622; text-transform: uppercase; letter-spacing: 0.07em; padding: 3px 6px 6px; border-bottom: 1px solid #1a2a10; text-align: left; }
+        .fis-result-table td { padding: 5px 6px; border-bottom: 1px solid #0f1a08; color: #99bb88; }
+        .fis-result-table td:last-child { text-align: right; font-weight: bold; color: #aadd88; }
+        .fis-you-row td { background: rgba(100,180,60,0.1); color: #bbdd99 !important; }
+        .fis-close-btn { display: block; margin: 18px auto 0; background: none; border: none; color: #446622; font-size: 12px; cursor: pointer; text-decoration: underline; }
+        .fis-back-btn { background: #111a0a; border: 1px solid #334422; color: #88aa66; font-size: 12px; border-radius: 5px; padding: 5px 14px; cursor: pointer; margin-bottom: 14px; }
+        .fis-standings-table { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 14px; }
+        .fis-standings-table th { font-size: 10px; color: #446622; text-transform: uppercase; letter-spacing: 0.07em; padding: 3px 6px 6px; border-bottom: 1px solid #1a2a10; text-align: left; }
+        .fis-standings-table td { padding: 4px 6px; border-bottom: 1px solid #0f1a08; color: #99bb88; }
+        .fis-standings-you td { color: #bbdd99 !important; font-weight: bold; background: rgba(100,180,60,0.08); }
+        #olympicsBtn { display: none; position: absolute; top: 10px; right: 145px; z-index: 10; background: linear-gradient(135deg, #1a180a, #1e2a0a); color: #ffd700; border: 1px solid #886600; padding: 5px 11px; cursor: pointer; font-size: 13px; font-weight: bold; border-radius: 6px; line-height: 1; letter-spacing: 0.04em; box-shadow: 0 0 8px rgba(255,215,0,0.15); transition: box-shadow 0.15s; }
         #olympicsBtn:hover { background: linear-gradient(135deg, #252510, #283a10); box-shadow: 0 0 16px rgba(255,215,0,0.35); }
         .olym-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.88); z-index: 350; align-items: center; justify-content: center; }
         .olym-overlay.open { display: flex; }
@@ -315,7 +406,15 @@
         </div>
     </div>
     <button id="helpBtn" title="Controls">?</button>
-    <button id="qualifyBtn" title="Trick list by DD">📊 Qualify</button>
+    <button id="menuBtn">☰ Menu</button>
+    <div id="fisHUD2"></div>
+    <div id="fisRunScoreboard"><div class="frs-title"></div><div class="frs-score"></div><div class="frs-trick"></div><div class="frs-next"></div></div>
+    <div id="tutorialOverlay"><div id="tutStep"></div><div id="tutProgress"></div></div>
+    <div id="fisTrickPick"><div id="fisTrickPickBox"></div></div>
+    <!-- FIS Competition Modal -->
+    <div id="fisModal">
+        <div id="fisModalBox"></div>
+    </div>
     <!-- Qualify modal -->
     <div id="qualifyModal">
         <div id="qualifyModalBox">
@@ -492,7 +591,8 @@
     <div id="worldMenu">
         <button id="worldBtn">⛷ <span id="worldLabel">Normal</span> ▾</button>
         <button id="compBtn">🏆 Compete</button>
-        <button id="menuBtn">☰ Menu</button>
+        <button id="qualifyBtn" title="Trick list by DD">📊 Qualify</button>
+        <button id="fisBtn">🏔 FIS</button>
         <div id="worldList">
             <div onclick="location.href='?world=single'">Single</div>
             <div onclick="location.href='?world=double'">Double</div>
@@ -503,6 +603,7 @@
         </div>
     </div>
     <div id="compHUD"></div>
+    <div id="qualifyHUD"></div>
     <div id="compModal">
         <div id="compModalBox">
             <h2>🏆 Competition Mode</h2>
@@ -549,9 +650,11 @@
                         var el = document.getElementById(id);
                         if (el) el.style.display = 'none';
                     });
-                    // Show qualify button in realistic mode
+                    // Show qualify + FIS buttons in realistic mode
                     var qb = document.getElementById('qualifyBtn');
                     if (qb) qb.style.display = 'inline-block';
+                    var fb = document.getElementById('fisBtn');
+                    if (fb) fb.style.display = 'inline-block';
                     // Hide quad world in realistic mode
                     document.querySelectorAll('#worldList div').forEach(function(el) {
                         if (el.textContent.trim() === 'Quad') el.style.display = 'none';
@@ -1127,21 +1230,36 @@
                         'lay_tuck':1.90,
                         '0,0':2.10,'0,1':2.50,'1,0':2.50,'1,1':3.15,'0,2':3.00,'2,0':3.00,'1,2':3.50,'2,1':3.50,'2,2':4.00,'0,3':3.30,'3,0':3.30,'1,3':3.80,'3,1':3.80,'2,3':4.30,'3,2':4.30,'3,3':4.70,
                         'lay_tuck_full':3.00,'lay_full_tuck':3.00,
-                        '0,0,0':2.90,'1,0,0':3.30,'0,1,0':3.30,'0,0,1':3.20,'1,1,0':3.80,'1,0,1':3.75,'0,1,1':3.75,'1,1,1':4.425,'2,0,0':3.50,'0,2,0':3.50,'0,0,2':3.40,'2,1,0':4.00,'1,2,0':4.00,'0,2,1':4.00,'0,1,2':3.90,'1,0,2':3.90,'2,0,1':3.95,'2,1,1':4.20,'1,2,1':4.20,'1,1,2':4.10,'2,2,0':4.50,'0,2,2':4.50,'2,0,2':4.45,'2,2,1':4.80,'2,1,2':4.75,'1,2,2':4.75,'2,2,2':5.10,'3,1,1':4.60,'1,3,1':4.60,'1,1,3':4.50,
+                        '0,0,0':2.90,'1,0,0':3.30,'0,1,0':3.30,'0,0,1':3.20,'1,1,0':3.80,'1,0,1':3.75,'0,1,1':3.75,'1,1,1':4.425,'2,0,0':3.50,'0,2,0':3.50,'0,0,2':3.40,'2,1,0':4.00,'1,2,0':4.00,'0,2,1':4.00,'0,1,2':3.90,'1,0,2':3.90,'2,0,1':3.95,'2,1,1':4.75,'1,2,1':4.75,'1,1,2':4.65,'2,2,0':5.00,'0,2,2':5.00,'2,0,2':4.90,'2,2,1':5.25,'2,1,2':5.20,'1,2,2':5.20,'2,2,2':5.70,'2,3,2':6.30,'3,1,1':5.05,'1,3,1':5.05,'1,1,3':4.95,
                         '0,0,0,0':3.50,'1,0,0,0':3.90,'0,1,0,0':3.90,'0,0,1,0':3.90,'0,0,0,1':3.80,'1,1,0,0':4.40,'1,0,1,0':4.35,'1,0,0,1':4.30,'0,1,1,0':4.40,'0,1,0,1':4.35,'0,0,1,1':4.30,'1,1,1,0':5.00,'1,1,0,1':4.95,'1,0,1,1':4.95,'0,1,1,1':4.95,'1,1,1,1':5.80,'2,0,0,0':4.10,'0,2,0,0':4.10,'0,0,2,0':4.00,'0,0,0,2':4.00,'2,1,0,0':4.60,'1,2,0,0':4.60,'2,0,1,0':4.55,'0,2,1,0':4.55,'2,0,0,1':4.50,'0,2,0,1':4.50,'1,0,2,0':4.50,'0,1,2,0':4.50,'1,0,0,2':4.45,'0,1,0,2':4.45,'0,0,2,1':4.45,'0,0,1,2':4.40,'2,1,1,0':5.10,'1,2,1,0':5.10,'1,1,2,0':5.10,'2,1,0,1':5.05,'1,2,0,1':5.00,'2,0,1,1':5.00,'0,2,1,1':5.00,'0,1,2,1':5.00,'1,0,2,1':5.00,'1,1,0,2':4.95,'1,0,1,2':4.95,'0,1,1,2':4.95,'2,1,1,1':5.95,'1,2,1,1':5.90,'1,1,2,1':5.90,'1,1,1,2':5.85,'2,2,0,0':5.10,'2,0,2,0':5.05,'2,0,0,2':5.00,'0,2,2,0':5.10,'0,2,0,2':5.00,'0,0,2,2':4.95,'2,2,1,0':5.60,'2,2,0,1':5.55,'2,1,2,0':5.55,'2,0,2,1':5.50,'2,1,0,2':5.45,'2,0,1,2':5.45,'1,2,2,0':5.55,'0,2,2,1':5.50,'1,2,0,2':5.45,'0,2,1,2':5.45,'1,0,2,2':5.45,'0,1,2,2':5.45,'2,2,1,1':6.10,'2,1,2,1':6.05,'2,1,1,2':6.00,'1,2,2,1':6.05,'1,2,1,2':6.00,'1,1,2,2':5.95,'2,2,2,0':5.70,'2,2,0,2':5.65,'2,0,2,2':5.65,'0,2,2,2':5.65,'2,2,2,1':6.40,'2,2,1,2':6.35,'2,1,2,2':6.30,'1,2,2,2':6.30,'2,2,2,2':6.80,'3,0,0,0':4.30,'0,3,0,0':4.30,'0,0,3,0':4.20,'0,0,0,3':4.15,'3,1,0,0':4.85,'1,3,0,0':4.85,'3,0,1,0':4.80,'0,3,1,0':4.80,'3,0,0,1':4.75,'0,3,0,1':4.75,'1,0,3,0':4.75,'0,1,3,0':4.75,'0,0,3,1':4.65,'1,0,0,3':4.65,'0,1,0,3':4.60,'0,0,1,3':4.55,'3,1,1,0':5.50,'3,1,0,1':5.40,'3,0,1,1':5.35,'1,3,1,0':5.50,'1,3,0,1':5.40,'0,3,1,1':5.35,'1,1,3,0':5.45,'1,0,3,1':5.35,'0,1,3,1':5.40,'1,1,0,3':5.25,'1,0,1,3':5.25,'0,1,1,3':5.25,'3,1,1,1':6.30,'1,3,1,1':6.25,'1,1,3,1':6.20,'1,1,1,3':6.10
                     };
                     var groupNames = ['Single', 'Double', 'Triple'];
+                    // Expose DD lookup for FIS competition system
+                    window._getQualifyDD = function(perFlipTwists) {
+                        var key = perFlipTwists.join(',');
+                        return DD_TABLE[key] || (1.4 + perFlipTwists.length * 0.5 + perFlipTwists.reduce(function(s,v){return s+v;},0) * 0.4);
+                    };
                     var groups = [[], [], []];
+                    var _nonMatchableKeys = Object.keys(FLIP_COUNTS); // e.g. lay_tuck, lay_tuck_full
                     Object.keys(DD_TABLE).forEach(function(key) {
-                        var flips = FLIP_COUNTS[key] || key.split(',').length;
+                        if (_nonMatchableKeys.indexOf(key) !== -1) return; // skip string-keyed tricks
+                        var flips = key.split(',').length;
                         if (flips >= 1 && flips <= 3 && isValidTrick(key)) {
                             groups[flips - 1].push({ key: key, name: keyToName(key), dd: DD_TABLE[key] });
                         }
                     });
                     var maxDD = 6.80;
                     var qualifyList = document.getElementById('qualifyList');
+                    var _rowByKey = {}; // direct references to row elements, keyed by trick key
                     groups.forEach(function(group, gi) {
                         group.sort(function(a, b) { return a.dd - b.dd; });
+                        // Move Lay-Triple Full after Double Full-Full
+                        var ltfIdx = group.findIndex(function(t) { return t.key === '0,3'; });
+                        var dffIdx = group.findIndex(function(t) { return t.key === '2,1'; });
+                        if (ltfIdx !== -1 && dffIdx !== -1 && ltfIdx < dffIdx) {
+                            var ltf = group.splice(ltfIdx, 1)[0];
+                            group.splice(dffIdx, 0, ltf);
+                        }
                         var div = document.createElement('div');
                         div.className = 'q-group';
                         var hdr = document.createElement('div');
@@ -1151,10 +1269,13 @@
                         group.forEach(function(t) {
                             var row = document.createElement('div');
                             row.className = 'q-row';
+                            row.setAttribute('data-key', t.key);
                             var barW = Math.round((t.dd / maxDD) * 120);
+                            var ddStr = t.dd.toFixed(3).replace(/\.?0+$/, '');
                             row.innerHTML = '<div class="q-name">' + t.name + '</div>'
                                 + '<div class="q-bar" style="width:' + barW + 'px"></div>'
-                                + '<div class="q-dd">' + t.dd.toFixed(3).replace(/\.?0+$/, '') + '</div>';
+                                + '<div class="q-dd" data-dd="' + ddStr + '">' + ddStr + '</div>';
+                            _rowByKey[t.key] = row; // store direct reference
                             div.appendChild(row);
                         });
                         qualifyList.appendChild(div);
@@ -1170,6 +1291,954 @@
                     qualifyModal.addEventListener('click', function(e) {
                         if (e.target === qualifyModal) qualifyModal.classList.remove('open');
                     });
+
+                    // ── Realistic mode qualification ──────────────────────
+                    if (_realisticMode) {
+                        var LS_KEY = 'qualify_qualified_' + wp;
+                        var flipIdx = { single: 0, double: 1, triple: 2 }[wp];
+                        var worldTricks = (flipIdx !== undefined) ? groups[flipIdx] : [];
+                        var qualifyStreak = 0;
+                        var activeTarget = null; // set when player clicks a trick row to begin
+
+                        function getQualifiedFor(world) {
+                            try { return JSON.parse(_lsGet('qualify_qualified_' + world) || '[]'); } catch(e) { return []; }
+                        }
+                        // Enforce world unlock order — redirect if this world isn't unlocked yet
+                        // Threshold: qualify at least half the tricks (min 1) before moving on
+                        var _singleThresh = Math.max(1, Math.ceil(groups[0].length / 2));
+                        var _doubleThresh = Math.max(1, Math.ceil(groups[1].length / 2));
+                        var _singleDone = getQualifiedFor('single').length >= _singleThresh;
+                        var _doubleDone = getQualifiedFor('double').length >= _doubleThresh;
+                        if (wp === 'double' && !_singleDone) { location.replace('?world=single&mode=realistic'); return; }
+                        if (wp === 'triple' && !(_singleDone && _doubleDone)) { location.replace('?world=' + (_singleDone ? 'double' : 'single') + '&mode=realistic'); return; }
+                        function getCurrentTarget() {
+                            var q = getQualifiedFor(wp);
+                            for (var i = 0; i < worldTricks.length; i++) {
+                                if (q.indexOf(worldTricks[i].key) === -1) return worldTricks[i];
+                            }
+                            return null;
+                        }
+                        function matchTrickLocal(perFlipTwists, tuckedPerFlip, key) {
+                            var parts = key.split(',');
+                            if (parts.length !== perFlipTwists.length) return false;
+                            return parts.every(function(p, idx) {
+                                if (p === 't') return perFlipTwists[idx] === 0 && tuckedPerFlip[idx];
+                                return perFlipTwists[idx] === parseInt(p, 10);
+                            });
+                        }
+                        window._matchTrick = matchTrickLocal;
+                        function updateWorldUnlocks() {
+                            var singleQ = getQualifiedFor('single').length;
+                            var doubleQ = getQualifiedFor('double').length;
+                            var singleThresh = Math.max(1, Math.ceil(groups[0].length / 2));
+                            var doubleThresh = Math.max(1, Math.ceil(groups[1].length / 2));
+                            document.querySelectorAll('#worldList div[onclick]').forEach(function(el) {
+                                var txt = el.textContent.trim();
+                                if (txt === 'Double') el.style.display = (singleQ >= singleThresh) ? '' : 'none';
+                                if (txt === 'Triple') el.style.display = (singleQ >= singleThresh && doubleQ >= doubleThresh) ? '' : 'none';
+                            });
+                        }
+                        function streakDots(n) {
+                            return (n >= 1 ? '●' : '○') + (n >= 2 ? '●' : '○') + (n >= 3 ? '●' : '○');
+                        }
+                        function updateHUD() {
+                            var hud = document.getElementById('qualifyHUD');
+                            if (!hud) return;
+                            if (!activeTarget) {
+                                var next = getCurrentTarget();
+                                if (!next) {
+                                    hud.textContent = '';
+                                } else {
+                                    hud.textContent = '';
+                                }
+                            } else {
+                                hud.textContent = '🎿 ' + activeTarget.name + '  ' + streakDots(qualifyStreak);
+                            }
+                        }
+                        function refreshModalRows() {
+                            var q = getQualifiedFor(wp);
+                            var nextKey = null;
+                            for (var i = 0; i < worldTricks.length; i++) {
+                                if (q.indexOf(worldTricks[i].key) === -1) { nextKey = worldTricks[i].key; break; }
+                            }
+                            var worldNames = ['single', 'double', 'triple'];
+                            worldNames.forEach(function(world, gi) {
+                                var wTricks = groups[gi];
+                                var wQ = getQualifiedFor(world);
+                                wTricks.forEach(function(t) {
+                                    var row = _rowByKey[t.key];
+                                    if (!row) return;
+                                    var ddEl = row.querySelector('.q-dd');
+                                    row.classList.remove('q-qualified', 'q-current', 'q-locked', 'q-next', 'q-other-world');
+                                    row.removeAttribute('data-world');
+                                    if (ddEl) ddEl.textContent = ddEl.getAttribute('data-dd');
+                                    if (wQ.indexOf(t.key) !== -1) {
+                                        row.classList.add('q-qualified');
+                                        if (ddEl) ddEl.textContent = '✓';
+                                    } else if (world !== wp) {
+                                        // Trick belongs to a different world — show as navigable
+                                        var isUnlocked = (world === 'single') ||
+                                            (world === 'double' && getQualifiedFor('single').length >= Math.max(1, Math.ceil(groups[0].length / 2))) ||
+                                            (world === 'triple' && getQualifiedFor('single').length >= Math.max(1, Math.ceil(groups[0].length / 2)) && getQualifiedFor('double').length >= Math.max(1, Math.ceil(groups[1].length / 2)));
+                                        if (isUnlocked) {
+                                            row.classList.add('q-other-world');
+                                            row.setAttribute('data-world', world);
+                                        } else {
+                                            row.classList.add('q-locked');
+                                        }
+                                    } else if (world === wp && activeTarget && t.key === activeTarget.key) {
+                                        row.classList.add('q-current');
+                                        if (ddEl) ddEl.textContent = streakDots(qualifyStreak);
+                                    } else if (world === wp && !activeTarget && t.key === nextKey) {
+                                        row.classList.add('q-next');
+                                    }
+                                });
+                            });
+                        }
+                        // Use event delegation — one listener on the container, checks class at click time
+                        qualifyList.addEventListener('click', function(e) {
+                            var row = e.target.closest ? e.target.closest('.q-row') : null;
+                            if (!row) return;
+                            // Clicking a trick from another world — navigate there
+                            if (row.classList.contains('q-other-world')) {
+                                var targetWorld = row.getAttribute('data-world');
+                                if (targetWorld) location.href = '?world=' + targetWorld + '&mode=realistic';
+                                return;
+                            }
+                            if (!row.classList.contains('q-next')) return;
+                            var key = row.getAttribute('data-key');
+                            activeTarget = worldTricks.filter(function(x) { return x.key === key; })[0] || null;
+                            if (activeTarget) {
+                                qualifyStreak = 0;
+                                refreshModalRows();
+                                updateHUD();
+                            }
+                        });
+                        window._onQualifyLanded = function(perFlipTwists, tuckedPerFlip) {
+                            if (!activeTarget) return;
+                            if (matchTrickLocal(perFlipTwists, tuckedPerFlip, activeTarget.key)) {
+                                qualifyStreak++;
+                                if (qualifyStreak >= 3) {
+                                    var q = getQualifiedFor(wp);
+                                    q.push(activeTarget.key);
+                                    _lsSet(LS_KEY, JSON.stringify(q));
+                                    activeTarget = null;
+                                    qualifyStreak = 0;
+                                    updateWorldUnlocks();
+                                }
+                            } else {
+                                qualifyStreak = 0;
+                            }
+                            refreshModalRows();
+                            updateHUD();
+                        };
+                        window._onQualifyCrash = function() {
+                            if (!activeTarget) return;
+                            qualifyStreak = 0;
+                            refreshModalRows();
+                            updateHUD();
+                        };
+                        document.getElementById('qualifyHUD').style.display = 'block';
+                        updateWorldUnlocks();
+                        refreshModalRows();
+                        updateHUD();
+                    }
+                })();
+
+                // ── FIS Competition System ────────────────────────────────
+                (function() {
+                    if (!_realisticMode) return;
+
+                    var FIS_YEAR = 2026;
+                    var FIS_POINTS = [100,80,60,50,45,40,36,32,29,26,24,22,20,18,16,15,14,13,12,11,10,9,8,7,6,5,4,3,2,1];
+
+                    var WC_EVENTS = [
+                        { id:0, flag:'🇺🇸', venue:'Lake Placid',    country:'USA',        date:'Nov 21',    kicker:'single', aiBase:38  },
+                        { id:1, flag:'🇫🇮', venue:'Ruka',           country:'Finland',    date:'Nov 28',    kicker:'double', aiBase:62  },
+                        { id:2, flag:'🇨🇦', venue:'Val Saint-Côme', country:'Canada',     date:'Dec 12',    kicker:'double', aiBase:67  },
+                        { id:3, flag:'🇧🇾', venue:'Minsk',          country:'Belarus',    date:'Jan 9',     kicker:'double', aiBase:70  },
+                        { id:4, flag:'🇰🇿', venue:'Almaty',         country:'Kazakhstan', date:'Jan 23',    kicker:'triple', aiBase:98  },
+                        { id:5, flag:'🇨🇳', venue:'Zhangjiakou',    country:'China',      date:'Feb 6',     kicker:'triple', aiBase:108 },
+                        { id:6, flag:'🇦🇹', venue:'Kreischberg',    country:'Austria',    date:'Feb 20',    kicker:'triple', aiBase:112 },
+                        { id:7, flag:'🇷🇺', venue:'Moscow',         country:'Russia',     date:'Mar 6',     kicker:'triple', aiBase:104 },
+                    ];
+                    var WORLDS_EVENT  = { id:'w', flag:'🇨🇭', venue:'Engadin',      country:'Switzerland', date:'Mar 18–30', kicker:'triple', aiBase:125 };
+                    var OLYMPICS_EVENT = { id:'o', flag:'🇨🇳', venue:'Zhangjiakou', country:'China',       date:'Feb',       kicker:'triple', aiBase:138 };
+
+                    // ── Domestic events ───────────────────────────────────
+                    var JR_NAT_EVENTS = [
+                        { id:'jn0', flag:'🇺🇸', venue:'Lake Placid',  country:'USA', date:'Nov 14', kicker:'single', aiBase:32 },
+                        { id:'jn1', flag:'🇺🇸', venue:'Park City',    country:'USA', date:'Dec 5',  kicker:'single', aiBase:36 },
+                        { id:'jn2', flag:'🇺🇸', venue:'Steamboat',   country:'USA', date:'Jan 10', kicker:'double', aiBase:54 },
+                        { id:'jn3', flag:'🇺🇸', venue:'Heavenly',    country:'USA', date:'Feb 7',  kicker:'double', aiBase:58 },
+                    ];
+                    var NAT_EVENTS = [
+                        { id:'n0', flag:'🇺🇸', venue:'Lake Placid',  country:'USA', date:'Jan 23', kicker:'single', aiBase:30 },
+                        { id:'n1', flag:'🇺🇸', venue:'Park City',    country:'USA', date:'Feb 13', kicker:'double', aiBase:52 },
+                        { id:'n2', flag:'🇺🇸', venue:'Mammoth',      country:'USA', date:'Mar 1',  kicker:'triple', aiBase:72 },
+                    ];
+                    var NAT_CHAMP_EVENT = { id:'nc', flag:'🇺🇸', venue:'Lake Placid', country:'USA', date:'Mar 20', kicker:'triple', aiBase:80 };
+
+                    var JR_AI_POOL = [
+                        { name:'Tyler Banks',     flag:'🇺🇸', skill:0.960 },
+                        { name:'Mia Cortez',      flag:'🇺🇸', skill:0.935 },
+                        { name:'Jake Novak',      flag:'🇺🇸', skill:0.910 },
+                        { name:'Sophie Huang',    flag:'🇺🇸', skill:0.880 },
+                        { name:'Dylan Pierce',    flag:'🇺🇸', skill:0.845 },
+                        { name:'Emma Holloway',   flag:'🇺🇸', skill:0.810 },
+                        { name:'Nate Simmons',    flag:'🇺🇸', skill:0.770 },
+                        { name:'Avery Walsh',     flag:'🇺🇸', skill:0.725 },
+                        { name:'Cody Marsh',      flag:'🇺🇸', skill:0.675 },
+                        { name:'Lily Chen',       flag:'🇺🇸', skill:0.620 },
+                        { name:'Owen Briggs',     flag:'🇺🇸', skill:0.560 },
+                        { name:'Zoe Hartley',     flag:'🇺🇸', skill:0.490 },
+                    ];
+                    var NAT_AI_POOL = [
+                        { name:'Brett Calloway',  flag:'🇺🇸', skill:0.870 },
+                        { name:'Kayla Stern',     flag:'🇺🇸', skill:0.854 },
+                        { name:'Marcus Flynn',    flag:'🇺🇸', skill:0.840 },
+                        { name:'Tara Okafor',     flag:'🇺🇸', skill:0.826 },
+                        { name:'Sam Whitfield',   flag:'🇺🇸', skill:0.814 },
+                        { name:'Jess Alderman',   flag:'🇺🇸', skill:0.800 },
+                        { name:'Ryan Haley',      flag:'🇺🇸', skill:0.786 },
+                        { name:'Dana Kruse',      flag:'🇺🇸', skill:0.772 },
+                        { name:'Chris Park',      flag:'🇺🇸', skill:0.760 },
+                        { name:'Vanessa Cole',    flag:'🇺🇸', skill:0.748 },
+                    ];
+
+                    var AI_POOL = [
+                        { name:'Mei Zhaolong',         flag:'🇨🇳', skill:0.980 },
+                        { name:'Yuna Kashiwagi',       flag:'🇯🇵', skill:0.972 },
+                        { name:'Dmitri Volkov',        flag:'🇷🇺', skill:0.968 },
+                        { name:'Celine Marchand',      flag:'🇫🇷', skill:0.960 },
+                        { name:'Tomas Vesely',         flag:'🇨🇿', skill:0.955 },
+                        { name:'Alara Svensson',       flag:'🇸🇪', skill:0.948 },
+                        { name:'Bakyt Dzhaksybekov',   flag:'🇰🇿', skill:0.944 },
+                        { name:'Priya Nair',           flag:'🇮🇳', skill:0.936 },
+                        { name:'Jonas Burkhart',       flag:'🇨🇭', skill:0.930 },
+                        { name:'Ian Leitgeb',          flag:'🇺🇸', skill:0.924 },
+                        { name:'Sofiya Kovalenko',     flag:'🇺🇦', skill:0.918 },
+                        { name:'Lena Hoffmann',        flag:'🇩🇪', skill:0.912 },
+                        { name:'Riku Makinen',         flag:'🇫🇮', skill:0.904 },
+                        { name:'Zara Petrov',          flag:'🇧🇾', skill:0.898 },
+                        { name:'Marco Delacroix',      flag:'🇫🇷', skill:0.892 },
+                        { name:'Sun Hye-jin',          flag:'🇰🇷', skill:0.886 },
+                        { name:'Connor Walsh',         flag:'🇦🇺', skill:0.880 },
+                        { name:'Anya Sorensen',        flag:'🇩🇰', skill:0.874 },
+                        { name:'Nikolai Petrov',       flag:'🇷🇺', skill:0.866 },
+                        { name:'Britta Holm',          flag:'🇳🇴', skill:0.860 },
+                    ];
+
+                    function seededRand(seed) { var x = Math.sin(seed + 1.7) * 10000; return x - Math.floor(x); }
+
+                    function getAiScore(aiIdx, ev, attempt) {
+                        var ai = AI_POOL[aiIdx];
+                        var seed = FIS_YEAR * 100000 + (typeof ev.id === 'number' ? ev.id : (ev.id === 'w' ? 90 : 91)) * 1000 + aiIdx * 5 + attempt;
+                        if (seededRand(seed + 700) < 0.09) return 0; // 9% crash
+                        return Math.round(ev.aiBase * ai.skill * (0.92 + seededRand(seed) * 0.25) * 100) / 100;
+                    }
+
+                    function buildAiField(ev) {
+                        return AI_POOL.map(function(ai, idx) {
+                            var s1 = getAiScore(idx, ev, 0);
+                            var s2 = getAiScore(idx, ev, 1);
+                            return { name: ai.name, flag: ai.flag, score: Math.max(s1, s2) };
+                        });
+                    }
+                    function buildDomAiField(ev, pool) {
+                        return pool.map(function(ai, idx) {
+                            var seed = FIS_YEAR * 100000 + (ev.id.charCodeAt(0)*997 + (parseInt(ev.id.slice(1))||0)) % 1000 * 1000 + idx * 7;
+                            if (Math.sin(seed+300)*10000 - Math.floor(Math.sin(seed+300)*10000) < 0.10) return { name:ai.name, flag:ai.flag, score:0 };
+                            var r1 = Math.sin(seed+1.7)*10000; r1 -= Math.floor(r1);
+                            var r2 = Math.sin(seed+2.3)*10000; r2 -= Math.floor(r2);
+                            var s1 = Math.round(ev.aiBase * ai.skill * (0.92 + r1 * 0.25) * 100) / 100;
+                            var s2 = Math.round(ev.aiBase * ai.skill * (0.92 + r2 * 0.25) * 100) / 100;
+                            return { name: ai.name, flag: ai.flag, score: Math.max(s1, s2) };
+                        });
+                    }
+
+                    function getWcResults() { try { return JSON.parse(_lsGet('fis_wc_'+FIS_YEAR) || '{}'); } catch(e) { return {}; } }
+                    function saveWcResult(id, data) { var r=getWcResults(); r[id]=data; _lsSet('fis_wc_'+FIS_YEAR, JSON.stringify(r)); }
+                    function getWorldsResult() { try { return JSON.parse(_lsGet('fis_worlds_'+FIS_YEAR) || 'null'); } catch(e) { return null; } }
+                    function getOlymResult()   { try { return JSON.parse(_lsGet('fis_olym_'+FIS_YEAR)   || 'null'); } catch(e) { return null; } }
+                    function getTotalWcPoints() { var r=getWcResults(); return Object.keys(r).reduce(function(acc,k){return acc+(r[k].points||0);},0); }
+                    function getDomResults() { try { return JSON.parse(_lsGet('fis_dom_'+FIS_YEAR) || '{}'); } catch(e) { return {}; } }
+                    function saveDomResult(id, data) { var r=getDomResults(); r[id]=data; _lsSet('fis_dom_'+FIS_YEAR, JSON.stringify(r)); }
+                    function canEnterNatChamp() {
+                        var dr = getDomResults();
+                        return NAT_EVENTS.filter(function(e){ return dr[e.id]; }).length >= 2;
+                    }
+
+                    function getQualifiedFor(world) { try { return JSON.parse(_lsGet('qualify_qualified_'+world)||'[]'); } catch(e) { return []; } }
+                    function canEnterEvent(ev) { return getQualifiedFor(ev.kicker).length > 0; }
+                    function canEnterWorlds()  { return Object.keys(getWcResults()).filter(function(k){ return WC_EVENTS[k] && WC_EVENTS[k].kicker === 'triple'; }).length >= 2; }
+                    function canEnterOlym()    { return getWorldsResult() !== null; }
+
+                    function computeScore(perFlipTwists, execution) {
+                        var dd = (typeof window._getQualifyDD === 'function') ? window._getQualifyDD(perFlipTwists) : 1.5;
+                        // execution is out of 30; scale it to a 25-29 range multiplier
+                        var execMult = execution !== undefined ? (execution / 30) : 1.0;
+                        var baseExec = 25 + Math.random() * 4;
+                        return Math.round(baseExec * execMult * dd * 100) / 100;
+                    }
+                    function trickName(pft, tpf) {
+                        var TN = ['Lay','Full','Double Full','Triple Full'];
+                        return pft.map(function(t,i){ return (t===0 && tpf[i]) ? 'Tuck' : TN[Math.min(t,3)]; }).join('-');
+                    }
+
+                    // State
+                    var fisActive = null;   // { type, eventObj, aiPool, phase, qualAttempts, finalAttempt, pickedKey, waitingForPick }
+                    var fisLastResult = null; // shown in modal after event completes
+
+                    var fisModal = document.getElementById('fisModal');
+                    var fisHUD2  = document.getElementById('fisHUD2');
+                    var fisBox   = document.getElementById('fisModalBox');
+
+                    function updateHUD2() {
+                        if (!fisHUD2) return;
+                        // Sync global flag so game.js can block restart while waiting for pick
+                        window._fisWaitingForPick = !!(fisActive && fisActive.waitingForPick);
+                        if (fisLastResult) {
+                            var r = fisLastResult;
+                            fisHUD2.style.display = 'block';
+                            var rankStr = r.rank + (r.rank===1?'st':r.rank===2?'nd':r.rank===3?'rd':'th');
+                            fisHUD2.textContent = '🏔 ' + r.ev.venue + ' · ' + rankStr
+                                + (r.points ? ' · +' + r.points + ' pts' : '');
+                        } else if (fisActive) {
+                            fisHUD2.style.display = 'block';
+                            var phaseStr = fisActive.phase === 'final' ? 'FINAL' : 'Qual '+(fisActive.qualAttempts.length+1)+'/2';
+                            if (fisActive.waitingForPick) {
+                                fisHUD2.textContent = '🏔 ' + fisActive.eventObj.venue + ' · ' + phaseStr + ' · Pick your trick ↓';
+                            } else {
+                                var pickedName = keyToDisplayName(fisActive.pickedKey);
+                                var prev = fisActive.qualAttempts.length > 0
+                                    ? ('  Q1: ' + (fisActive.qualAttempts[0].score > 0 ? fisActive.qualAttempts[0].score.toFixed(2) : (fisActive.qualAttempts[0].trick === 'Wrong trick' ? '✗ Wrong' : 'Crash')))
+                                    : '';
+                                fisHUD2.textContent = '🏔 ' + fisActive.eventObj.venue + ' · ' + phaseStr + ' · ' + pickedName + prev;
+                            }
+                        } else {
+                            fisHUD2.style.display = 'none';
+                        }
+                    }
+
+                    // ── Domestic render helpers ───────────────────────────
+                    function domCardHtml(ev, pool, startKey) {
+                        var dr = getDomResults();
+                        var res = dr[ev.id];
+                        var qualified = getQualifiedFor(ev.kicker);
+                        var canEnter = qualified.length > 0;
+                        var st = res      ? '<div class="fis-ev-status fis-ev-done">✓ '+res.rank+(res.rank===1?'st':res.rank===2?'nd':res.rank===3?'rd':'th')+' &nbsp;·&nbsp; ↺ Replay</div>'
+                               : canEnter ? '<div class="fis-ev-status fis-ev-avail">▶ Click to enter</div>'
+                               :            '<div class="fis-ev-status">Qualify a '+ev.kicker+' trick first</div>';
+                        return '<div class="fis-event-card'+(canEnter?' fis-available':' fis-unavailable')+'"'+(canEnter?' data-start="dom:'+startKey+':'+ev.id+'"':'')+'>'
+                            +'<div class="fis-ev-flag">'+ev.flag+'</div>'
+                            +'<div class="fis-ev-venue">'+ev.venue+'</div>'
+                            +'<div class="fis-ev-country">'+ev.country+' &nbsp;·&nbsp; '+ev.date+'</div>'
+                            +st+'</div>';
+                    }
+                    function renderNationalPanel() {
+                        var dr = getDomResults();
+                        var html = '<div style="font-size:12px;color:#668844;margin-bottom:12px;">US Junior Nationals &amp; Nationals — earn your stripes before going international.</div>';
+                        html += '<div style="font-size:11px;color:#8aaa66;margin:4px 0 6px;text-transform:uppercase;letter-spacing:.06em">Jr. Nationals</div>';
+                        html += '<div class="fis-event-grid">';
+                        JR_NAT_EVENTS.forEach(function(ev){ html += domCardHtml(ev, JR_AI_POOL, 'jr'); });
+                        html += '</div>';
+                        html += '<div style="font-size:11px;color:#8aaa66;margin:10px 0 6px;text-transform:uppercase;letter-spacing:.06em">Nationals</div>';
+                        html += '<div class="fis-event-grid">';
+                        NAT_EVENTS.forEach(function(ev){ html += domCardHtml(ev, NAT_AI_POOL, 'nat'); });
+                        html += '</div>';
+                        var ncRes = dr[NAT_CHAMP_EVENT.id];
+                        var ncCanEnter = canEnterNatChamp() && getQualifiedFor(NAT_CHAMP_EVENT.kicker).length > 0;
+                        var ncLocked = !canEnterNatChamp();
+                        var ncSt = ncLocked ? '<div class="fis-ev-status">🔒 Complete 2 Nationals events first</div>'
+                                 : ncRes    ? '<div class="fis-ev-status fis-ev-done">✓ '+ncRes.rank+(ncRes.rank===1?'st':ncRes.rank===2?'nd':ncRes.rank===3?'rd':'th')+' &nbsp;·&nbsp; ↺ Replay</div>'
+                                 : ncCanEnter ? '<div class="fis-ev-status fis-ev-avail">▶ Click to enter</div>'
+                                 : '<div class="fis-ev-status">Qualify a triple trick first</div>';
+                        html += '<div style="font-size:11px;color:#ccee88;margin:10px 0 6px;text-transform:uppercase;letter-spacing:.06em">National Championships</div>';
+                        html += '<div class="fis-event-card'+(ncLocked?' fis-locked':ncCanEnter?' fis-available':' fis-unavailable')+'"'+(ncCanEnter?' data-start="dom:nat:'+NAT_CHAMP_EVENT.id+'"':'')+'>'
+                            +'<div class="fis-ev-flag">'+NAT_CHAMP_EVENT.flag+'</div>'
+                            +'<div class="fis-ev-venue">US National Championships</div>'
+                            +'<div class="fis-ev-country">'+NAT_CHAMP_EVENT.venue+' &nbsp;·&nbsp; '+NAT_CHAMP_EVENT.date+'</div>'
+                            +ncSt+'</div>';
+                        return html;
+                    }
+
+                    // ── Standings helpers ─────────────────────────────────
+                    function buildSeasonStandings() {
+                        // Give each AI athlete points from completed WC events
+                        var aiPts = {};
+                        WC_EVENTS.forEach(function(ev) {
+                            var aiField = buildAiField(ev);
+                            var r = aiField.slice().sort(function(a,b){return b.score-a.score;});
+                            r.forEach(function(a, i) {
+                                if (!aiPts[a.name]) aiPts[a.name] = { name:a.name, flag:a.flag, pts:0 };
+                                aiPts[a.name].pts += (FIS_POINTS[i] || 0);
+                            });
+                        });
+                        var list = Object.values(aiPts).sort(function(a,b){return b.pts-a.pts;}).slice(0,10);
+                        return list;
+                    }
+
+                    // ── Render ────────────────────────────────────────────
+                    function renderModal(tab) {
+                        var tabs = ['national','wc','worlds','olympics'].map(function(t) {
+                            return '<button class="fis-tab'+(tab===t?' active':'')+'" data-tab="'+t+'">'
+                                +(t==='national'?'🇺🇸 National':t==='wc'?'🏆 World Cup':t==='worlds'?'🌍 Worlds':'🥇 Olympics')+'</button>';
+                        }).join('');
+
+                        var body = '';
+                        if (tab === 'results' && fisLastResult) {
+                            body = renderResults(fisLastResult);
+                        } else if (tab === 'national') {
+                            body = renderNationalPanel();
+                        } else if (tab === 'wc') {
+                            body = renderWcPanel();
+                        } else if (tab === 'worlds') {
+                            body = renderWorldsPanel();
+                        } else {
+                            body = renderOlymPanel();
+                        }
+
+                        fisBox.innerHTML = '<div class="fis-header"><h2>🏔 FIS Aerials</h2>'
+                            + '<div class="fis-tabs">' + (tab !== 'results' ? tabs : '') + '</div></div>'
+                            + '<div class="fis-body">' + body + '</div>'
+                            + '<button class="fis-close-btn" id="fisCloseBtnInner">Close</button>';
+
+                        fisBox.querySelector('#fisCloseBtnInner').onclick = function() {
+                            fisModal.classList.remove('open');
+                            fisLastResult = null;
+                            updateHUD2();
+                        };
+                        fisBox.querySelectorAll('.fis-tab[data-tab]').forEach(function(btn) {
+                            btn.onclick = function() { renderModal(btn.getAttribute('data-tab')); };
+                        });
+                        fisBox.querySelectorAll('[data-start]').forEach(function(card) {
+                            card.onclick = function() { startEvent(card.getAttribute('data-start')); };
+                        });
+                    }
+
+                    function cardHtml(ev, canEnter, done, locked, res) {
+                        var st = locked  ? '<div class="fis-ev-status">🔒 '+ev.kicker+' jump</div>'
+                                : done   ? '<div class="fis-ev-status fis-ev-done">✓ '+res.rank+'th &nbsp;·&nbsp; '+res.points+' pts &nbsp;·&nbsp; ↺ Replay</div>'
+                                : canEnter ? '<div class="fis-ev-status fis-ev-avail">▶ Click to enter</div>'
+                                :            '<div class="fis-ev-status">Qualify a trick first</div>';
+                        return '<div class="fis-event-card'+(locked?' fis-locked':canEnter?' fis-available':' fis-unavailable')+'"'
+                            +(canEnter?' data-start="'+ev.id+'"' : '')+'>'
+                            +'<div class="fis-ev-flag">'+ev.flag+'</div>'
+                            +'<div class="fis-ev-venue">'+ev.venue+'</div>'
+                            +'<div class="fis-ev-country">'+ev.country+' &nbsp;·&nbsp; '+ev.date+'</div>'
+                            +st+'</div>';
+                    }
+
+                    function renderWcPanel() {
+                        var wcRes = getWcResults();
+                        var totalPts = getTotalWcPoints();
+                        var doneCount = WC_EVENTS.filter(function(e){ return wcRes[e.id]; }).length;
+                        var html = '<div class="fis-stats-bar">Season '+FIS_YEAR+'&nbsp; · &nbsp;Your points: <b>'+totalPts+'</b>&nbsp; · &nbsp;Events: <b>'+doneCount+'/'+WC_EVENTS.length+'</b></div>';
+                        html += '<div class="fis-event-grid">';
+                        WC_EVENTS.forEach(function(ev) {
+                            var res = wcRes[ev.id];
+                            var isThisWorld = ev.kicker === wp;
+                            html += cardHtml(ev, canEnterEvent(ev), !!res, false, res);
+                        });
+                        html += '</div>';
+                        // Compact standings
+                        if (totalPts > 0) {
+                            var standings = buildSeasonStandings();
+                            html += '<div style="font-size:11px;color:#446622;margin:10px 0 4px;text-transform:uppercase;letter-spacing:.06em">Season Standings (AI)</div>';
+                            html += '<table class="fis-standings-table"><tr><th>#</th><th></th><th>Athlete</th><th>Pts</th></tr>';
+                            standings.forEach(function(a,i){
+                                html += '<tr><td>'+(i+1)+'</td><td>'+a.flag+'</td><td>'+a.name+'</td><td>'+a.pts+'</td></tr>';
+                            });
+                            html += '<tr class="fis-standings-you"><td>–</td><td>🎿</td><td>You</td><td>'+totalPts+'</td></tr>';
+                            html += '</table>';
+                        }
+                        return html;
+                    }
+
+                    function singleEventCard(ev, res, unlocked, startKey) {
+                        if (!unlocked) return '<div class="fis-lock-msg">'+
+                            (ev === WORLDS_EVENT ? 'Complete at least 2 triple World Cup events to unlock.' : 'Complete the World Championships to qualify for the Olympics.')
+                            +'</div>';
+                        var label = ev === WORLDS_EVENT ? 'FIS World Championships' : 'Winter Olympics — Aerials';
+                        var status = res
+                            ? '<div class="fis-ev-status fis-ev-done">✓ '+res.rank+'th &nbsp;·&nbsp; '+res.score.toFixed(2)+' &nbsp;·&nbsp; ↺ Replay</div>'
+                            : '<div class="fis-ev-status fis-ev-avail">▶ Click to enter</div>';
+                        return '<div class="fis-single-card fis-available" data-start="'+startKey+'">'
+                            +'<div class="fis-ev-flag">'+ev.flag+'</div>'
+                            +'<div class="fis-ev-venue">'+label+'</div>'
+                            +'<div class="fis-ev-country">'+ev.venue+', '+ev.country+'&nbsp;·&nbsp;'+ev.date+'</div>'
+                            +status+'</div>';
+                    }
+
+                    function renderWorldsPanel() { return singleEventCard(WORLDS_EVENT, getWorldsResult(), canEnterWorlds(), 'worlds'); }
+                    function renderOlymPanel()   { return singleEventCard(OLYMPICS_EVENT, getOlymResult(), canEnterOlym(), 'olympics'); }
+
+                    // ── Trick key → display name ──────────────────────────
+                    function keyToDisplayName(key) {
+                        if (!key) return '';
+                        var TW = ['Lay','Full','Double Full','Triple Full'];
+                        return key.split(',').map(function(p){
+                            return p === 't' ? 'Tuck' : TW[Math.min(parseInt(p,10) || 0, 3)];
+                        }).join('-');
+                    }
+
+                    // ── AI finals scoring (1 jump each, different seed) ───
+                    function getAiFinalScore(aiIdx, ev) {
+                        var ai = AI_POOL[aiIdx];
+                        var seed = FIS_YEAR * 100000 + (typeof ev.id === 'number' ? ev.id : (ev.id === 'w' ? 90 : 91)) * 1000 + aiIdx * 5 + 299;
+                        if (seededRand(seed + 900) < 0.12) return 0; // 12% crash in finals
+                        return Math.round(ev.aiBase * ai.skill * (0.94 + seededRand(seed + 99) * 0.22) * 100) / 100;
+                    }
+                    function getDomAiFinalScore(aiIdx, ev, pool) {
+                        var ai = pool[aiIdx];
+                        var seed = FIS_YEAR * 100000 + (ev.id.charCodeAt(0)*997 + (parseInt(ev.id.slice(1))||0)) % 1000 * 1000 + aiIdx * 7 + 150;
+                        if (seededRand(seed + 900) < 0.12) return 0;
+                        return Math.round(ev.aiBase * ai.skill * (0.94 + seededRand(seed + 50) * 0.22) * 100) / 100;
+                    }
+
+                    // ── Trick picker overlay ──────────────────────────────
+                    var fisTrickPickEl = document.getElementById('fisTrickPick');
+                    var fisTrickPickBox = document.getElementById('fisTrickPickBox');
+                    function showTrickPicker() {
+                        if (!fisTrickPickEl || !fisActive) return;
+                        var kicker = fisActive.eventObj.kicker;
+                        var qualifiedKeys = getQualifiedFor(kicker);
+                        var attNum = fisActive.qualAttempts.length + 1;
+                        var isQual = fisActive.phase === 'qual';
+                        var title = isQual ? '🏔 Qualifying Run ' + attNum + ' of 2' : '🏆 Final Run';
+                        var subtitle = fisActive.eventObj.flag + ' ' + fisActive.eventObj.venue + ', ' + fisActive.eventObj.country + ' &nbsp;·&nbsp; Pick your trick';
+                        var cards = qualifiedKeys.map(function(k) {
+                            var dd = (typeof window._getQualifyDD === 'function') ? window._getQualifyDD(k.split(',').map(Number)) : '–';
+                            var ddStr = typeof dd === 'number' ? dd.toFixed(3).replace(/\.?0+$/, '') : dd;
+                            return '<div class="ftp-card" data-key="'+k+'">'
+                                + '<div class="ftp-card-name">'+keyToDisplayName(k)+'</div>'
+                                + '<div class="ftp-card-dd">DD &nbsp;'+ddStr+'</div>'
+                                + '</div>';
+                        }).join('');
+                        fisTrickPickBox.innerHTML =
+                            '<div class="ftp-header"><h2>'+title+'</h2></div>'
+                            + '<div class="ftp-subtitle">'+subtitle+'</div>'
+                            + '<div class="ftp-grid">'+cards+'</div>';
+                        fisTrickPickBox.querySelectorAll('.ftp-card').forEach(function(card) {
+                            card.onclick = function() { pickTrick(card.getAttribute('data-key')); };
+                        });
+                        fisTrickPickEl.classList.add('open');
+                    }
+                    function hideTrickPicker() {
+                        if (fisTrickPickEl) fisTrickPickEl.classList.remove('open');
+                    }
+                    function pickTrick(key) {
+                        if (!fisActive) return;
+                        fisActive.pickedKey = key;
+                        fisActive.waitingForPick = false;
+                        window._fisWaitingForPick = false;
+                        hideTrickPicker();
+                        updateHUD2();
+                    }
+                    function showFinalsNotification(qualRank, cb) {
+                        if (!fisHUD2) { cb(); return; }
+                        fisHUD2.style.display = 'block';
+                        fisHUD2.textContent = '🏆 You qualified for Finals! (Qual rank #'+qualRank+') Get ready…';
+                        setTimeout(cb, 2200);
+                    }
+
+                    function renderResults(r) {
+                        var html = '<button class="fis-back-btn" data-tab="'+r.type+'">← Back</button>';
+                        html += '<div class="fis-result-title">'+r.ev.flag+' '+r.ev.venue+' — Results</div>';
+                        // Qualifying round
+                        html += '<div class="fis-result-section">Qualifying &nbsp;·&nbsp; ';
+                        html += 'Rank ' + r.qualRank + ' of ' + (r.qualField ? r.qualField.length : '–') + '</div>';
+                        html += '<div class="fis-result-you">Best: <b>'+(r.qualScore > 0 ? r.qualScore.toFixed(2) : 'Crash')
+                            +'</b>'+(r.qualTrick && r.qualTrick !== 'Crash' && r.qualTrick !== 'Wrong trick' ? ' ('+r.qualTrick+')' : '');
+                        if (!r.didQualifyFinals) {
+                            html += ' &nbsp;<span style="color:#cc5544">— Did not qualify for Finals (need Top 8)</span>';
+                        }
+                        html += '</div>';
+                        // Qual field table (if DNQ) or finals (if qualified)
+                        if (r.didQualifyFinals) {
+                            html += '<div class="fis-result-section" style="margin-top:10px">Finals (1 jump) &nbsp;·&nbsp; Rank '
+                                + r.finalRank + ' of ' + (r.finalField ? r.finalField.length : '–')
+                                + (r.points ? ' &nbsp;<span class="fis-pts-badge">+'+r.points+' pts</span>' : '') + '</div>';
+                            html += '<div class="fis-result-you">Final jump: <b>'+(r.finalScore > 0 ? r.finalScore.toFixed(2) : 'Crash')+'</b>'
+                                +(r.finalTrick && r.finalTrick !== 'Crash' && r.finalTrick !== 'Wrong trick' ? ' ('+r.finalTrick+')' : '')
+                                +' &nbsp;→&nbsp; <b>'+r.finalRank+(r.finalRank===1?'st':r.finalRank===2?'nd':r.finalRank===3?'rd':'th')+' place</b></div>';
+                            html += '<table class="fis-result-table"><tr><th>#</th><th></th><th>Athlete</th><th>Final</th></tr>';
+                            r.finalField.forEach(function(e,i){
+                                var medal = i===0?'🥇':i===1?'🥈':i===2?'🥉':(i+1);
+                                html += '<tr'+(e.isYou?' class="fis-you-row"':'')+'><td>'+medal+'</td><td>'+(e.flag||'')+'</td><td>'+e.name+'</td><td>'+(e.score>0?e.score.toFixed(2):'Crash')+'</td></tr>';
+                            });
+                            html += '</table>';
+                        } else {
+                            html += '<table class="fis-result-table"><tr><th>#</th><th></th><th>Athlete</th><th>Qual</th></tr>';
+                            (r.qualField || []).slice(0, 12).forEach(function(e,i){
+                                var medal = i===0?'🥇':i===1?'🥈':i===2?'🥉':(i+1);
+                                var rowClass = e.isYou ? ' class="fis-you-row"' : (i < 8 ? ' class="fis-finals-row"' : '');
+                                html += '<tr'+rowClass+'><td>'+medal+'</td><td>'+(e.flag||'')+'</td><td>'+e.name+'</td><td>'+(e.score>0?e.score.toFixed(2):'Crash')+'</td></tr>';
+                            });
+                            html += '</table>';
+                        }
+                        return html;
+                    }
+
+                    function startEvent(startKey) {
+                        var evObj, evType, evPool;
+                        if (startKey === 'worlds')   { evObj = WORLDS_EVENT;   evType = 'worlds'; }
+                        else if (startKey === 'olympics') { evObj = OLYMPICS_EVENT; evType = 'olympics'; }
+                        else if (startKey.indexOf('dom:') === 0) {
+                            var parts = startKey.split(':'); // dom:jr|nat:id
+                            var domType = parts[1]; var domId = parts[2];
+                            if (domId === NAT_CHAMP_EVENT.id) { evObj = NAT_CHAMP_EVENT; evPool = NAT_AI_POOL; }
+                            else if (domType === 'jr')  { evObj = JR_NAT_EVENTS.find(function(e){return e.id===domId;}); evPool = JR_AI_POOL; }
+                            else                        { evObj = NAT_EVENTS.find(function(e){return e.id===domId;});    evPool = NAT_AI_POOL; }
+                            evType = 'national';
+                        } else { evObj = WC_EVENTS[parseInt(startKey)]; evType = 'wc'; }
+                        if (!evObj) return;
+                        // If the event's kicker differs from the current world, navigate there first
+                        if (evObj.kicker !== wp) {
+                            _lsSet('fis_pending_event', startKey);
+                            location.href = '?world=' + evObj.kicker + '&mode=realistic';
+                            return;
+                        }
+                        fisActive = { type: evType, eventObj: evObj, aiPool: evPool || null, phase: 'qual', qualAttempts: [], finalAttempt: null, pickedKey: null, waitingForPick: true };
+                        fisLastResult = null;
+                        fisModal.classList.remove('open');
+                        updateHUD2();
+                        showTrickPicker();
+                    }
+
+                    function finalizeQual() {
+                        var qual = fisActive.qualAttempts;
+                        var bestQual = qual.reduce(function(b,a){ return a.score >= b.score ? a : b; }, {score:0, trick:'Crash'});
+                        var aiField = fisActive.aiPool ? buildDomAiField(fisActive.eventObj, fisActive.aiPool) : buildAiField(fisActive.eventObj);
+                        var qualField = aiField.map(function(a){ return {name:a.name,flag:a.flag,score:a.score}; });
+                        qualField.push({name:'You',flag:'🎿',score:bestQual.score,isYou:true});
+                        qualField.sort(function(a,b){ return b.score - a.score; });
+                        // Count how many AI athletes scored strictly higher than the player
+                        var qualRank = 1;
+                        for (var qi = 0; qi < qualField.length; qi++) {
+                            if (!qualField[qi].isYou && qualField[qi].score > bestQual.score) qualRank++;
+                        }
+                        console.log('[FIS] finalizeQual: bestScore=' + bestQual.score + ' qualRank=' + qualRank + ' field=' + qualField.length);
+                        if (qualRank <= 8) {
+                            fisActive.phase = 'final';
+                            fisActive.qualField = qualField;
+                            fisActive.qualScore = bestQual.score;
+                            fisActive.qualRank = qualRank;
+                            fisActive.qualTrick = bestQual.trick;
+                            fisActive.pickedKey = null;
+                            fisActive.waitingForPick = true;
+                            showFinalsNotification(qualRank, function(){ showTrickPicker(); updateHUD2(); });
+                        } else {
+                            var result = { ev: fisActive.eventObj, type: fisActive.type, aiPool: fisActive.aiPool,
+                                qualScore: bestQual.score, qualTrick: bestQual.trick, qualRank: qualRank, qualField: qualField,
+                                didQualifyFinals: false, finalScore: null, finalRank: null, finalField: null, points: 0, rank: qualRank };
+                            if (fisActive.type === 'national') saveDomResult(fisActive.eventObj.id, {score:bestQual.score, rank:qualRank, trick:bestQual.trick, dnq:true});
+                            else if (fisActive.type === 'wc')  saveWcResult(fisActive.eventObj.id, {score:bestQual.score, rank:qualRank, points:0, trick:bestQual.trick, dnq:true});
+                            else if (fisActive.type === 'worlds') _lsSet('fis_worlds_'+FIS_YEAR, JSON.stringify({score:bestQual.score, rank:qualRank, trick:bestQual.trick, dnq:true}));
+                            else _lsSet('fis_olym_'+FIS_YEAR, JSON.stringify({score:bestQual.score, rank:qualRank, trick:bestQual.trick, dnq:true}));
+                            fisLastResult = result;
+                            fisActive = null;
+                            hideTrickPicker();
+                            updateHUD2();
+                            renderModal('results');
+                            fisModal.classList.add('open');
+                        }
+                    }
+
+                    function finalizeFinal() {
+                        var finalAtt = fisActive.finalAttempt || {score:0, trick:'Crash'};
+                        var ev = fisActive.eventObj;
+                        var aiPool = fisActive.aiPool;
+                        var aiQualField = aiPool ? buildDomAiField(ev, aiPool) : buildAiField(ev);
+                        var aiQualSorted = aiQualField.slice().sort(function(a,b){ return b.score - a.score; });
+                        var top8Ai = aiQualSorted.slice(0, 8);
+                        var finalField = top8Ai.map(function(ai, i) {
+                            var score;
+                            if (!aiPool) {
+                                var idx = AI_POOL.findIndex(function(a){ return a.name === ai.name; });
+                                score = getAiFinalScore(idx >= 0 ? idx : i, ev);
+                            } else {
+                                var idx = aiPool.findIndex(function(a){ return a.name === ai.name; });
+                                score = getDomAiFinalScore(idx >= 0 ? idx : i, ev, aiPool);
+                            }
+                            return {name: ai.name, flag: ai.flag, score: score};
+                        });
+                        finalField.push({name:'You', flag:'🎿', score: finalAtt.score, isYou:true});
+                        finalField.sort(function(a,b){ return b.score - a.score; });
+                        var finalRank = finalField.findIndex(function(e){ return e.isYou; }) + 1;
+                        var points = fisActive.type === 'wc' ? (finalRank <= FIS_POINTS.length ? FIS_POINTS[finalRank-1] : 0) : 0;
+                        var result = { ev: ev, type: fisActive.type, aiPool: fisActive.aiPool,
+                            qualScore: fisActive.qualScore, qualTrick: fisActive.qualTrick,
+                            qualRank: fisActive.qualRank, qualField: fisActive.qualField,
+                            didQualifyFinals: true,
+                            finalScore: finalAtt.score, finalTrick: finalAtt.trick,
+                            finalRank: finalRank, finalField: finalField,
+                            points: points, rank: finalRank };
+                        if (fisActive.type === 'national') saveDomResult(ev.id, {score:finalAtt.score, rank:finalRank, trick:finalAtt.trick});
+                        else if (fisActive.type === 'wc')  saveWcResult(ev.id, {score:finalAtt.score, rank:finalRank, points:points, trick:finalAtt.trick});
+                        else if (fisActive.type === 'worlds') _lsSet('fis_worlds_'+FIS_YEAR, JSON.stringify({score:finalAtt.score, rank:finalRank, trick:finalAtt.trick}));
+                        else _lsSet('fis_olym_'+FIS_YEAR, JSON.stringify({score:finalAtt.score, rank:finalRank, trick:finalAtt.trick}));
+                        fisLastResult = result;
+                        fisActive = null;
+                        hideTrickPicker();
+                        updateHUD2();
+                        renderModal('results');
+                        fisModal.classList.add('open');
+                    }
+
+                    // Back button inside results panel (delegated, handled after renderModal)
+                    function bindBackBtns() {
+                        fisBox.querySelectorAll('[data-tab]').forEach(function(btn) {
+                            btn.onclick = function() { renderModal(btn.getAttribute('data-tab')); };
+                        });
+                    }
+                    // Patch renderModal to always bind back buttons
+                    var _origRenderModal = renderModal;
+                    renderModal = function(tab) { _origRenderModal(tab); bindBackBtns(); fisBox.querySelectorAll('[data-start]').forEach(function(c){ c.onclick = function(){ startEvent(c.getAttribute('data-start')); }; }); };
+
+                    // ── Intercept landing/crash hooks ─────────────────────
+                    var _prevLanded = window._onQualifyLanded;
+                    var _prevCrash  = window._onQualifyCrash;
+
+                    // ── Inter-run scoreboard ──────────────────────────────
+                    var fisRunSB = document.getElementById('fisRunScoreboard');
+                    var _pendingAfterStop = null;
+                    var _stopFallbackTimer = null;
+
+                    function showRunScoreboard(score, trick, isCrash, title, nextMsg, cb, execution) {
+                        if (!fisRunSB) { cb(); return; }
+                        fisRunSB.querySelector('.frs-title').textContent = title;
+                        fisRunSB.querySelector('.frs-score').textContent = isCrash ? 'CRASH' : score.toFixed(2);
+                        fisRunSB.querySelector('.frs-score').style.color = isCrash ? '#cc5544' : '#aadd88';
+                        fisRunSB.querySelector('.frs-trick').textContent = isCrash ? '' : trick;
+                        var execLabel = '';
+                        if (!isCrash && execution !== undefined) {
+                            var pct = execution / 30;
+                            var execColor = pct >= 0.9 ? '#aadd88' : pct >= 0.7 ? '#ddcc44' : '#cc7744';
+                            execLabel = '<span style="color:' + execColor + '">Execution: ' + execution.toFixed(1) + ' / 30</span>';
+                        }
+                        fisRunSB.querySelector('.frs-next').innerHTML = execLabel + (execLabel ? '<br>' : '') + nextMsg;
+                        fisRunSB.classList.add('open');
+                        setTimeout(function() {
+                            fisRunSB.classList.remove('open');
+                            cb();
+                        }, 2800);
+                    }
+
+                    function firePendingAfterStop() {
+                        if (_stopFallbackTimer) { clearTimeout(_stopFallbackTimer); _stopFallbackTimer = null; }
+                        if (_pendingAfterStop) { var fn = _pendingAfterStop; _pendingAfterStop = null; fn(); }
+                    }
+
+                    window._onSkierStopped = function() { firePendingAfterStop(); };
+
+                    function scheduleAfterStop(fn, fallbackMs) {
+                        _pendingAfterStop = fn;
+                        _stopFallbackTimer = setTimeout(firePendingAfterStop, fallbackMs || 4000);
+                    }
+
+                    window._onQualifyLanded = function(perFlipTwists, tuckedPerFlip, execution) {
+                        if (fisActive && !fisActive.waitingForPick) {
+                            var pickedKey = fisActive.pickedKey;
+                            var landedPicked = pickedKey && window._matchTrick && window._matchTrick(perFlipTwists, tuckedPerFlip, pickedKey);
+                            var score = landedPicked ? computeScore(perFlipTwists, execution) : 0;
+                            var trick = landedPicked ? trickName(perFlipTwists, tuckedPerFlip) : 'Wrong trick';
+                            fisActive.pickedKey = null;
+                            fisActive.waitingForPick = true;
+                            updateHUD2();
+                            if (fisActive.phase === 'qual') {
+                                fisActive.qualAttempts.push({score: score, trick: trick, execution: execution});
+                                var isLast = fisActive.qualAttempts.length >= 2;
+                                var capturedExec = execution;
+                                scheduleAfterStop(function() {
+                                    var runNum = fisActive.qualAttempts.length;
+                                    var title = 'Qualifying Run ' + runNum + ' of 2';
+                                    var nextMsg = isLast ? 'Calculating results\u2026' : 'Preparing Run 2\u2026';
+                                    showRunScoreboard(score, trick, false, title, nextMsg, function() {
+                                        if (isLast) { finalizeQual(); } else { showTrickPicker(); }
+                                    }, capturedExec);
+                                }, 5000);
+                            } else {
+                                fisActive.finalAttempt = {score: score, trick: trick, execution: execution};
+                                var capturedExecF = execution;
+                                scheduleAfterStop(function() {
+                                    showRunScoreboard(score, trick, false, 'Final Run', 'Calculating results\u2026', function() {
+                                        finalizeFinal();
+                                    }, capturedExecF);
+                                }, 5000);
+                            }
+                            return;
+                        }
+                        if (_prevLanded) _prevLanded(perFlipTwists, tuckedPerFlip);
+                    };
+                    window._onQualifyCrash = function() {
+                        if (fisActive && !fisActive.waitingForPick) {
+                            fisActive.pickedKey = null;
+                            fisActive.waitingForPick = true;
+                            updateHUD2();
+                            if (fisActive.phase === 'qual') {
+                                fisActive.qualAttempts.push({score: 0, trick: 'Crash'});
+                                var isLastC = fisActive.qualAttempts.length >= 2;
+                                scheduleAfterStop(function() {
+                                    var runNumC = fisActive.qualAttempts.length;
+                                    var titleC = 'Qualifying Run ' + runNumC + ' of 2';
+                                    var nextMsgC = isLastC ? 'Calculating results\u2026' : 'Preparing Run 2\u2026';
+                                    showRunScoreboard(0, 'Crash', true, titleC, nextMsgC, function() {
+                                        if (isLastC) { finalizeQual(); } else { showTrickPicker(); }
+                                    });
+                                }, 2500);
+                            } else {
+                                fisActive.finalAttempt = {score: 0, trick: 'Crash'};
+                                scheduleAfterStop(function() {
+                                    showRunScoreboard(0, 'Crash', true, 'Final Run', 'Calculating results\u2026', function() {
+                                        finalizeFinal();
+                                    });
+                                }, 2500);
+                            }
+                            return;
+                        }
+                        if (_prevCrash) _prevCrash();
+                    };
+
+                    // ── FIS button ────────────────────────────────────────
+                    document.getElementById('fisBtn').addEventListener('click', function() {
+                        renderModal(fisLastResult ? 'results' : 'national');
+                        fisModal.classList.add('open');
+                    });
+                    fisModal.addEventListener('click', function(e) {
+                        if (e.target === fisModal) { fisModal.classList.remove('open'); fisLastResult = null; updateHUD2(); }
+                    });
+
+                    updateHUD2();
+
+                    // Auto-start a pending event if we were redirected from another world
+                    (function() {
+                        var pendingKey = _lsGet('fis_pending_event');
+                        if (pendingKey) {
+                            _lsRemove('fis_pending_event');
+                            // Small delay so the game engine is fully ready
+                            setTimeout(function() { startEvent(pendingKey); }, 600);
+                        }
+                    })();
+                })();
+
+                // ── Tutorial mode ─────────────────────────────────────────────────────
+                (function() {
+                    if (new URLSearchParams(location.search).get('tutorial') !== '1') return;
+                    var overlay = document.getElementById('tutorialOverlay');
+                    var stepEl  = document.getElementById('tutStep');
+                    var progEl  = document.getElementById('tutProgress');
+                    if (!overlay || !stepEl) return;
+
+                    var STEPS = [
+                        // Round 1
+                        { label:'Round 1 · 1/3', main:'Face downhill', sub:'Press <kbd>↑</kbd> to turn and start sliding.', waitKey:'ArrowUp' },
+                        { label:'Round 1 · 2/3', main:'Charge the power bar', sub:'Hold <kbd>↓</kbd> until the bar reaches the 3rd line.', waitKey:null, keepSpeedAfter:true },
+                        { label:'Round 1 · 3/3', main:'Full-Full — one full twist each flip', sub:'Tap <kbd>→</kbd> then hold <kbd>←</kbd> to spin. Do it once per flip!', waitKey:null, airStep:true },
+                        { label:'Round 1 complete!', main:'Press <kbd>R</kbd> for Round 2', sub:'Next: Double Full-Full — raise your left arm on takeoff for a double spin on the first flip.', waitKey:'KeyR', resultStep:true, targetTrick:'Full-Full' },
+                        // Round 2
+                        { label:'Round 2 · 1/3', main:'Face downhill', sub:'Press <kbd>↑</kbd> to go again.', waitKey:'ArrowUp' },
+                        { label:'Round 2 · 2/3', main:'Charge the power bar', sub:'Hold <kbd>↓</kbd> until the bar hits the 3rd line.', waitKey:null, keepSpeedAfter:true },
+                        { label:'Round 2 · 3/3', main:'Double Full-Full', sub:'First flip: hold <kbd>←</kbd> to raise your left arm for a Double Full. Second flip: tap <kbd>→</kbd> then hold <kbd>←</kbd> for a Full.', waitKey:null, airStep:true },
+                        { label:'Round 2 complete!', main:'Press <kbd>R</kbd> for Round 3', sub:'Next: Full-Double Full — save the double spin for the second flip.', waitKey:'KeyR', resultStep:true, targetTrick:'Double Full-Full' },
+                        // Round 3
+                        { label:'Round 3 · 1/3', main:'Face downhill', sub:'Press <kbd>↑</kbd> to go one more time.', waitKey:'ArrowUp' },
+                        { label:'Round 3 · 2/3', main:'Charge the power bar', sub:'Hold <kbd>↓</kbd> until the bar hits the 3rd line.', waitKey:null, keepSpeedAfter:true },
+                        { label:'Round 3 · 3/3', main:'Full-Double Full', sub:'First flip: tap <kbd>→</kbd> then hold <kbd>←</kbd> for a Full. Second flip: hold <kbd>←</kbd> to raise your left arm for a Double Full.', waitKey:null, airStep:true },
+                        { label:'Tutorial complete!', main:"You're ready to compete!", sub:'Press <kbd>R</kbd> to practice again or go back to the menu.', waitKey:'KeyR', resultStep:true, targetTrick:'Full-Double Full' },
+                    ];
+
+                    var step = 0;
+                    var wasAirborne = false;
+                    var inAirSlowed = false;
+                    var stepActive = false;
+                    var _slowTimer = null;
+                    var lastTrickName = '';
+
+                    var _prevLanded = window._onQualifyLanded;
+                    window._onQualifyLanded = function(perFlipTwists, tuckedPerFlip, execution) {
+                        if (_prevLanded) _prevLanded(perFlipTwists, tuckedPerFlip, execution);
+                        var TN = ['Lay','Full','Double Full','Triple Full'];
+                        lastTrickName = perFlipTwists.map(function(t, i) {
+                            return (t === 0 && tuckedPerFlip[i]) ? 'Tuck' : TN[Math.min(t, 3)];
+                        }).join('-');
+                    };
+
+                    function setTimeScale(target, durationMs) {
+                        if (_slowTimer) { clearInterval(_slowTimer); _slowTimer = null; }
+                        var current = window._tutorialTimeScale !== undefined ? window._tutorialTimeScale : 1.0;
+                        if (Math.abs(current - target) < 0.01) { window._tutorialTimeScale = target; return; }
+                        var n = Math.max(1, Math.round(durationMs / 20));
+                        var amt = (target - current) / n; var i = 0;
+                        _slowTimer = setInterval(function() {
+                            current += amt; i++;
+                            window._tutorialTimeScale = Math.max(0, Math.min(1, current));
+                            if (i >= n) { window._tutorialTimeScale = target; clearInterval(_slowTimer); _slowTimer = null; }
+                        }, 20);
+                    }
+
+                    function renderStep(keepSpeed) {
+                        var s = STEPS[step];
+                        var feedback = '';
+                        if (s.resultStep && lastTrickName) {
+                            var matched = lastTrickName === s.targetTrick;
+                            feedback = '<div style="margin-top:7px;font-size:12px;color:' + (matched ? '#88ffaa' : '#ffcc66') + ';">You landed: ' + lastTrickName + (matched ? ' ✓' : ' — aim for ' + s.targetTrick + '!') + '</div>';
+                        }
+                        stepEl.innerHTML =
+                            '<div class="tut-num">' + s.label + ' &nbsp;·&nbsp; Double Kicker</div>'
+                            + '<div class="tut-main">' + s.main + '</div>'
+                            + '<div class="tut-sub">' + s.sub + '</div>'
+                            + feedback;
+                        progEl.innerHTML = STEPS.map(function(_, i) {
+                            return '<div class="tut-dot ' + (i < step ? 'done' : i === step ? 'active' : '') + '"></div>';
+                        }).join('');
+                        stepActive = false;
+                        inAirSlowed = false;
+                        if (!keepSpeed) {
+                            var ts = (step % 4 === 1) ? 0.5 : 0.06;
+                            setTimeScale(ts, 400);
+                        }
+                    }
+
+                    overlay.classList.add('active');
+                    renderStep(false);
+
+                    window.addEventListener('keydown', function(e) {
+                        var s = STEPS[step];
+                        if (s.waitKey && e.code === s.waitKey && !stepActive) {
+                            stepActive = true; setTimeScale(1.0, 200);
+                        }
+                        if (s.airStep && !stepActive && (e.code === 'ArrowLeft' || e.code === 'ArrowRight')) {
+                            stepActive = true; // mark active but don't speed up — stay at 0.35x
+                        }
+                    });
+
+                    setInterval(function() {
+                        if (!window._getGameState) return;
+                        var gs = window._getGameState();
+                        if (!gs.grounded && !gs.crashed) wasAirborne = true;
+
+                        var phase = step % 4;
+                        if (phase === 0) {
+                            if (!gs.readyState) { step++; wasAirborne = false; renderStep(false); return; }
+                        } else if (phase === 1) {
+                            if (gs.flipPower >= 0.55) { step++; wasAirborne = false; renderStep(true); return; }
+                        } else if (phase === 2) {
+                            if (wasAirborne && !gs.grounded && !inAirSlowed) {
+                                inAirSlowed = true; setTimeScale(0.35, 300);
+                            }
+                            if (wasAirborne && (gs.grounded || gs.crashed)) {
+                                step++; wasAirborne = false; renderStep(false); return;
+                            }
+                        } else if (phase === 3) {
+                            if (gs.readyState) {
+                                if (step === STEPS.length - 1) { step = 0; } else { step++; }
+                                wasAirborne = false; lastTrickName = '';
+                                renderStep(false); return;
+                            }
+                        }
+                    }, 80);
                 })();
 
                 // Congrats overlay
