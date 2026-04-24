@@ -164,6 +164,25 @@
 
         /* ── Tutorial overlay ── */
         #tutorialOverlay { display: none; position: absolute; bottom: 120px; left: 50%; transform: translateX(-50%); z-index: 60; font-family: sans-serif; text-align: center; pointer-events: none; }
+
+        /* ── Mobile controls ───────────────────────────────────────────── */
+        #mobileControls { display: none; position: fixed; bottom: 0; left: 0; right: 0; height: 180px; z-index: 200; pointer-events: none; user-select: none; }
+        @media (pointer: coarse) { #mobileControls { display: block; } }
+        .mb-btn {
+            position: absolute; pointer-events: all; touch-action: none;
+            border-radius: 12px; border: 2px solid rgba(255,255,255,0.25);
+            background: rgba(255,255,255,0.10); backdrop-filter: blur(2px);
+            color: rgba(255,255,255,0.75); font-size: 22px; line-height: 1;
+            display: flex; align-items: center; justify-content: center;
+            -webkit-tap-highlight-color: transparent;
+        }
+        .mb-btn:active, .mb-btn.pressed { background: rgba(255,255,255,0.22); border-color: rgba(255,255,255,0.55); }
+        #mb-left  { left: 14px;  bottom: 70px; width: 64px; height: 64px; }
+        #mb-right { left: 92px;  bottom: 70px; width: 64px; height: 64px; }
+        #mb-up    { left: 53px;  bottom: 148px; width: 64px; height: 44px; }
+        #mb-down  { left: 53px;  bottom: 14px;  width: 64px; height: 44px; }
+        #mb-tuck  { right: 90px; bottom: 70px; width: 80px; height: 64px; font-size: 13px; font-weight: bold; letter-spacing: .04em; }
+        #mb-r     { right: 14px; bottom: 70px; width: 64px; height: 64px; font-size: 14px; font-weight: bold; }
         #tutorialOverlay.active { display: block; }
         #tutStep { background: rgba(10,18,30,0.88); border: 1px solid rgba(255,200,80,0.45); border-radius: 12px; padding: 14px 28px 12px; color: #fff; font-size: 15px; line-height: 1.55; min-width: 320px; max-width: 480px; }
         #tutStep .tut-num { font-size: 11px; color: #ffcc66; text-transform: uppercase; letter-spacing: .09em; margin-bottom: 6px; }
@@ -2145,7 +2164,7 @@
                         // Round 3
                         { label:'Round 3 · 1/3', main:'Face downhill', sub:'Press <kbd>↑</kbd> to go one more time.', waitKey:'ArrowUp' },
                         { label:'Round 3 · 2/3', main:'Charge the power bar', sub:'Hold <kbd>↓</kbd> until the bar hits the 3rd line.', waitKey:null, keepSpeedAfter:true },
-                        { label:'Round 3 · 3/3', main:'Full-Double Full', sub:'First flip: tap <kbd>→</kbd> then hold <kbd>←</kbd> for a Full. Second flip: hold <kbd>←</kbd> to raise your left arm for a Double Full.', waitKey:null, airStep:true },
+                        { label:'Round 3 · 3/3', main:'Full-Double Full', sub:'First flip: tap <kbd>→</kbd> then hold <kbd>←</kbd> for a Full. Second flip: hold <kbd>→</kbd> then also hold <kbd>←</kbd> at the same time for a Double Full.', waitKey:null, airStep:true },
                         { label:'Tutorial complete!', main:"You're ready to compete!", sub:'Press <kbd>R</kbd> to practice again or go back to the menu.', waitKey:'KeyR', resultStep:true, targetTrick:'Full-Double Full' },
                     ];
 
@@ -2621,5 +2640,56 @@
         }
     </script>
     <script src="game.js"></script>
+    <div id="mobileControls">
+        <div class="mb-btn" id="mb-up">▲</div>
+        <div class="mb-btn" id="mb-left">◀</div>
+        <div class="mb-btn" id="mb-right">▶</div>
+        <div class="mb-btn" id="mb-down">▼</div>
+        <div class="mb-btn" id="mb-tuck">TUCK</div>
+        <div class="mb-btn" id="mb-r">R</div>
+    </div>
+    <script>
+    (function() {
+        var BTN_MAP = {
+            'mb-up':    'ArrowUp',
+            'mb-down':  'ArrowDown',
+            'mb-left':  'ArrowLeft',
+            'mb-right': 'ArrowRight',
+            'mb-tuck':  'Space',
+            'mb-r':     'KeyR',
+        };
+        // Keys that should fire once (keydown only, no held repeat needed)
+        var ONESHOT = { 'KeyR': true };
+
+        function fire(code, type) {
+            window.dispatchEvent(new KeyboardEvent(type, { code: code, bubbles: true, cancelable: true }));
+        }
+
+        Object.keys(BTN_MAP).forEach(function(id) {
+            var el = document.getElementById(id);
+            if (!el) return;
+            var code = BTN_MAP[id];
+            var held = false;
+
+            el.addEventListener('touchstart', function(e) {
+                e.preventDefault();
+                if (held) return;
+                held = true;
+                el.classList.add('pressed');
+                fire(code, 'keydown');
+            }, { passive: false });
+
+            function release() {
+                if (!held) return;
+                held = false;
+                el.classList.remove('pressed');
+                if (!ONESHOT[code]) fire(code, 'keyup');
+            }
+
+            el.addEventListener('touchend',    release, { passive: false });
+            el.addEventListener('touchcancel', release, { passive: false });
+        });
+    })();
+    </script>
 </body>
 </html>
