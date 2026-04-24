@@ -583,12 +583,16 @@ const _ultraJump    = _compParam === 'ultra' ? Math.max(0, parseInt(new URLSearc
 const _customInrun    = _worldParam === 'custom' ? Math.max(4, Math.min(100, parseFloat(new URLSearchParams(location.search).get('inrun')    || '11'))) : 0;
 const _customLanding  = _worldParam === 'custom' ? Math.max(20, Math.min(150, parseFloat(new URLSearchParams(location.search).get('landing')  || '50'))) : 0;
 const _customFlipSpeed = _worldParam === 'custom' ? Math.max(0.3, Math.min(3.0, parseFloat(new URLSearchParams(location.search).get('flipspeed') || '1.3'))) : 1.0;
+const _trampolineMode       = _worldParam === 'trampoline';
+const TRAMPOLINE_Y          = 0.0;   // world Y of the trampoline surface
+const TRAMPOLINE_LAUNCH_VY  = 14.0;  // vertical velocity given on each bounce
 const OUTRUN_Z      = _worldParam === 'custom' ? KICKER_END_Z + _customLanding : KICKER_END_Z + (_worldParam === 'quint' ? 75 : 50); // landing slope ends here
 const FLAT_Z        = KICKER_Z - 9.0; // flat table starts before kicker
 const SLOPE_START_Z = _worldParam === 'custom' ? -_customInrun : _worldParam === 'quint' ? -43.0 : _worldParam === 'quad' ? -33.8 : _worldParam === 'triple' ? -19.8 : _worldParam === 'single' ? -4.3 : -11.3;
 
 
 function terrainRootY(z) {
+    if (_trampolineMode) return TRAMPOLINE_Y;
     if (z < SLOPE_START_Z) return -SLOPE_START_Z * Math.tan(SLOPE_ANGLE); // flat top
     if (z < FLAT_Z) return -z * Math.tan(SLOPE_ANGLE);
     const tableY = -FLAT_Z * Math.tan(SLOPE_ANGLE); // height of flat table
@@ -604,6 +608,7 @@ function terrainRootY(z) {
 }
 
 function terrainAccelZ(z) {
+    if (_trampolineMode) return 0;
     const g = 14.0;
     if (z >= SLOPE_START_Z && z < FLAT_Z)   return g * Math.sin(SLOPE_ANGLE);
     if (z < SLOPE_START_Z)                   return 0; // flat top
@@ -627,7 +632,9 @@ window.addEventListener('DOMContentLoaded', () => {
 
     // ── Scene ───────────────────────────────────────────────────────────────
     const scene = new BABYLON.Scene(engine);
-    scene.clearColor = new BABYLON.Color4(0.53, 0.81, 0.98, 1);
+    scene.clearColor = _trampolineMode
+        ? new BABYLON.Color4(0.93, 0.93, 0.93, 1)  // light grey gym background
+        : new BABYLON.Color4(0.53, 0.81, 0.98, 1);  // sky blue
 
     // ── Orbiting orthographic camera ─────────────────────────────────────────
     // ArcRotateCamera orbits the origin on left-click drag / touch drag.
@@ -683,6 +690,18 @@ window.addEventListener('DOMContentLoaded', () => {
     applyPose(character.meshes, 0, 1, 1); // start fully extended, arms down
     window._characterMeshes = character.meshes;
 
+    // Hide skis and ski boots in trampoline mode
+    if (_trampolineMode) {
+        if (character.meshes['skiL']) character.meshes['skiL'].isVisible = false;
+        if (character.meshes['skiR']) character.meshes['skiR'].isVisible = false;
+        ['lowerLegL', 'lowerLegR'].forEach(leg => {
+            ['_bootLower', '_bootCuff', '_buckle'].forEach(part => {
+                const m = scene.getMeshByName(leg + part);
+                if (m) m.isVisible = false;
+            });
+        });
+    }
+
     // Expose live game state for tutorial and other overlays
     window._getGameState = function() {
         return {
@@ -733,6 +752,7 @@ window.addEventListener('DOMContentLoaded', () => {
     };
 
     // ── Terrain meshes (visual — physics uses terrainRootY()) ────────────────────
+    if (!_trampolineMode) {
     const snowMat = new BABYLON.StandardMaterial('snowMat', scene);
     snowMat.diffuseColor = new BABYLON.Color3(0.92, 0.97, 1.0);
 
@@ -868,6 +888,147 @@ window.addEventListener('DOMContentLoaded', () => {
         foliage.material = foliageMat;
     });
     } // end trees
+    } // end !_trampolineMode terrain
+
+    // ── Trampoline spring & grid state ──────────────────────────────────────
+    let tramBedMesh    = null;   // invisible spring node
+    let tramFrameRails = [];     // 4 visible metal frame rails
+    let tramFrameMesh  = null;   // alias to first rail (for compat)
+    let tramGridMesh   = null;   // deformable jumping surface
+    let tramGridLines  = null;   // grid line overlay (updatable)
+    let tramGridPosArr = null;   // persistent positions array for mesh updates
+    let tramGridIdxArr = null;
+    let tramSpringY    = 0;
+    let tramSpringVY   = 0;
+    let tramBouncing   = false;   // true while player rides the spring down+up
+    let tramSavedReboundVY = 0;   // launch speed saved at contact
+    const TRAM_BED_REST_Y   = TRAMPOLINE_Y - FOOT_OFFSET - 0.04;
+    const TRAM_FRAME_REST_Y = TRAMPOLINE_Y - FOOT_OFFSET - 0.06;
+    const TRAM_GRID_REST_Y  = TRAMPOLINE_Y - FOOT_OFFSET;
+    const TRAM_SPRING_K     = 35;
+    const TRAM_SPRING_DAMP  = 7;
+    const TRAM_GRID_COLS    = 6;
+    const TRAM_GRID_ROWS    = 10;
+    const TRAM_GRID_W       = 2.2;
+    const TRAM_GRID_D       = 4.5;
+    const tramGridNXZ       = []; // [nx0,nz0, nx1,nz1, ...] per vertex
+    // Builds the deformed line positions for the grid overlay
+    function buildTramLines(sy) {
+        const off = 0.003;
+        const lines = [];
+        function deformY(c, r) {
+            const nx = (c / TRAM_GRID_COLS) * 2 - 1;
+            const nz = (r / TRAM_GRID_ROWS) * 2 - 1;
+            const f  = (1 - Math.abs(nx)) * (1 - Math.abs(nz));
+            return sy * f + off;
+        }
+        for (let r = 0; r <= TRAM_GRID_ROWS; r++) {
+            const row = [];
+            for (let c = 0; c <= TRAM_GRID_COLS; c++) {
+                row.push(new BABYLON.Vector3(
+                    (c / TRAM_GRID_COLS - 0.5) * TRAM_GRID_W,
+                    deformY(c, r),
+                    (r / TRAM_GRID_ROWS - 0.5) * TRAM_GRID_D
+                ));
+            }
+            lines.push(row);
+        }
+        for (let c = 0; c <= TRAM_GRID_COLS; c++) {
+            const col = [];
+            for (let r = 0; r <= TRAM_GRID_ROWS; r++) {
+                col.push(new BABYLON.Vector3(
+                    (c / TRAM_GRID_COLS - 0.5) * TRAM_GRID_W,
+                    deformY(c, r),
+                    (r / TRAM_GRID_ROWS - 0.5) * TRAM_GRID_D
+                ));
+            }
+            lines.push(col);
+        }
+        return lines;
+    }
+
+    if (_trampolineMode) {
+        // ── Trampoline frame & deformable bed ─────────────────────────────
+        const frameMat = new BABYLON.StandardMaterial('frameMat', scene);
+        frameMat.diffuseColor  = new BABYLON.Color3(0.55, 0.55, 0.55);
+        frameMat.specularColor = new BABYLON.Color3(0.80, 0.80, 0.80);
+        frameMat.specularPower = 60;
+
+        // Invisible spring node
+        tramBedMesh = new BABYLON.TransformNode('tramBed', scene);
+        tramBedMesh.position.set(0, TRAM_BED_REST_Y, 0);
+
+        // ── Hollow rectangular frame (4 rails) ────────────────────────────
+        const RAIL_T = 0.14;  // thickness of each rail
+        const RAIL_H = 0.10;
+        const FX = TRAM_GRID_W / 2 + RAIL_T / 2;  // x-center of side rails
+        const FZ = TRAM_GRID_D / 2 + RAIL_T / 2;  // z-center of end rails
+        const railDefs = [
+            { w: TRAM_GRID_W + RAIL_T * 2, d: RAIL_T, x: 0,   z: -FZ },  // front
+            { w: TRAM_GRID_W + RAIL_T * 2, d: RAIL_T, x: 0,   z:  FZ },  // back
+            { w: RAIL_T, d: TRAM_GRID_D,              x: -FX,  z: 0  },  // left
+            { w: RAIL_T, d: TRAM_GRID_D,              x:  FX,  z: 0  },  // right
+        ];
+        railDefs.forEach((r, i) => {
+            const rail = BABYLON.MeshBuilder.CreateBox('tramRail_' + i,
+                { width: r.w, height: RAIL_H, depth: r.d }, scene);
+            rail.position.set(r.x, TRAM_FRAME_REST_Y, r.z);
+            rail.material = frameMat;
+            tramFrameRails.push(rail);
+        });
+        tramFrameMesh = tramFrameRails[0];
+
+        // ── 4 Legs ────────────────────────────────────────────────────────
+        [[-FX, -FZ], [-FX, FZ], [FX, -FZ], [FX, FZ]].forEach(([lx, lz], i) => {
+            const leg = BABYLON.MeshBuilder.CreateCylinder('tramLeg_' + i,
+                { height: 1.2, diameter: 0.10, tessellation: 8 }, scene);
+            leg.position.set(lx, TRAMPOLINE_Y - FOOT_OFFSET - 0.7, lz);
+            leg.material = frameMat;
+        });
+
+        // ── Deformable jumping surface (6 × 10 = 60 quads) ────────────────
+        const gPos = [], gIdx = [], gUV = [];
+        for (let r = 0; r <= TRAM_GRID_ROWS; r++) {
+            for (let c = 0; c <= TRAM_GRID_COLS; c++) {
+                gPos.push(
+                    (c / TRAM_GRID_COLS - 0.5) * TRAM_GRID_W,
+                    0,
+                    (r / TRAM_GRID_ROWS - 0.5) * TRAM_GRID_D
+                );
+                gUV.push(c / TRAM_GRID_COLS, r / TRAM_GRID_ROWS);
+                tramGridNXZ.push(
+                    (c / TRAM_GRID_COLS) * 2 - 1,
+                    (r / TRAM_GRID_ROWS) * 2 - 1
+                );
+            }
+        }
+        for (let r = 0; r < TRAM_GRID_ROWS; r++) {
+            for (let c = 0; c < TRAM_GRID_COLS; c++) {
+                const a = r * (TRAM_GRID_COLS + 1) + c;
+                gIdx.push(a, a + TRAM_GRID_COLS + 1, a + 1,
+                           a + 1, a + TRAM_GRID_COLS + 1, a + TRAM_GRID_COLS + 2);
+            }
+        }
+        const gNrm = new Array(gPos.length).fill(0);
+        BABYLON.VertexData.ComputeNormals(gPos, gIdx, gNrm);
+        const gVD = new BABYLON.VertexData();
+        gVD.positions = gPos; gVD.indices = gIdx; gVD.normals = gNrm; gVD.uvs = gUV;
+        tramGridMesh = new BABYLON.Mesh('tramGrid', scene);
+        gVD.applyToMesh(tramGridMesh, true);
+        tramGridMesh.position.y = TRAM_GRID_REST_Y;
+        tramGridPosArr = gPos.slice();
+        tramGridIdxArr = gIdx.slice();
+        const gridSurfMat = new BABYLON.StandardMaterial('gridSurfMat', scene);
+        gridSurfMat.diffuseColor    = new BABYLON.Color3(0.07, 0.07, 0.09);
+        gridSurfMat.backFaceCulling = false;
+        tramGridMesh.material = gridSurfMat;
+
+        // Grid line overlay (updatable)
+        tramGridLines = BABYLON.MeshBuilder.CreateLineSystem('tramGridLines',
+            { lines: buildTramLines(0), updatable: true }, scene);
+        tramGridLines.color = new BABYLON.Color3(0.30, 0.30, 0.35);
+        tramGridLines.position.y = TRAM_GRID_REST_Y;
+    }
 
     // ── Physics state ─────────────────────────────────────────────────────────
     //
@@ -878,11 +1039,11 @@ window.addEventListener('DOMContentLoaded', () => {
     // SPIN:  Separate rotation axis (Y). Can be initiated mid-air via arm drops.
     //        Stub only in Phase 1 — tracked in state, shown in HUD, not animated.
     //
-    const TARGET_OMEGA_UNTUCKED = 4.5 * 0.9925 * (_worldParam === 'custom' ? _customFlipSpeed : _worldParam === 'quint' ? 1.55 : _worldParam === 'quad' ? 1.404 : _worldParam === 'triple' ? 1.3 : _worldParam === 'single' ? 0.59 : 1.0); // rad/s at full extension
+    const TARGET_OMEGA_UNTUCKED = 4.5 * 0.9925 * (_worldParam === 'custom' ? _customFlipSpeed : _worldParam === 'trampoline' ? 1.407 : _worldParam === 'quint' ? 1.55 : _worldParam === 'quad' ? 1.404 : _worldParam === 'triple' ? 1.3 : _worldParam === 'single' ? 0.59 : 1.0); // rad/s at full extension
     const MAX_OMEGA = 9.75;            // rad/s cap — limits tucked flip speed
     const I0 = computeI(0);            // I at tuck = 0 (fully extended)
 
-    const SPIN_SPEED    = Math.PI * 2.0 * (_worldParam === 'custom' ? _customFlipSpeed : _worldParam === 'quint' ? 1.45 : _worldParam === 'quad' ? 1.3 : _worldParam === 'triple' ? 1.3 : _worldParam === 'single' ? 0.68 : 1.0) * (_lsGet('setting_superspin') === '1' ? 2.0 : 1.0); // rad/s ~= 1.0 full twist/second
+    const SPIN_SPEED    = Math.PI * 2.0 * (_worldParam === 'custom' ? _customFlipSpeed : _worldParam === 'trampoline' ? 1.3 : _worldParam === 'quint' ? 1.45 : _worldParam === 'quad' ? 1.3 : _worldParam === 'triple' ? 1.3 : _worldParam === 'single' ? 0.68 : 1.0) * (_lsGet('setting_superspin') === '1' ? 2.0 : 1.0); // rad/s ~= 1.0 full twist/second
     const ARM_DROP_RATE = 4.0;            // arm transitions in ~0.25 s
     const GRAVITY       = 14.0;           // world-units / s²
 
@@ -900,7 +1061,7 @@ window.addEventListener('DOMContentLoaded', () => {
         armDropR:   1.0,
         rootY:      0.0,  // world Y of character root
         vy:         0.0,  // vertical velocity (world-units/s)
-        posZ:       SLOPE_START_Z + 2.0, // start near top of inrun
+        posZ:       _trampolineMode ? 0 : SLOPE_START_Z + 2.0, // start near top of inrun (or trampoline center)
         vz:         0.0,  // Z velocity — frictionless, only gravity along slope
         grounded:   true,
         crashed:    false, // true when landed badly
@@ -1028,6 +1189,10 @@ window.addEventListener('DOMContentLoaded', () => {
 
     window.addEventListener('keydown', e => {
         if (e.code === 'KeyP') { paused = !paused; return; }
+        if (e.code === 'KeyS') {
+            window._tutorialTimeScale = (window._tutorialTimeScale === 0.5) ? 1.0 : 0.5;
+            return;
+        }
         if (e.code === 'KeyR') {
             // In competition mode, only allow reset once stopped or crashed at the bottom
             if (_compParam && !state.stopped && !state.crashed) return;
@@ -1069,7 +1234,7 @@ window.addEventListener('DOMContentLoaded', () => {
             state.armDropL    = 1.0;
             state.armDropR    = 1.0;
             state.vy          = 0.0;
-            state.posZ        = SLOPE_START_Z + 2.0;
+            state.posZ        = _trampolineMode ? 0 : SLOPE_START_Z + 2.0;
             state.vz          = 0.0;
             state.grounded    = true;
             state.crashed     = false;
@@ -1122,8 +1287,29 @@ window.addEventListener('DOMContentLoaded', () => {
             powerWrapDown = true;
         }
         if (_kcode === 'ArrowUp' && state.grounded && readyState && readyTurnT === 0.0) {
-            // Begin turn-to-face-downhill animation
-            readyTurnT = 0.001; // small non-zero to start animation
+            if (_trampolineMode) {
+                // Launch straight up — no turn animation needed
+                readyState      = false;
+                state.grounded  = false;
+                state.vy        = TRAMPOLINE_LAUNCH_VY;
+                state.L_flip    = I0 * TARGET_OMEGA_UNTUCKED;
+                state.perFlipTwists   = [];
+                state.lastFlipInt     = 0;
+                state.spinAtFlipStart = state.spinAngle;
+                state.spinBoundaries  = [];
+                state.perFlipTucked   = [];
+                state.currentFlipTucked = false;
+                state.airTime   = 0.0;
+                state.armSnap   = 0.0;
+                state.layArmT   = 0.0;
+                state.armRaise  = 0.0;
+                state.armRaiseTarget = 0;
+                state.armSnapTarget  = 0;
+                startRecording();
+            } else {
+                // Begin turn-to-face-downhill animation
+                readyTurnT = 0.001; // small non-zero to start animation
+            }
         }
         if (_kcode === 'ArrowUp' && !state.grounded && !state.crashed) {
             // Raise arms straight up
@@ -1549,7 +1735,7 @@ window.addEventListener('DOMContentLoaded', () => {
 
         // ── Terrain physics (frictionless) ────────────────────────────────
         // ── Power meter visibility ──────────────────────────────────────────
-        const onApproach = state.grounded && state.posZ >= APPROACH_START_Z && state.posZ < KICKER_END_Z;
+        const onApproach = !_trampolineMode && state.grounded && state.posZ >= APPROACH_START_Z && state.posZ < KICKER_END_Z;
         if (onApproach && !pmActive) {
             pmActive = true;
             pmEl.style.display = 'block';
@@ -1698,9 +1884,12 @@ window.addEventListener('DOMContentLoaded', () => {
                 state.rootY -= state.tuckAmount * 0.35;
             }
         } else {
-            state.vy    -= GRAVITY * dt;
-            state.rootY += state.vy * dt;
-            state.posZ  += state.vz * dt;
+            // Skip gravity & position update while riding the trampoline spring
+            if (!tramBouncing) {
+                state.vy    -= GRAVITY * dt;
+                state.rootY += state.vy * dt;
+                state.posZ  += state.vz * dt;
+            }
             // Track air time and tuck time for execution scoring
             state.airTime    += dt;
             // Keep Olympics trick name visible during flight
@@ -1710,7 +1899,41 @@ window.addEventListener('DOMContentLoaded', () => {
             }
 
             const surY   = terrainRootY(state.posZ);
-            if (state.rootY <= surY) {
+            if (!tramBouncing && state.rootY <= surY) {
+                if (_trampolineMode) {
+                    // ── Trampoline contact: ride spring down then launch ──────
+                    const incomingSpeed = Math.abs(state.vy);
+                    // Always rebound to the same fixed height
+                    tramSavedReboundVY  = TRAMPOLINE_LAUNCH_VY;
+                    // Compression proportional to incoming speed (max 0.65 at full speed)
+                    tramSpringY   = -(incomingSpeed / TRAMPOLINE_LAUNCH_VY) * 1.1;
+                    tramSpringVY  = 0;
+                    tramBouncing  = true;
+                    state.vy      = 0;
+                    state.rootY   = TRAMPOLINE_Y + tramSpringY + 0.10;
+                    state.flipAngle = 0.0;
+                    state.flipDir  = 1;
+                    state.L_flip   = I0 * TARGET_OMEGA_UNTUCKED;
+                    // grounded stays false — spring drives position
+                    state.tuckAmount = 0;
+                    state.tuckTarget = 0;
+                    state.spinAngle  = 0;
+                    state.spinTarget = 0;
+                    state.spinMult   = 1.0;
+                    state.armDropL   = 1.0;
+                    state.armDropR   = 1.0;
+                    state.perFlipTwists   = [];
+                    state.lastFlipInt     = 0;
+                    state.spinAtFlipStart = 0;
+                    state.spinBoundaries  = [];
+                    state.perFlipTucked   = [];
+                    state.currentFlipTucked = false;
+                    state.airTime = 0;
+                    armSwapPhase  = false;
+                    autoSpinActive = false;
+                    powerWrapDown  = false;
+                    doubleMode     = false;
+                } else {
                 const TWO_PI  = Math.PI * 2;
                 const norm    = ((state.flipAngle % TWO_PI) + TWO_PI) % TWO_PI;
                 const LAND_TOL = Math.PI / 4; // 45° — clean landing window
@@ -1838,15 +2061,57 @@ window.addEventListener('DOMContentLoaded', () => {
                     // norm >= π → front leading → land on stomach (3π/2 → face down)
                     state.crashAngle = norm < Math.PI ? Math.PI : Math.PI * 1.5;
                 }
+                } // end !_trampolineMode landing
             }
         }
         character.root.position.y = state.rootY;
         character.root.position.z = state.posZ;
 
+        // ── Trampoline spring animation ────────────────────────────────────
+        if (_trampolineMode && tramGridMesh) {
+            const acc = -TRAM_SPRING_K * tramSpringY - TRAM_SPRING_DAMP * tramSpringVY;
+            tramSpringVY += acc * dt;
+            tramSpringY  += tramSpringVY * dt;
+            if (tramSpringY > 0) { tramSpringY = 0; tramSpringVY = 0; }
+
+            if (tramBouncing) {
+                // Player rides spring: rootY tracks surface
+                state.rootY = TRAMPOLINE_Y + tramSpringY + 0.10;
+                character.root.position.y = state.rootY;
+                // Launch when spring passes rest going upward
+                if (tramSpringY >= -0.01 && tramSpringVY >= 0) {
+                    tramBouncing = false;
+                    state.vy     = tramSavedReboundVY;
+                }
+            }
+
+            // Frame rails stay fixed — only the grid deforms
+
+            // Deform grid surface vertices: edges pinned at y=0, center sinks with spring
+            const nv = (TRAM_GRID_COLS + 1) * (TRAM_GRID_ROWS + 1);
+            for (let i = 0; i < nv; i++) {
+                const nx = tramGridNXZ[i * 2];      // -1 to +1 along X
+                const nz = tramGridNXZ[i * 2 + 1];  // -1 to +1 along Z
+                // Edge factor: 0 at all borders, 1 at exact center
+                const ex = 1 - Math.abs(nx);
+                const ez = 1 - Math.abs(nz);
+                const f  = ex * ez;
+                tramGridPosArr[i * 3 + 1] = tramSpringY * f;
+            }
+            const gNrm = new Array(tramGridPosArr.length).fill(0);
+            BABYLON.VertexData.ComputeNormals(tramGridPosArr, tramGridIdxArr, gNrm);
+            tramGridMesh.updateVerticesData(BABYLON.VertexBuffer.PositionKind, tramGridPosArr);
+            tramGridMesh.updateVerticesData(BABYLON.VertexBuffer.NormalKind, gNrm);
+
+            // Update grid line overlay
+            BABYLON.MeshBuilder.CreateLineSystem('tramGridLines',
+                { lines: buildTramLines(tramSpringY), instance: tramGridLines }, scene);
+        }
+
         // ── Angular momentum conservation: ω = L / I ──────────────────────
         const I     = computeI(state.tuckAmount);
         const omega = Math.min(state.L_flip / I, MAX_OMEGA);
-        if (!state.grounded) {
+        if (!state.grounded && !tramBouncing) {
             state.flipAngle += omega * state.flipDir * dt;
         }
         // ── Crash: animate flip angle toward lying-flat position ───────────
