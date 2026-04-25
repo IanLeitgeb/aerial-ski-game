@@ -905,12 +905,12 @@ window.addEventListener('DOMContentLoaded', () => {
     const TRAM_BED_REST_Y   = TRAMPOLINE_Y - FOOT_OFFSET - 0.04;
     const TRAM_FRAME_REST_Y = TRAMPOLINE_Y - FOOT_OFFSET - 0.06;
     const TRAM_GRID_REST_Y  = TRAMPOLINE_Y - FOOT_OFFSET;
-    const TRAM_SPRING_K     = 35;
-    const TRAM_SPRING_DAMP  = 7;
-    const TRAM_GRID_COLS    = 6;
+    const TRAM_SPRING_K     = 90;
+    const TRAM_SPRING_DAMP  = 5;
+    const TRAM_GRID_COLS    = 12;
     const TRAM_GRID_ROWS    = 10;
-    const TRAM_GRID_W       = 2.2;
-    const TRAM_GRID_D       = 4.5;
+    const TRAM_GRID_W       = 2.42;
+    const TRAM_GRID_D       = 4.95;
     const tramGridNXZ       = []; // [nx0,nz0, nx1,nz1, ...] per vertex
     // Builds the deformed line positions for the grid overlay
     function buildTramLines(sy) {
@@ -1901,24 +1901,26 @@ window.addEventListener('DOMContentLoaded', () => {
             const surY   = terrainRootY(state.posZ);
             if (!tramBouncing && state.rootY <= surY) {
                 if (_trampolineMode) {
-                    // ── Trampoline contact: ride spring down then launch ──────
-                    const incomingSpeed = Math.abs(state.vy);
-                    // Always rebound to the same fixed height
-                    tramSavedReboundVY  = TRAMPOLINE_LAUNCH_VY;
-                    // Compression proportional to incoming speed (max 0.65 at full speed)
-                    tramSpringY   = -(incomingSpeed / TRAMPOLINE_LAUNCH_VY) * 1.1;
-                    tramSpringVY  = 0;
-                    tramBouncing  = true;
-                    state.vy      = 0;
-                    state.rootY   = TRAMPOLINE_Y + tramSpringY + 0.10;
+                    // ── Trampoline contact: player's velocity drives spring ──
+                    tramSavedReboundVY = TRAMPOLINE_LAUNCH_VY;
+                    // Hand off player's downward velocity to the spring — it
+                    // decelerates naturally under spring force, reaches max
+                    // compression, then pushes back up.
+                    tramSpringY  = 0;
+                    tramSpringVY = state.vy;  // negative (downward)
+                    tramBouncing = true;
+                    state.vy     = 0;
+                    state.rootY  = TRAMPOLINE_Y + 0.10;
                     state.flipAngle = 0.0;
                     state.flipDir  = 1;
                     state.L_flip   = I0 * TARGET_OMEGA_UNTUCKED;
                     // grounded stays false — spring drives position
                     state.tuckAmount = 0;
                     state.tuckTarget = 0;
-                    state.spinAngle  = 0;
-                    state.spinTarget = 0;
+                    // Snap spin to nearest half-twist (0°, 180°, 360° …)
+                    const snapSpin   = Math.round(state.spinAngle / Math.PI) * Math.PI;
+                    state.spinAngle  = snapSpin;
+                    state.spinTarget = snapSpin;
                     state.spinMult   = 1.0;
                     state.armDropL   = 1.0;
                     state.armDropR   = 1.0;
@@ -2072,16 +2074,20 @@ window.addEventListener('DOMContentLoaded', () => {
             const acc = -TRAM_SPRING_K * tramSpringY - TRAM_SPRING_DAMP * tramSpringVY;
             tramSpringVY += acc * dt;
             tramSpringY  += tramSpringVY * dt;
-            if (tramSpringY > 0) { tramSpringY = 0; tramSpringVY = 0; }
+            // Only clamp to rest when not bouncing (idle oscillation damping)
+            if (!tramBouncing && tramSpringY > 0) { tramSpringY = 0; tramSpringVY = 0; }
 
             if (tramBouncing) {
                 // Player rides spring: rootY tracks surface
                 state.rootY = TRAMPOLINE_Y + tramSpringY + 0.10;
                 character.root.position.y = state.rootY;
-                // Launch when spring passes rest going upward
+                // Launch when spring returns to rest level going upward
                 if (tramSpringY >= -0.01 && tramSpringVY >= 0) {
-                    tramBouncing = false;
-                    state.vy     = tramSavedReboundVY;
+                    tramBouncing  = false;
+                    tramSpringY   = 0;
+                    tramSpringVY  = 0;
+                    // Always launch at fixed height; spring trajectory is already smooth
+                    state.vy = tramSavedReboundVY;
                 }
             }
 
@@ -2110,7 +2116,9 @@ window.addEventListener('DOMContentLoaded', () => {
 
         // ── Angular momentum conservation: ω = L / I ──────────────────────
         const I     = computeI(state.tuckAmount);
-        const omega = Math.min(state.L_flip / I, MAX_OMEGA);
+        const tuckBoost = _trampolineMode ? (1.0 + 0.3 * state.tuckAmount) : 1.0;
+        const maxOmega = _trampolineMode ? 13.0 : MAX_OMEGA;
+        const omega = Math.min((state.L_flip / I) * tuckBoost, maxOmega);
         if (!state.grounded && !tramBouncing) {
             state.flipAngle += omega * state.flipDir * dt;
         }
