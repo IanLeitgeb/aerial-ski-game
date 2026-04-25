@@ -1144,6 +1144,8 @@ window.addEventListener('DOMContentLoaded', () => {
     let leftArmHoldTime = 0;    // seconds right arrow held alone on inrun (left arm up)
     let rightArmHoldTime= 0;    // seconds left arrow held alone on inrun (right arm up)
     const ARM_HOLD_REQ  = 0.5;  // seconds arm must be up before jump
+    let rightAloneAirHold = 0;  // seconds right held alone mid-air (half-twist trigger)
+    const RIGHT_HALF_TWIST_HOLD = 0.05; // hold right alone this long mid-air → half twist left
     let paused          = false;
     let cameraFollow    = true;  // C toggles: true = behind character, false = fixed side view
     let powerWrapDown   = false; // down arrow held → 1.3× spin rate
@@ -1255,6 +1257,7 @@ window.addEventListener('DOMContentLoaded', () => {
             leftDown = false; rightDown = false;
             autoSpinActive = false; armSwapPhase = false;
             leftArmHoldTime = 0; rightArmHoldTime = 0;
+            rightAloneAirHold = 0;
             doubleMode = false; powerWrapDown = false; arrowUpDown = false;
             flipPower = 0; pmFill.style.width = '0%';
             billboard.isVisible = false;
@@ -1331,10 +1334,15 @@ window.addEventListener('DOMContentLoaded', () => {
             e.preventDefault();
             rightDown = true;
             if (leftDown && !doubleMode) {
-                // ← already held: fire one left twist immediately, start hold timer
-                state.spinTarget += Math.PI * 2;
-                state.doubleDir = 1;
-                secondKeyTimer = setTimeout(() => enterDoubleMode(1), DOUBLE_HOLD_MS);
+                if (_trampolineMode) {
+                    // ← already held (trampoline): fire one full left twist (no double-mode)
+                    state.spinTarget += Math.PI * 2;
+                } else {
+                    // ← already held: fire one left twist immediately, start hold timer
+                    state.spinTarget += Math.PI * 2;
+                    state.doubleDir = 1;
+                    secondKeyTimer = setTimeout(() => enterDoubleMode(1), DOUBLE_HOLD_MS);
+                }
             }
             // else: drop right arm as wind-up, wait for ←
         }
@@ -1354,6 +1362,7 @@ window.addEventListener('DOMContentLoaded', () => {
         }
         if (_kcode === 'ArrowRight' && rightDown) {
             rightDown = false;
+            rightAloneAirHold = 0;
             if (doubleMode) exitDoubleMode();
             else if (secondKeyTimer !== null) { clearTimeout(secondKeyTimer); secondKeyTimer = null; }
         }
@@ -1751,6 +1760,18 @@ window.addEventListener('DOMContentLoaded', () => {
         if (state.grounded) {
             if (rightDown && !leftDown) leftArmHoldTime  += dt; else leftArmHoldTime  = 0;
             if (leftDown && !rightDown) rightArmHoldTime += dt; else rightArmHoldTime = 0;
+        }
+        // ── Right-alone mid-air hold → half twist left (trampoline only) ─────
+        if (_trampolineMode && !state.grounded && !state.crashed && rightDown && !leftDown && !doubleMode) {
+            if (rightAloneAirHold >= 0) {
+                rightAloneAirHold += dt;
+                if (rightAloneAirHold >= RIGHT_HALF_TWIST_HOLD) {
+                    state.spinTarget += Math.PI;
+                    rightAloneAirHold = -999; // fired — don't repeat until key released
+                }
+            }
+        } else if (!rightDown || leftDown) {
+            rightAloneAirHold = 0;
         }
         if (state.grounded) {
             // ── Ready state: freeze at top until ↑ pressed ──────────────────
