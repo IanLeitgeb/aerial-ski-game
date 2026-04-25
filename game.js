@@ -119,6 +119,24 @@ const POSE_TUCKED = {
     skiR:      { x:  0.075, y: -0.410, rx: -0.55, rz:  0.00, dz:  0.00 },
 };
 
+// Pike: hips flexed 145° forward from hanging, legs perfectly straight (no knee bend).
+// rx=+2.53 rad (≈145°) for all leg/ski segments: kinematically verified so the hip
+// joint (+Y top of upperLeg) sits exactly at y=-0.275, the bottom of the torso.
+const POSE_PIKED = {
+    torso:     { x:  0.000, y:  0.000, rx:  0.00, rz:  0.00, dz:  0.00 },  // upper body stays untucked
+    head:      { x:  0.000, y:  0.400, rx:  0.00, rz:  0.00, dz:  0.00 },
+    upperArmL: { x: -0.205, y:  0.300, rx:  0.00, rz:  0.00, dz:  0.00 },  // arms stay raised
+    upperArmR: { x:  0.205, y:  0.300, rx:  0.00, rz:  0.00, dz:  0.00 },
+    lowerArmL: { x: -0.205, y:  0.575, rx:  0.00, rz:  0.00, dz:  0.00 },
+    lowerArmR: { x:  0.205, y:  0.575, rx:  0.00, rz:  0.00, dz:  0.00 },
+    upperLegL: { x: -0.075, y: -0.128, rx:  2.53, rz:  0.00, dz: -0.103 },
+    upperLegR: { x:  0.075, y: -0.128, rx:  2.53, rz:  0.00, dz: -0.103 },
+    lowerLegL: { x: -0.075, y:  0.167, rx:  2.53, rz:  0.00, dz: -0.309 },  // straight (no knee bend)
+    lowerLegR: { x:  0.075, y:  0.167, rx:  2.53, rz:  0.00, dz: -0.309 },
+    skiL:      { x: -0.075, y:  0.310, rx:  2.53, rz:  0.00, dz: -0.410 },
+    skiR:      { x:  0.075, y:  0.310, rx:  2.53, rz:  0.00, dz: -0.410 },
+};
+
 // Arm sweep: two-phase animation.
 // Phase 1 (armDrop 0→0.5): raised → swung out in front (horizontal forward)
 // Phase 2 (armDrop 0.5→1): in front → hanging at side
@@ -462,11 +480,23 @@ function armSweep(name, _up, t) {
 // armSnap:  0-1, blends arms toward POSE_ARMS_50DEG (overrides armDrop for arm segments)
 // arguments[7] = grounded: true → use POSE_INRUN_TUCK, false → use POSE_TUCKED
 function applyPose(meshes, tuck, armDropL, armDropR, armSnap) {
-    const grounded = arguments[7];
+    const grounded   = arguments[7];
+    const pikeAmount = arguments[8] || 0;
     for (const seg of SEGMENTS) {
         const mesh = meshes[seg.name];
         const up   = POSE_UNTUCKED[seg.name];
-        const tk   = (grounded ? POSE_INRUN_TUCK : POSE_TUCKED)[seg.name];
+        // Choose target pose and blend factor
+        let tk, effectiveBlend;
+        if (grounded) {
+            tk = POSE_INRUN_TUCK[seg.name];
+            effectiveBlend = tuck;
+        } else if (pikeAmount > 0) {
+            tk = POSE_PIKED[seg.name];
+            effectiveBlend = pikeAmount;
+        } else {
+            tk = POSE_TUCKED[seg.name];
+            effectiveBlend = tuck;
+        }
         let ex = up;
 
         if (seg.name === 'upperArmL' || seg.name === 'lowerArmL') {
@@ -513,11 +543,11 @@ function applyPose(meshes, tuck, armDropL, armDropR, armSnap) {
             }
         }
 
-        mesh.position.x = lerp(ex.x,  tk.x,  tuck);
-        mesh.position.y = lerp(ex.y,  tk.y,  tuck);
-        mesh.position.z = (BASE_Z[seg.name] || 0) + lerp(ex.dz, tk.dz, tuck);
-        mesh.rotation.x = lerp(ex.rx, tk.rx, tuck);
-        mesh.rotation.z = lerp(ex.rz, tk.rz, tuck);
+        mesh.position.x = lerp(ex.x,  tk.x,  effectiveBlend);
+        mesh.position.y = lerp(ex.y,  tk.y,  effectiveBlend);
+        mesh.position.z = (BASE_Z[seg.name] || 0) + lerp(ex.dz, tk.dz, effectiveBlend);
+        mesh.rotation.x = lerp(ex.rx, tk.rx, effectiveBlend);
+        mesh.rotation.z = lerp(ex.rz, tk.rz, effectiveBlend);
     }
 
     // ── Reposition gloves to always sit at the wrist ───────────────────────
@@ -1052,6 +1082,8 @@ window.addEventListener('DOMContentLoaded', () => {
         flipAngle:  0.0,
         tuckAmount: 0.0,
         tuckTarget: 0.0,
+        pikeAmount: 0.0,
+        pikeTarget: 0.0,
         flipDir:    1,    // +1 = backflip, -1 = frontflip
         spinAngle:  0.0,  // current spin angle (rad)
         spinTarget: 0.0,  // target spin; each tap adds ±2π
@@ -1111,6 +1143,7 @@ window.addEventListener('DOMContentLoaded', () => {
             flipAngle:  state.flipAngle,
             spinAngle:  state.spinAngle,
             tuckAmount: state.tuckAmount,
+            pikeAmount: state.pikeAmount,
             armDropL:   state.armDropL,
             armDropR:   state.armDropR,
             armSnap:    state.armSnap,
@@ -1144,7 +1177,8 @@ window.addEventListener('DOMContentLoaded', () => {
     let leftArmHoldTime = 0;    // seconds right arrow held alone on inrun (left arm up)
     let rightArmHoldTime= 0;    // seconds left arrow held alone on inrun (right arm up)
     const ARM_HOLD_REQ  = 0.5;  // seconds arm must be up before jump
-    let rightAloneAirHold = 0;  // seconds right held alone mid-air (half-twist trigger)
+    let rightAloneAirHold = 0;  // (unused — kept for reset)
+    let downHalfTwistFired = false; // true after down fires a half-twist mid-air
     const RIGHT_HALF_TWIST_HOLD = 0.05; // hold right alone this long mid-air → half twist left
     let paused          = false;
     let cameraFollow    = true;  // C toggles: true = behind character, false = fixed side view
@@ -1154,6 +1188,7 @@ window.addEventListener('DOMContentLoaded', () => {
     let readyTurnT      = 0.0;   // 0→1: progress of turn-to-face-downhill animation
     const READY_TURN_DUR = 0.7;  // seconds to complete the turn
     let doubleMode      = false; // both keys held → continuous 2x speed spin
+    let bothArmsSpinTarget = Infinity; // spinTarget value at which a both-arms twist was triggered
     let secondKeyTimer  = null;  // timeout handle; fires after hold threshold
     const DOUBLE_HOLD_MS = 180;  // ms — hold second key longer than this = double mode
 
@@ -1229,6 +1264,8 @@ window.addEventListener('DOMContentLoaded', () => {
             state.flipAngle   = 0.0;
             state.tuckAmount  = 0.0;
             state.tuckTarget  = 0.0;
+            state.pikeAmount  = 0.0;
+            state.pikeTarget  = 0.0;
             state.flipDir     = 1;
             state.spinAngle   = 0.0;
             state.spinTarget  = 0.0;
@@ -1257,7 +1294,8 @@ window.addEventListener('DOMContentLoaded', () => {
             leftDown = false; rightDown = false;
             autoSpinActive = false; armSwapPhase = false;
             leftArmHoldTime = 0; rightArmHoldTime = 0;
-            rightAloneAirHold = 0;
+            rightAloneAirHold = 0; downHalfTwistFired = false;
+            bothArmsSpinTarget = Infinity;
             doubleMode = false; powerWrapDown = false; arrowUpDown = false;
             flipPower = 0; pmFill.style.width = '0%';
             billboard.isVisible = false;
@@ -1282,6 +1320,9 @@ window.addEventListener('DOMContentLoaded', () => {
         if (_kcode === 'Space') {
             e.preventDefault();
             if (!state.crashed) state.tuckTarget = 1.0;
+        }
+        if (_kcode === 'KeyX') {
+            if (!state.crashed && !state.grounded) state.pikeTarget = 1.0;
         }
         if (_kcode === 'ArrowUp' || _kcode === 'ArrowDown') {
             e.preventDefault();
@@ -1323,8 +1364,11 @@ window.addEventListener('DOMContentLoaded', () => {
             e.preventDefault();
             leftDown = true;
             if (rightDown && !doubleMode) {
-                // → already held: fire one right twist immediately, start hold timer
+                // → already held: undo any half-twist that already fired, then do one full left-spin twist
+                if (downHalfTwistFired) state.spinTarget -= (_lsGet('setting_rightspin') === '1' ? Math.PI : -Math.PI); // undo half-twist
+                rightAloneAirHold = -999;
                 state.spinTarget -= Math.PI * 2;
+                bothArmsSpinTarget = state.spinTarget; // both arms down for this twist
                 state.doubleDir = -1;
                 secondKeyTimer = setTimeout(() => enterDoubleMode(-1), DOUBLE_HOLD_MS);
             }
@@ -1353,7 +1397,8 @@ window.addEventListener('DOMContentLoaded', () => {
                      : (_mirrorKeys && e.code === 'ArrowRight') ? 'ArrowLeft'
                      : e.code;
         if (_kcode === 'Space') state.tuckTarget = 0.0;
-        if (_kcode === 'ArrowDown') powerWrapDown = false;
+        if (e.code  === 'KeyX') state.pikeTarget = 0.0;
+        if (_kcode === 'ArrowDown') { powerWrapDown = false; downHalfTwistFired = false; }
         if (_kcode === 'ArrowUp') arrowUpDown = false;
         if (_kcode === 'ArrowLeft' && leftDown) {
             leftDown = false;
@@ -1362,7 +1407,6 @@ window.addEventListener('DOMContentLoaded', () => {
         }
         if (_kcode === 'ArrowRight' && rightDown) {
             rightDown = false;
-            rightAloneAirHold = 0;
             if (doubleMode) exitDoubleMode();
             else if (secondKeyTimer !== null) { clearTimeout(secondKeyTimer); secondKeyTimer = null; }
         }
@@ -1721,7 +1765,7 @@ window.addEventListener('DOMContentLoaded', () => {
             const f = replayFrames[Math.min(replayIndex, replayFrames.length - 1)];
             character.root.position.y = f.rootY;
             character.root.position.z = f.posZ;
-            applyPose(character.meshes, f.tuckAmount, f.armDropL, f.armDropR, f.armSnap, f.layArmT, f.armRaise, f.grounded);
+            applyPose(character.meshes, f.tuckAmount, f.armDropL, f.armDropR, f.armSnap, f.layArmT, f.armRaise, f.grounded, f.pikeAmount || 0);
             const qFaceR = BABYLON.Quaternion.RotationAxis(BABYLON.Axis.Y, Math.PI);
             if (f.grounded) {
                 character.root.rotationQuaternion = qFaceR;
@@ -1735,11 +1779,16 @@ window.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        // ── Smooth tuck transition ─────────────────────────────────────────
+        // ── Smooth tuck / pike transitions ─────────────────────────────────
         if (!state.crashed) {
-        const diff = state.tuckTarget - state.tuckAmount;
-        const step = TUCK_RATE * dt;
-        state.tuckAmount += (Math.abs(diff) <= step) ? diff : Math.sign(diff) * step;
+            const tDiff = state.tuckTarget - state.tuckAmount;
+            const step  = TUCK_RATE * dt;
+            state.tuckAmount += (Math.abs(tDiff) <= step) ? tDiff : Math.sign(tDiff) * step;
+            const pDiff = state.pikeTarget - state.pikeAmount;
+            state.pikeAmount += (Math.abs(pDiff) <= step) ? pDiff : Math.sign(pDiff) * step;
+            // Pike and tuck are mutually exclusive: whichever is currently active wins
+            if (state.pikeAmount > 0.01) state.tuckAmount = 0;
+            if (state.tuckAmount > 0.01) state.pikeAmount = 0;
         }
 
         // ── Terrain physics (frictionless) ────────────────────────────────
@@ -1761,17 +1810,11 @@ window.addEventListener('DOMContentLoaded', () => {
             if (rightDown && !leftDown) leftArmHoldTime  += dt; else leftArmHoldTime  = 0;
             if (leftDown && !rightDown) rightArmHoldTime += dt; else rightArmHoldTime = 0;
         }
-        // ── Right-alone mid-air hold → half twist left (trampoline only) ─────
-        if (_trampolineMode && !state.grounded && !state.crashed && rightDown && !leftDown && !doubleMode) {
-            if (rightAloneAirHold >= 0) {
-                rightAloneAirHold += dt;
-                if (rightAloneAirHold >= RIGHT_HALF_TWIST_HOLD) {
-                    state.spinTarget += Math.PI;
-                    rightAloneAirHold = -999; // fired — don't repeat until key released
-                }
-            }
-        } else if (!rightDown || leftDown) {
-            rightAloneAirHold = 0;
+        // ── Down mid-air press → half twist (trampoline only) ─────────────
+        if (_trampolineMode && !state.grounded && !state.crashed && powerWrapDown && !doubleMode && !downHalfTwistFired) {
+            const _rightSpin = _lsGet('setting_rightspin') === '1';
+            state.spinTarget += _rightSpin ? Math.PI : -Math.PI;
+            downHalfTwistFired = true;
         }
         if (state.grounded) {
             // ── Ready state: freeze at top until ↑ pressed ──────────────────
@@ -1938,6 +1981,8 @@ window.addEventListener('DOMContentLoaded', () => {
                     // grounded stays false — spring drives position
                     state.tuckAmount = 0;
                     state.tuckTarget = 0;
+                    state.pikeAmount = 0;
+                    state.pikeTarget = 0;
                     // Snap spin to nearest half-twist (0°, 180°, 360° …)
                     const snapSpin   = Math.round(state.spinAngle / Math.PI) * Math.PI;
                     state.spinAngle  = snapSpin;
@@ -1974,6 +2019,8 @@ window.addEventListener('DOMContentLoaded', () => {
                 state.spinTarget = 0;
                 state.tuckTarget = 0;
                 state.tuckAmount = 0;
+                state.pikeTarget = 0;
+                state.pikeAmount = 0;
                 armSwapPhase   = false;
                 autoSpinActive = false;
                 state.spinMult  = 1.0; // reset spin multiplier on landing
@@ -2210,8 +2257,10 @@ window.addEventListener('DOMContentLoaded', () => {
             // Keep arms down on inrun until ~1 second before the flat table
             const timeToTable = state.vz > 0 ? (FLAT_Z - state.posZ) / state.vz : Infinity;
             const onInrun = state.grounded && state.posZ < FLAT_Z && timeToTable > 1.0;
-            armLTarget = onInrun || state.crashed || (leftDown && !rightDown) || doubleMode || (spinDrivesArm && spinRemaining >  0.05) ? 1.0 : 0.0;
-            armRTarget = onInrun || state.crashed || (rightDown && !leftDown) || doubleMode || (spinDrivesArm && spinRemaining < -0.05) ? 1.0 : 0.0;
+            const bothArmsActive = spinDrivesArm && state.spinAngle > bothArmsSpinTarget;
+            if (!bothArmsActive && state.spinAngle <= bothArmsSpinTarget) bothArmsSpinTarget = Infinity;
+            armLTarget = onInrun || state.crashed || (leftDown && !rightDown) || doubleMode || bothArmsActive || (spinDrivesArm && spinRemaining >  0.05) ? 1.0 : 0.0;
+            armRTarget = onInrun || state.crashed || (rightDown && !leftDown) || doubleMode || bothArmsActive || (spinDrivesArm && spinRemaining < -0.05) ? 1.0 : 0.0;
         }
         const armStep = ARM_DROP_RATE * dt;
         const dL = armLTarget - state.armDropL;
@@ -2228,7 +2277,7 @@ window.addEventListener('DOMContentLoaded', () => {
         if (state.grounded) { state.armSnapTarget = 0; state.armRaiseTarget = 0; }
 
         // ── Lay T-pose: arms drift out to sides when no inputs on first flip ──
-        const inFirstFlip = !state.grounded && !state.crashed && Math.abs(state.flipAngle) < Math.PI * 2;
+        const inFirstFlip = !state.grounded && !state.crashed && Math.abs(state.flipAngle) < Math.PI * 2 && !_trampolineMode;
         const noInputs    = !leftDown && !rightDown && state.tuckTarget === 0 && !doubleMode;
         const layTTarget  = inFirstFlip && noInputs ? 1.0 : 0.0;
         const layTStep    = 1.8 * dt; // ~0.55 s to fully extend
@@ -2236,7 +2285,7 @@ window.addEventListener('DOMContentLoaded', () => {
         state.layArmT    += Math.abs(dLayT) <= layTStep ? dLayT : Math.sign(dLayT) * layTStep;
 
         // ── Apply body pose ────────────────────────────────────────────────
-        applyPose(character.meshes, state.tuckAmount, state.armDropL, state.armDropR, state.armSnap, state.layArmT, state.armRaise, state.grounded);
+        applyPose(character.meshes, state.tuckAmount, state.armDropL, state.armDropR, state.armSnap, state.layArmT, state.armRaise, state.grounded, state.pikeAmount);
 
         // ── Character rotation ─────────────────────────────────────────────
         // qFace turns the character to face +Z (downhill direction).

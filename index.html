@@ -369,6 +369,13 @@
             </div>
             <div class="settingRow">
                 <div>
+                    <div class="settingLabel">Right Spin</div>
+                    <div class="settingDesc">Down arrow fires a right half-twist instead of left</div>
+                </div>
+                <button class="toggleBtn" id="rightSpinBtn">OFF</button>
+            </div>
+            <div class="settingRow">
+                <div>
                     <div class="settingLabel">Mirror Keys</div>
                     <div class="settingDesc">Swap spin direction — → then ← does a right full, ← then → does a left full</div>
                 </div>
@@ -1122,6 +1129,7 @@
                     var settingsModal = document.getElementById('settingsModal');
                     var autoLandBtn   = document.getElementById('autoLandBtn');
                     var superSpinBtn  = document.getElementById('superSpinBtn');
+                    var rightSpinBtn  = document.getElementById('rightSpinBtn');
                     var mirrorKeysBtn = document.getElementById('mirrorKeysBtn');
 
                     function updateAutoLandBtn() {
@@ -1134,6 +1142,11 @@
                         superSpinBtn.textContent = on ? 'ON' : 'OFF';
                         superSpinBtn.classList.toggle('on', on);
                     }
+                    function updateRightSpinBtn() {
+                        var on = _lsGet('setting_rightspin') === '1';
+                        rightSpinBtn.textContent = on ? 'ON' : 'OFF';
+                        rightSpinBtn.classList.toggle('on', on);
+                    }
                     function updateMirrorKeysBtn() {
                         var on = _lsGet('setting_mirrorkeys') === '1';
                         mirrorKeysBtn.textContent = on ? 'ON' : 'OFF';
@@ -1141,6 +1154,7 @@
                     }
                     updateAutoLandBtn();
                     updateSuperSpinBtn();
+                    updateRightSpinBtn();
                     updateMirrorKeysBtn();
 
                     var settingsBtn = document.getElementById('settingsBtn');
@@ -1188,6 +1202,11 @@
                         resetSection.style.display = 'none';
                         settingsModal.classList.remove('open');
                         location.reload();
+                    });
+                    rightSpinBtn.addEventListener('click', function() {
+                        var on = _lsGet('setting_rightspin') === '1';
+                        _lsSet('setting_rightspin', on ? '0' : '1');
+                        updateRightSpinBtn();
                     });
                     mirrorKeysBtn.addEventListener('click', function() {
                         var on = _lsGet('setting_mirrorkeys') === '1';
