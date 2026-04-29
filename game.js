@@ -125,10 +125,10 @@ const POSE_TUCKED = {
 const POSE_PIKED = {
     torso:     { x:  0.000, y:  0.000, rx:  0.00, rz:  0.00, dz:  0.00 },  // upper body stays untucked
     head:      { x:  0.000, y:  0.400, rx:  0.00, rz:  0.00, dz:  0.00 },
-    upperArmL: { x: -0.205, y:  0.300, rx:  0.00, rz:  0.00, dz:  0.00 },  // arms stay raised
-    upperArmR: { x:  0.205, y:  0.300, rx:  0.00, rz:  0.00, dz:  0.00 },
-    lowerArmL: { x: -0.205, y:  0.575, rx:  0.00, rz:  0.00, dz:  0.00 },
-    lowerArmR: { x:  0.205, y:  0.575, rx:  0.00, rz:  0.00, dz:  0.00 },
+    upperArmL: { x: -0.205, y:  0.150, rx: -1.57, rz:  0.00, dz: -0.15 },  // arms straight out in front
+    upperArmR: { x:  0.205, y:  0.150, rx: -1.57, rz:  0.00, dz: -0.15 },
+    lowerArmL: { x: -0.205, y:  0.150, rx: -1.57, rz:  0.00, dz: -0.40 },
+    lowerArmR: { x:  0.205, y:  0.150, rx: -1.57, rz:  0.00, dz: -0.40 },
     upperLegL: { x: -0.075, y: -0.128, rx:  2.53, rz:  0.00, dz: -0.103 },
     upperLegR: { x:  0.075, y: -0.128, rx:  2.53, rz:  0.00, dz: -0.103 },
     lowerLegL: { x: -0.075, y:  0.167, rx:  2.53, rz:  0.00, dz: -0.309 },  // straight (no knee bend)
@@ -474,14 +474,18 @@ function armSweep(name, _up, t) {
 }
 
 // ── Pose applicator ────────────────────────────────────────────────────────
-// tuck:     0 = fully extended, 1 = fully tucked
-// armDropL: 0 = left arm raised, 1 = left arm dropped to side
-// armDropR: 0 = right arm raised, 1 = right arm dropped to side
-// armSnap:  0-1, blends arms toward POSE_ARMS_50DEG (overrides armDrop for arm segments)
-// arguments[7] = grounded: true → use POSE_INRUN_TUCK, false → use POSE_TUCKED
-function applyPose(meshes, tuck, armDropL, armDropR, armSnap) {
-    const grounded   = arguments[7];
-    const pikeAmount = arguments[8] || 0;
+// tuck:       0 = fully extended, 1 = fully tucked
+// armDropL:   0 = left arm raised, 1 = left arm dropped to side
+// armDropR:   0 = right arm raised, 1 = right arm dropped to side
+// armSnap:    0-1, blends arms toward POSE_ARMS_50DEG (overrides armDrop for arm segments)
+// layArmT:    0-1, blends arms toward T-pose (layout)
+// armRaise:   0-1, blends arms toward raised-overhead pose
+// grounded:   true → use POSE_INRUN_TUCK, false → use POSE_TUCKED
+// pikeAmount: 0-1, blends toward POSE_PIKED
+// pikeArmDrop:0-1, drops arms during pike release
+function applyPose(meshes, tuck, armDropL, armDropR, armSnap, layArmT, armRaise, grounded, pikeAmount, pikeArmDrop) {
+    pikeAmount  = pikeAmount  || 0;
+    pikeArmDrop = pikeArmDrop || 0;
     for (const seg of SEGMENTS) {
         const mesh = meshes[seg.name];
         const up   = POSE_UNTUCKED[seg.name];
@@ -492,6 +496,18 @@ function applyPose(meshes, tuck, armDropL, armDropR, armSnap) {
             effectiveBlend = tuck;
         } else if (pikeAmount > 0) {
             tk = POSE_PIKED[seg.name];
+            // For arm segments: blend target from piked-forward toward dropped during release
+            if (pikeArmDrop > 0 && (seg.name === 'upperArmL' || seg.name === 'upperArmR' ||
+                                     seg.name === 'lowerArmL' || seg.name === 'lowerArmR')) {
+                const dropped = armSweep(seg.name, up, 1.0);
+                tk = {
+                    x:  lerp(tk.x,  dropped.x,  pikeArmDrop),
+                    y:  lerp(tk.y,  dropped.y,  pikeArmDrop),
+                    rx: lerp(tk.rx, dropped.rx, pikeArmDrop),
+                    rz: lerp(tk.rz, dropped.rz, pikeArmDrop),
+                    dz: lerp(tk.dz, dropped.dz, pikeArmDrop),
+                };
+            }
             effectiveBlend = pikeAmount;
         } else {
             tk = POSE_TUCKED[seg.name];
@@ -507,15 +523,15 @@ function applyPose(meshes, tuck, armDropL, armDropR, armSnap) {
                        rx: lerp(ex.rx, sn.rx, armSnap), rz: lerp(ex.rz, sn.rz, armSnap),
                        dz: lerp(ex.dz, sn.dz, armSnap) };
             }
-            if (arguments[5] > 0) { // layArmT
+            if (layArmT > 0) {
                 const tp = POSE_ARMS_T[seg.name];
-                ex = { x: lerp(ex.x, tp.x, arguments[5]), y: lerp(ex.y, tp.y, arguments[5]),
-                       rx: lerp(ex.rx, tp.rx, arguments[5]), rz: lerp(ex.rz, tp.rz, arguments[5]),
-                       dz: lerp(ex.dz, tp.dz, arguments[5]) };
+                ex = { x: lerp(ex.x, tp.x, layArmT), y: lerp(ex.y, tp.y, layArmT),
+                       rx: lerp(ex.rx, tp.rx, layArmT), rz: lerp(ex.rz, tp.rz, layArmT),
+                       dz: lerp(ex.dz, tp.dz, layArmT) };
             }
-            if (arguments[6] > 0) { // armRaise
+            if (armRaise > 0) {
                 const up2 = POSE_ARMS_UP[seg.name];
-                const raiseT = arguments[6] * (1 - armDropL);
+                const raiseT = armRaise * (1 - armDropL);
                 ex = { x: lerp(ex.x, up2.x, raiseT), y: lerp(ex.y, up2.y, raiseT),
                        rx: lerp(ex.rx, up2.rx, raiseT), rz: lerp(ex.rz, up2.rz, raiseT),
                        dz: lerp(ex.dz, up2.dz, raiseT) };
@@ -528,15 +544,15 @@ function applyPose(meshes, tuck, armDropL, armDropR, armSnap) {
                        rx: lerp(ex.rx, sn.rx, armSnap), rz: lerp(ex.rz, sn.rz, armSnap),
                        dz: lerp(ex.dz, sn.dz, armSnap) };
             }
-            if (arguments[5] > 0) { // layArmT
+            if (layArmT > 0) {
                 const tp = POSE_ARMS_T[seg.name];
-                ex = { x: lerp(ex.x, tp.x, arguments[5]), y: lerp(ex.y, tp.y, arguments[5]),
-                       rx: lerp(ex.rx, tp.rx, arguments[5]), rz: lerp(ex.rz, tp.rz, arguments[5]),
-                       dz: lerp(ex.dz, tp.dz, arguments[5]) };
+                ex = { x: lerp(ex.x, tp.x, layArmT), y: lerp(ex.y, tp.y, layArmT),
+                       rx: lerp(ex.rx, tp.rx, layArmT), rz: lerp(ex.rz, tp.rz, layArmT),
+                       dz: lerp(ex.dz, tp.dz, layArmT) };
             }
-            if (arguments[6] > 0) { // armRaise
+            if (armRaise > 0) {
                 const up2 = POSE_ARMS_UP[seg.name];
-                const raiseT = arguments[6] * (1 - armDropR);
+                const raiseT = armRaise * (1 - armDropR);
                 ex = { x: lerp(ex.x, up2.x, raiseT), y: lerp(ex.y, up2.y, raiseT),
                        rx: lerp(ex.rx, up2.rx, raiseT), rz: lerp(ex.rz, up2.rz, raiseT),
                        dz: lerp(ex.dz, up2.dz, raiseT) };
@@ -548,6 +564,32 @@ function applyPose(meshes, tuck, armDropL, armDropR, armSnap) {
         mesh.position.z = (BASE_Z[seg.name] || 0) + lerp(ex.dz, tk.dz, effectiveBlend);
         mesh.rotation.x = lerp(ex.rx, tk.rx, effectiveBlend);
         mesh.rotation.z = lerp(ex.rz, tk.rz, effectiveBlend);
+    }
+
+    // ── Kinematic knee fix for pike ────────────────────────────────────────
+    // Independent lerping of each segment's position breaks joint continuity
+    // at intermediate pikeAmount values. Repin lower legs and skis to the
+    // upper legs so the knee joint is always connected.
+    if (pikeAmount > 0) {
+        for (const side of ['L', 'R']) {
+            const ulMesh = meshes['upperLeg' + side];
+            const llMesh = meshes['lowerLeg' + side];
+            const skMesh = meshes['ski' + side];
+            const rx     = ulMesh.rotation.x;
+            const cosRx  = Math.cos(rx);
+            const sinRx  = Math.sin(rx);
+            // Knee = local -Y end of upper leg
+            const kneeY  = ulMesh.position.y - 0.18 * cosRx;
+            const kneeZ  = ulMesh.position.z - 0.18 * sinRx;
+            // Lower leg center: align its local +Y end (top) to the knee
+            llMesh.position.y = kneeY - 0.18 * cosRx;
+            llMesh.position.z = kneeZ - 0.18 * sinRx;
+            // Ski center: align its local +Y end (top) to the ankle
+            const ankleY = llMesh.position.y - 0.18 * cosRx;
+            const ankleZ = llMesh.position.z - 0.18 * sinRx;
+            skMesh.position.y = ankleY - 0.015 * cosRx;
+            skMesh.position.z = ankleZ - 0.015 * sinRx;
+        }
     }
 
     // ── Reposition gloves to always sit at the wrist ───────────────────────
@@ -600,12 +642,14 @@ function buildHUD(scene) {
 // Character moves in the +Z direction. Camera views from -X side (right-to-left = downhill).
 const FOOT_OFFSET   = 1.025;
 const SLOPE_ANGLE   = 22 * Math.PI / 180;
-const KICKER_ANGLE  = 55 * Math.PI / 180;
 const LANDING_ANGLE = 40 * Math.PI / 180;
 const LANDING_DROP  = 3.5; // extra vertical drop of landing zone
 const KICKER_Z      = 22;
-const KICKER_END_Z  = 24.5;
+const KICKER_END_Z  = 23.7;  // horizontal kicker depth 1.7 m → realistic lip heights (12–15 ft)
 const _worldParam   = new URLSearchParams(location.search).get('world') || 'double';
+// Lip angle at the top of the kicker — steeper on bigger hills (affects physics + visuals).
+// Single 65°, Double 68°, Triple 70°, Quad 72°, Quint 74°. Custom defaults to 65°.
+const KICKER_ANGLE  = ({ single:65, double:68, triple:70, quad:72, quint:74 }[_worldParam] || 65) * Math.PI / 180;
 const _compParam    = new URLSearchParams(location.search).get('comp');  // null | 'easy' | 'medium' | 'hard' | 'ultra'
 const _olympicsMode = new URLSearchParams(location.search).get('olympics'); // null | 'qual' | 'finals'
 const _realisticMode = new URLSearchParams(location.search).get('mode') === 'realistic';
@@ -617,36 +661,62 @@ const _trampolineMode       = _worldParam === 'trampoline';
 const TRAMPOLINE_Y          = 0.0;   // world Y of the trampoline surface
 const TRAMPOLINE_LAUNCH_VY  = 14.0;  // vertical velocity given on each bounce
 const OUTRUN_Z      = _worldParam === 'custom' ? KICKER_END_Z + _customLanding : KICKER_END_Z + (_worldParam === 'quint' ? 75 : 50); // landing slope ends here
-const FLAT_Z        = KICKER_Z - 9.0; // flat table starts before kicker
+const FLAT_Z        = KICKER_Z - 10.0; // flat table starts here (10 m before kicker lip)
+const KICKER_START_Z = FLAT_Z + 4.0;   // kicker curve begins here — 4 m flat table, then long gradual arc
 const SLOPE_START_Z = _worldParam === 'custom' ? -_customInrun : _worldParam === 'quint' ? -43.0 : _worldParam === 'quad' ? -33.8 : _worldParam === 'triple' ? -19.8 : _worldParam === 'single' ? -4.3 : -11.3;
 
+// ── Kicker bezier control points (computed once at load) ─────────────────────
+// P0 and P1 share the same y (tableY) → zero entry tangent → curve NEVER dips below table.
+// P2 is pulled back along the lip direction with a short handle → arrives at KICKER_ANGLE.
+// The bezier convex-hull property guarantees monotone, dip-free height the entire way.
+const _KBP_tY = -FLAT_Z * Math.tan(SLOPE_ANGLE);                            // table height
+const _KBP_lY = _KBP_tY + (KICKER_END_Z - KICKER_Z) * Math.tan(KICKER_ANGLE); // lip height
+const _KBP_h  = KICKER_END_Z - KICKER_START_Z;                              // total span
+const _kBP    = [
+    [KICKER_START_Z,                                                                  _KBP_tY],  // P0
+    [KICKER_START_Z + _KBP_h * 0.85,                                                 _KBP_tY],  // P1 — flat tangent, long handle → brief gradual rise, then steepens quickly
+    [KICKER_END_Z - _KBP_h * 0.18 * Math.cos(KICKER_ANGLE),  _KBP_lY - _KBP_h * 0.18 * Math.sin(KICKER_ANGLE)], // P2
+    [KICKER_END_Z,                                                                    _KBP_lY],  // P3
+];
+// Binary-search for bezier parameter t where bz(t)≈z, return by(t).
+function _kickerBezY(z) {
+    let lo = 0, hi = 1;
+    for (let _i = 0; _i < 14; _i++) {
+        const _m = (lo + hi) * 0.5, _u = 1 - _m;
+        (_u*_u*_u*_kBP[0][0] + 3*_u*_u*_m*_kBP[1][0] + 3*_u*_m*_m*_kBP[2][0] + _m*_m*_m*_kBP[3][0] < z)
+            ? (lo = _m) : (hi = _m);
+    }
+    const _t = (lo + hi) * 0.5, _u = 1 - _t;
+    return _u*_u*_u*_kBP[0][1] + 3*_u*_u*_t*_kBP[1][1] + 3*_u*_t*_t*_kBP[2][1] + _t*_t*_t*_kBP[3][1];
+}
 
 function terrainRootY(z) {
     if (_trampolineMode) return TRAMPOLINE_Y;
     if (z < SLOPE_START_Z) return -SLOPE_START_Z * Math.tan(SLOPE_ANGLE); // flat top
-    if (z < FLAT_Z) return -z * Math.tan(SLOPE_ANGLE);
-    const tableY = -FLAT_Z * Math.tan(SLOPE_ANGLE); // height of flat table
-    if (z < KICKER_Z) return tableY; // flat table
-    if (z <= KICKER_END_Z) {
-        return tableY + (z - KICKER_Z) * Math.tan(KICKER_ANGLE); // kicker rises from table
-    }
-    const kickerTopY = tableY + (KICKER_END_Z - KICKER_Z) * Math.tan(KICKER_ANGLE);
-    const landingBaseY = kickerTopY - LANDING_DROP;
+    const tableY = -FLAT_Z * Math.tan(SLOPE_ANGLE); // y-height of the flat table
+    if (z < FLAT_Z) return -z * Math.tan(SLOPE_ANGLE); // straight inrun slope
+    // ── Flat table (FLAT_Z → KICKER_START_Z) ────────────────────────────────────
+    if (z <= KICKER_START_Z) return tableY;
+    // ── Kicker: pure convex bezier KICKER_START_Z (flat) → KICKER_END_Z (lip angle) ──
+    // P0/P1 both at tableY → zero entry tangent → mathematically cannot dip below table.
+    if (z <= KICKER_END_Z) return _kickerBezY(z);
+    const _lipY = tableY + (KICKER_END_Z - KICKER_Z) * Math.tan(KICKER_ANGLE);
+    const landingBaseY = _lipY - LANDING_DROP;
     if (z <= OUTRUN_Z) return landingBaseY - (z - KICKER_END_Z) * Math.tan(LANDING_ANGLE);
-    const outrunY = landingBaseY - (OUTRUN_Z - KICKER_END_Z) * Math.tan(LANDING_ANGLE);
-    return outrunY; // flat outrun
+    return landingBaseY - (OUTRUN_Z - KICKER_END_Z) * Math.tan(LANDING_ANGLE); // flat outrun
 }
 
 function terrainAccelZ(z) {
     if (_trampolineMode) return 0;
     const g = 14.0;
-    if (z >= SLOPE_START_Z && z < FLAT_Z)   return g * Math.sin(SLOPE_ANGLE);
-    if (z < SLOPE_START_Z)                   return 0; // flat top
-    if (z >= FLAT_Z && z < KICKER_Z)      return 0; // flat table
-    if (z >= KICKER_Z && z <= KICKER_END_Z) return -g * Math.sin(KICKER_ANGLE);
-    if (z > KICKER_END_Z && z <= OUTRUN_Z) return g * Math.sin(LANDING_ANGLE);
-    if (z > OUTRUN_Z) return -14.0; // flat outrun friction
-    return 0;
+    if (z < SLOPE_START_Z) return 0;    // flat top
+    if (z > OUTRUN_Z)      return -14.0; // flat outrun friction
+    // Derive along-slope acceleration from terrain gradient.
+    // accZ = -g * sin(θ) = -g * (dy/dz) / sqrt(1 + (dy/dz)²)
+    // Works continuously across slope, transition, kicker, and landing.
+    const eps  = 0.01;
+    const dydz = (terrainRootY(z + eps) - terrainRootY(z - eps)) / (2 * eps);
+    return -g * dydz / Math.sqrt(1 + dydz * dydz);
 }
 
 // ── Entry point ────────────────────────────────────────────────────────────
@@ -730,6 +800,95 @@ window.addEventListener('DOMContentLoaded', () => {
                 if (m) m.isVisible = false;
             });
         });
+
+        // ── Gym environment ───────────────────────────────────────────────
+        const _gymFloorMat = new BABYLON.StandardMaterial('gymFloor', scene);
+        _gymFloorMat.diffuseColor  = new BABYLON.Color3(0.62, 0.45, 0.28); // warm wood
+        _gymFloorMat.specularColor = new BABYLON.Color3(0.3, 0.25, 0.15);
+        _gymFloorMat.specularPower = 40;
+
+        const _gymWallMat = new BABYLON.StandardMaterial('gymWall', scene);
+        _gymWallMat.diffuseColor  = new BABYLON.Color3(0.82, 0.80, 0.76); // off-white plaster
+        _gymWallMat.specularColor = new BABYLON.Color3(0.05, 0.05, 0.05);
+
+        const _gymCeilMat = new BABYLON.StandardMaterial('gymCeil', scene);
+        _gymCeilMat.diffuseColor  = new BABYLON.Color3(0.88, 0.88, 0.86);
+        _gymCeilMat.specularColor = new BABYLON.Color3(0.0, 0.0, 0.0);
+
+        const _gymPadMat = new BABYLON.StandardMaterial('gymPad', scene);
+        _gymPadMat.diffuseColor  = new BABYLON.Color3(0.15, 0.38, 0.72); // blue crash pad
+        _gymPadMat.specularColor = new BABYLON.Color3(0.02, 0.02, 0.02);
+
+        const GYM_W = 26, GYM_H = 18, GYM_D = 36;
+        const GYM_FLOOR_Y = TRAMPOLINE_Y - FOOT_OFFSET - 1.3; // flush with bottom of trampoline legs
+
+        // Floor
+        const _gFloor = BABYLON.MeshBuilder.CreateBox('gymFloor', { width: GYM_W, height: 0.12, depth: GYM_D }, scene);
+        _gFloor.position.set(0, GYM_FLOOR_Y, 0);
+        _gFloor.material = _gymFloorMat;
+
+        // Back wall (behind character — +Z)
+        const _gWallBack = BABYLON.MeshBuilder.CreateBox('gymWallBack', { width: GYM_W, height: GYM_H, depth: 0.2 }, scene);
+        _gWallBack.position.set(0, GYM_FLOOR_Y + GYM_H / 2, GYM_D / 2);
+        _gWallBack.material = _gymWallMat;
+
+        // Front wall (camera side — -Z)
+        const _gWallFront = BABYLON.MeshBuilder.CreateBox('gymWallFront', { width: GYM_W, height: GYM_H, depth: 0.2 }, scene);
+        _gWallFront.position.set(0, GYM_FLOOR_Y + GYM_H / 2, -GYM_D / 2);
+        _gWallFront.material = _gymWallMat;
+
+        // Left wall
+        const _gWallL = BABYLON.MeshBuilder.CreateBox('gymWallL', { width: 0.2, height: GYM_H, depth: GYM_D }, scene);
+        _gWallL.position.set(-GYM_W / 2, GYM_FLOOR_Y + GYM_H / 2, 0);
+        _gWallL.material = _gymWallMat;
+
+        // Right wall
+        const _gWallR = BABYLON.MeshBuilder.CreateBox('gymWallR', { width: 0.2, height: GYM_H, depth: GYM_D }, scene);
+        _gWallR.position.set(GYM_W / 2, GYM_FLOOR_Y + GYM_H / 2, 0);
+        _gWallR.material = _gymWallMat;
+
+        // Ceiling
+        const _gCeil = BABYLON.MeshBuilder.CreateBox('gymCeil', { width: GYM_W, height: 0.2, depth: GYM_D }, scene);
+        _gCeil.position.set(0, GYM_FLOOR_Y + GYM_H, 0);
+        _gCeil.material = _gymCeilMat;
+
+        // Blue crash pads along back and side walls
+        const _padH = 1.5, _padD = 0.18;
+        [[0, GYM_D / 2 - _padD / 2, 0],   // back wall pad
+         [-GYM_W / 2 + _padD / 2, 0, Math.PI / 2], // left wall pad
+         [ GYM_W / 2 - _padD / 2, 0, Math.PI / 2], // right wall pad
+        ].forEach(([px, pz, ry], i) => {
+            const pad = BABYLON.MeshBuilder.CreateBox('gymPad_' + i,
+                { width: GYM_W * (ry === 0 ? 1 : 0) + GYM_D * (ry !== 0 ? 1 : 0) - 0.4,
+                  height: _padH, depth: _padD }, scene);
+            pad.rotation.y = ry;
+            pad.position.set(px, GYM_FLOOR_Y + _padH / 2 + 0.06, pz);
+            pad.material = _gymPadMat;
+        });
+
+        // Overhead fluorescent light strips (emissive boxes)
+        const _lightMat = new BABYLON.StandardMaterial('gymLight', scene);
+        _lightMat.diffuseColor  = new BABYLON.Color3(1, 1, 0.95);
+        _lightMat.emissiveColor = new BABYLON.Color3(1, 1, 0.90);
+        [-6, 0, 6].forEach((lz, i) => {
+            const strip = BABYLON.MeshBuilder.CreateBox('gymStrip_' + i,
+                { width: 0.18, height: 0.08, depth: 2.4 }, scene);
+            strip.position.set(0, GYM_FLOOR_Y + GYM_H - 0.14, lz);
+            strip.material = _lightMat;
+            // Point light under each strip
+            const pl = new BABYLON.PointLight('gymPL_' + i, new BABYLON.Vector3(0, GYM_FLOOR_Y + GYM_H - 0.5, lz), scene);
+            pl.intensity = 0.6;
+            pl.diffuse   = new BABYLON.Color3(1, 1, 0.92);
+            pl.range     = 14;
+        });
+
+        // Update scene background to a slightly warmer grey to match gym interior
+        scene.clearColor = new BABYLON.Color4(0.88, 0.87, 0.84, 1);
+
+        // Hide all UI buttons except Menu and Replay in trampoline mode
+        ['trophyBtn','customBtn','settingsBtn','worldMenu','compBtn','qualifyBtn',
+         'fisBtn','olympicsBtn','helpBtn','compHUD','qualifyHUD','powerMeter']
+            .forEach(id => { const el = document.getElementById(id); if (el) el.style.display = 'none'; });
     }
 
     // Expose live game state for tutorial and other overlays
@@ -786,57 +945,58 @@ window.addEventListener('DOMContentLoaded', () => {
     const snowMat = new BABYLON.StandardMaterial('snowMat', scene);
     snowMat.diffuseColor = new BABYLON.Color3(0.92, 0.97, 1.0);
 
-    // Main slope (SLOPE_START_Z to FLAT_Z)
+    const kickerWidth = { single:2.3, double:3.4, triple:4.0, quad:4.6, quint:5.2, custom:3.0 }[_worldParam] || 3.4;
+
+    // Straight inrun slope (SLOPE_START_Z → FLAT_Z)
     const slopeBox = BABYLON.MeshBuilder.CreateBox('slope',
         { width: 10, height: 1.2, depth: (FLAT_Z - SLOPE_START_Z) / Math.cos(SLOPE_ANGLE) }, scene);
     slopeBox.rotation.x = SLOPE_ANGLE;
     slopeBox.position.set(0, terrainRootY((SLOPE_START_Z + FLAT_Z) / 2) - FOOT_OFFSET - 0.6, (SLOPE_START_Z + FLAT_Z) / 2);
     slopeBox.material = snowMat;
 
-    // Transition wedge — smooths corner between slope and flat table (visual only)
-    const TRANS_LEN   = 2.0; // world-units long
-    const TRANS_ANGLE = SLOPE_ANGLE / 2;
-    const transOffset = -1.25; // shift away from kicker
-    const transMidZ   = FLAT_Z + transOffset + TRANS_LEN / 2;
-    const transBox = BABYLON.MeshBuilder.CreateBox('transition',
-        { width: 10, height: 1.2, depth: TRANS_LEN / Math.cos(TRANS_ANGLE) }, scene);
-    transBox.rotation.x = TRANS_ANGLE;
-    transBox.position.set(0, terrainRootY(FLAT_Z) - FOOT_OFFSET - 0.6 / Math.cos(TRANS_ANGLE) + 0.15, transMidZ);
-    transBox.material = snowMat;
-
-    // Flat table before kicker (~20 ft)
-    const flatTableMidZ = (FLAT_Z + KICKER_Z) / 2;
+    // Flat table (FLAT_Z → KICKER_START_Z)
     const flatTableBox = BABYLON.MeshBuilder.CreateBox('flatTable',
-        { width: 10, height: 1.2, depth: KICKER_Z - FLAT_Z }, scene);
-    flatTableBox.position.set(0, terrainRootY(flatTableMidZ) - FOOT_OFFSET - 0.6, flatTableMidZ);
+        { width: 10, height: 1.2, depth: KICKER_START_Z - FLAT_Z }, scene);
+    flatTableBox.position.set(0, terrainRootY(FLAT_Z) - FOOT_OFFSET - 0.6, (FLAT_Z + KICKER_START_Z) / 2);
     flatTableBox.material = snowMat;
 
-    // Kicker
-    const kickerBox = BABYLON.MeshBuilder.CreateBox('kicker',
-        { width: 3, height: 1.2, depth: (KICKER_END_Z - KICKER_Z) / Math.cos(KICKER_ANGLE) }, scene);
-    kickerBox.rotation.x = -KICKER_ANGLE;
-    kickerBox.position.set(0,
-        terrainRootY((KICKER_Z + KICKER_END_Z) / 2) - FOOT_OFFSET - 0.6,
-        (KICKER_Z + KICKER_END_Z) / 2);
-    kickerBox.material = snowMat;
-
-    // Kicker transition wedge — smooths corner between flat table and kicker (visual only)
-    const KTRANS_LEN   = 2.0;
-    const KTRANS_ANGLE = KICKER_ANGLE / 2;
-    const ktransOffset = -0.8; // adjust to align visually
-    const ktransMidZ   = KICKER_Z + ktransOffset + KTRANS_LEN / 2;
-    const ktransBox = BABYLON.MeshBuilder.CreateBox('kickerTransition',
-        { width: 3, height: 1.2, depth: KTRANS_LEN / Math.cos(KTRANS_ANGLE) }, scene);
-    ktransBox.rotation.x = -KTRANS_ANGLE;
-    ktransBox.position.set(0, terrainRootY(KICKER_Z) - FOOT_OFFSET - 0.6 / Math.cos(KTRANS_ANGLE) + 0.4, ktransMidZ);
-    ktransBox.material = snowMat;
+    // Kicker bezier — uses exact same _kBP control points as physics → mesh matches surface.
+    // P0/P1 at table height → flat entry, steepens continuously, no dip below table.
+    {
+        const kBez = function(t) {
+            const u = 1 - t;
+            return {
+                z: u*u*u*_kBP[0][0] + 3*u*u*t*_kBP[1][0] + 3*u*t*t*_kBP[2][0] + t*t*t*_kBP[3][0],
+                y: u*u*u*_kBP[0][1] + 3*u*u*t*_kBP[1][1] + 3*u*t*t*_kBP[2][1] + t*t*t*_kBP[3][1] - FOOT_OFFSET,
+            };
+        };
+        const N_KSEGS = 20;
+        for (let ki = 0; ki < N_KSEGS; ki++) {
+            const p0 = kBez( ki      / N_KSEGS);
+            const p1 = kBez((ki + 1) / N_KSEGS);
+            const pm = kBez((ki + 0.5) / N_KSEGS);
+            const dz = p1.z - p0.z, dy = p1.y - p0.y;
+            const segLen = Math.sqrt(dz * dz + dy * dy);
+            const angle  = Math.atan2(dy, dz);
+            const seg = BABYLON.MeshBuilder.CreateBox('kicker_seg_' + ki, {
+                width:  kickerWidth,
+                height: 1.5,
+                depth:  segLen + 0.04,
+            }, scene);
+            seg.rotation.x = -angle;
+            seg.position.set(0,
+                pm.y - 0.75 * Math.cos(angle),
+                pm.z + 0.75 * Math.sin(angle));
+            seg.material = snowMat;
+        }
+    }
 
     // Kicker top-edge arc (red tube spanning the full width)
     const cornerMat = new BABYLON.StandardMaterial('cornerMat', scene);
     cornerMat.diffuseColor  = new BABYLON.Color3(1, 0, 0);
     cornerMat.emissiveColor = new BABYLON.Color3(0.8, 0, 0);
     const kickerTopY = terrainRootY(KICKER_END_Z);
-    const arcHalfW   = 1.5;   // half the kicker width (3 units total)
+    const arcHalfW   = kickerWidth / 2;
     const baseY      = kickerTopY + 0.11 - 2;
     // Drops follow the kicker face angle rather than straight down
     const dropDY = -Math.sin(KICKER_ANGLE);  // y component of 1-unit drop along kicker face
@@ -932,6 +1092,8 @@ window.addEventListener('DOMContentLoaded', () => {
     let tramSpringVY   = 0;
     let tramBouncing   = false;   // true while player rides the spring down+up
     let tramSavedReboundVY = 0;   // launch speed saved at contact
+    let tramContactNX  = 0;       // normalized (-1..1) contact X on trampoline surface
+    let tramContactNZ  = 0;       // normalized (-1..1) contact Z on trampoline surface
     const TRAM_BED_REST_Y   = TRAMPOLINE_Y - FOOT_OFFSET - 0.04;
     const TRAM_FRAME_REST_Y = TRAMPOLINE_Y - FOOT_OFFSET - 0.06;
     const TRAM_GRID_REST_Y  = TRAMPOLINE_Y - FOOT_OFFSET;
@@ -949,7 +1111,9 @@ window.addEventListener('DOMContentLoaded', () => {
         function deformY(c, r) {
             const nx = (c / TRAM_GRID_COLS) * 2 - 1;
             const nz = (r / TRAM_GRID_ROWS) * 2 - 1;
-            const f  = (1 - Math.abs(nx)) * (1 - Math.abs(nz));
+            const dx = nx - tramContactNX;
+            const dz = nz - tramContactNZ;
+            const f  = Math.exp(-(dx*dx + dz*dz) * 2.5) * (1 - nx*nx) * (1 - nz*nz);
             return sy * f + off;
         }
         for (let r = 0; r <= TRAM_GRID_ROWS; r++) {
@@ -1069,11 +1233,11 @@ window.addEventListener('DOMContentLoaded', () => {
     // SPIN:  Separate rotation axis (Y). Can be initiated mid-air via arm drops.
     //        Stub only in Phase 1 — tracked in state, shown in HUD, not animated.
     //
-    const TARGET_OMEGA_UNTUCKED = 4.5 * 0.9925 * (_worldParam === 'custom' ? _customFlipSpeed : _worldParam === 'trampoline' ? 1.407 : _worldParam === 'quint' ? 1.55 : _worldParam === 'quad' ? 1.404 : _worldParam === 'triple' ? 1.3 : _worldParam === 'single' ? 0.59 : 1.0); // rad/s at full extension
+    const TARGET_OMEGA_UNTUCKED = 4.5 * 0.9925 * (_worldParam === 'custom' ? _customFlipSpeed : _worldParam === 'trampoline' ? 1.407 : _worldParam === 'quint' ? 1.78 : _worldParam === 'quad' ? 1.48 : _worldParam === 'triple' ? 1.38 : _worldParam === 'single' ? 0.59 : 1.0); // rad/s at full extension
     const MAX_OMEGA = 9.75;            // rad/s cap — limits tucked flip speed
     const I0 = computeI(0);            // I at tuck = 0 (fully extended)
 
-    const SPIN_SPEED    = Math.PI * 2.0 * (_worldParam === 'custom' ? _customFlipSpeed : _worldParam === 'trampoline' ? 1.3 : _worldParam === 'quint' ? 1.45 : _worldParam === 'quad' ? 1.3 : _worldParam === 'triple' ? 1.3 : _worldParam === 'single' ? 0.68 : 1.0) * (_lsGet('setting_superspin') === '1' ? 2.0 : 1.0); // rad/s ~= 1.0 full twist/second
+    const SPIN_SPEED    = Math.PI * 2.0 * (_worldParam === 'custom' ? _customFlipSpeed : _worldParam === 'trampoline' ? 1.3 : _worldParam === 'quint' ? 1.45 : _worldParam === 'quad' ? 1.62 : _worldParam === 'triple' ? 1.5 : _worldParam === 'single' ? 0.68 : 1.0) * (_lsGet('setting_superspin') === '1' ? 2.0 : 1.0); // rad/s ~= 1.0 full twist/second
     const ARM_DROP_RATE = 4.0;            // arm transitions in ~0.25 s
     const GRAVITY       = 14.0;           // world-units / s²
 
@@ -1084,6 +1248,8 @@ window.addEventListener('DOMContentLoaded', () => {
         tuckTarget: 0.0,
         pikeAmount: 0.0,
         pikeTarget: 0.0,
+        pikeArmDrop: 0.0,    // 0-1: drives arms from pike-forward down to sides on release
+        pikeReleaseOmega: 0, // omega captured at the moment pike key was released
         flipDir:    1,    // +1 = backflip, -1 = frontflip
         spinAngle:  0.0,  // current spin angle (rad)
         spinTarget: 0.0,  // target spin; each tap adds ±2π
@@ -1102,6 +1268,7 @@ window.addEventListener('DOMContentLoaded', () => {
         // Per-flip twist tracking
         perFlipTwists:   [],   // twists done in each completed flip
         lastFlipInt:     0,    // floor(|flipAngle|/2π) at last frame
+        frontFlipCount:  0,    // completed front flip rotations in current sequence
         spinAtFlipStart: 0.0,  // spinAngle when current flip began
         spinBoundaries:  [],   // spinAngle values recorded at each flip boundary
         perFlipTucked:   [],   // true for each completed flip where tuck was used
@@ -1124,6 +1291,7 @@ window.addEventListener('DOMContentLoaded', () => {
 
     // ── Replay recording ───────────────────────────────────────────────────
     let replayFrames    = [];   // recorded frames from last run
+    let lastRunFrames   = [];   // saved frames from the run before the last restart
     let recordingActive = false; // true while actively recording
     let replayActive    = false; // true while playing back replay
     let replayIndex     = 0;    // current frame in playback
@@ -1142,9 +1310,10 @@ window.addEventListener('DOMContentLoaded', () => {
             rootY:      state.rootY,
             flipAngle:  state.flipAngle,
             spinAngle:  state.spinAngle,
-            tuckAmount: state.tuckAmount,
-            pikeAmount: state.pikeAmount,
-            armDropL:   state.armDropL,
+            tuckAmount:  state.tuckAmount,
+            pikeAmount:  state.pikeAmount,
+            pikeArmDrop: state.pikeArmDrop,
+            armDropL:    state.armDropL,
             armDropR:   state.armDropR,
             armSnap:    state.armSnap,
             layArmT:    state.layArmT,
@@ -1165,11 +1334,13 @@ window.addEventListener('DOMContentLoaded', () => {
             });
         }
         replayBtn.addEventListener('click', () => {
-            if (!replayFrames.length) return;
+            const frames = lastRunFrames.length ? lastRunFrames : replayFrames;
+            if (!frames.length) return;
             replayActive = true;
             replayIndex  = 0;
             replayAccum  = 0;
             paused       = false;
+            replayFrames = frames.slice(); // copy so a mid-replay reset doesn't clobber playback
             if (replaySpeedWrap) replaySpeedWrap.classList.add('visible');
         });
     }
@@ -1177,13 +1348,13 @@ window.addEventListener('DOMContentLoaded', () => {
     let leftArmHoldTime = 0;    // seconds right arrow held alone on inrun (left arm up)
     let rightArmHoldTime= 0;    // seconds left arrow held alone on inrun (right arm up)
     const ARM_HOLD_REQ  = 0.5;  // seconds arm must be up before jump
-    let rightAloneAirHold = 0;  // (unused — kept for reset)
     let downHalfTwistFired = false; // true after down fires a half-twist mid-air
     const RIGHT_HALF_TWIST_HOLD = 0.05; // hold right alone this long mid-air → half twist left
     let paused          = false;
     let cameraFollow    = true;  // C toggles: true = behind character, false = fixed side view
     let powerWrapDown   = false; // down arrow held → 1.3× spin rate
     let arrowUpDown     = false; // up arrow held mid-air → gradually slow flip
+    let frontFlipQueued = false; // up pressed in air → do front flip on next bounce
     let readyState      = true;  // true = waiting at top, character facing sideways
     let readyTurnT      = 0.0;   // 0→1: progress of turn-to-face-downhill animation
     const READY_TURN_DUR = 0.7;  // seconds to complete the turn
@@ -1259,6 +1430,14 @@ window.addEventListener('DOMContentLoaded', () => {
                 location.href = '?world=' + ULTRA_WORLDS[0] + '&comp=ultra&ultrajump=0';
                 return;
             }
+            // Save current recording as last-run replay before resetting
+            if (replayFrames.length > 0 || lastRunFrames.length > 0) {
+                lastRunFrames = replayFrames.length > 0 ? replayFrames.slice() : lastRunFrames;
+                if (replayBtn) replayBtn.disabled = false;
+            }
+            recordingActive = false;
+            replayFrames = [];
+            replayActive = false;
             // Reset to top of slope
             state.L_flip      = I0 * TARGET_OMEGA_UNTUCKED;
             state.flipAngle   = 0.0;
@@ -1266,6 +1445,7 @@ window.addEventListener('DOMContentLoaded', () => {
             state.tuckTarget  = 0.0;
             state.pikeAmount  = 0.0;
             state.pikeTarget  = 0.0;
+            state.pikeReleaseOmega = 0;
             state.flipDir     = 1;
             state.spinAngle   = 0.0;
             state.spinTarget  = 0.0;
@@ -1294,9 +1474,10 @@ window.addEventListener('DOMContentLoaded', () => {
             leftDown = false; rightDown = false;
             autoSpinActive = false; armSwapPhase = false;
             leftArmHoldTime = 0; rightArmHoldTime = 0;
-            rightAloneAirHold = 0; downHalfTwistFired = false;
+            rightArmHoldTime = 0; leftArmHoldTime = 0;
+            downHalfTwistFired = false;
             bothArmsSpinTarget = Infinity;
-            doubleMode = false; powerWrapDown = false; arrowUpDown = false;
+            doubleMode = false; powerWrapDown = false; arrowUpDown = false; frontFlipQueued = false;
             flipPower = 0; pmFill.style.width = '0%';
             billboard.isVisible = false;
             compLandingResult = null;
@@ -1321,7 +1502,7 @@ window.addEventListener('DOMContentLoaded', () => {
             e.preventDefault();
             if (!state.crashed) state.tuckTarget = 1.0;
         }
-        if (_kcode === 'KeyX') {
+        if (_kcode === 'KeyA') {
             if (!state.crashed && !state.grounded) state.pikeTarget = 1.0;
         }
         if (_kcode === 'ArrowUp' || _kcode === 'ArrowDown') {
@@ -1336,6 +1517,7 @@ window.addEventListener('DOMContentLoaded', () => {
                 readyState      = false;
                 state.grounded  = false;
                 state.vy        = TRAMPOLINE_LAUNCH_VY;
+                state.flipDir   = 1;   // default backflip on launch
                 state.L_flip    = I0 * TARGET_OMEGA_UNTUCKED;
                 state.perFlipTwists   = [];
                 state.lastFlipInt     = 0;
@@ -1359,6 +1541,12 @@ window.addEventListener('DOMContentLoaded', () => {
             // Raise arms straight up
             state.armRaiseTarget = 1;
             arrowUpDown = true;
+            // Trampoline spring phase (not in air): queue front flip for this bounce
+            if (_trampolineMode && tramBouncing) {
+                state.flipDir = -1;
+            } else if (_trampolineMode && !tramBouncing) {
+                frontFlipQueued = true; // queued for next landing contact
+            }
         }
         if (_kcode === 'ArrowLeft' && !leftDown && !state.crashed) {
             e.preventDefault();
@@ -1366,7 +1554,6 @@ window.addEventListener('DOMContentLoaded', () => {
             if (rightDown && !doubleMode) {
                 // → already held: undo any half-twist that already fired, then do one full left-spin twist
                 if (downHalfTwistFired) state.spinTarget -= (_lsGet('setting_rightspin') === '1' ? Math.PI : -Math.PI); // undo half-twist
-                rightAloneAirHold = -999;
                 state.spinTarget -= Math.PI * 2;
                 bothArmsSpinTarget = state.spinTarget; // both arms down for this twist
                 state.doubleDir = -1;
@@ -1397,9 +1584,9 @@ window.addEventListener('DOMContentLoaded', () => {
                      : (_mirrorKeys && e.code === 'ArrowRight') ? 'ArrowLeft'
                      : e.code;
         if (_kcode === 'Space') state.tuckTarget = 0.0;
-        if (e.code  === 'KeyX') state.pikeTarget = 0.0;
+        if (e.code  === 'KeyA') state.pikeTarget = 0.0;
         if (_kcode === 'ArrowDown') { powerWrapDown = false; downHalfTwistFired = false; }
-        if (_kcode === 'ArrowUp') arrowUpDown = false;
+        if (_kcode === 'ArrowUp') { arrowUpDown = false; frontFlipQueued = false; }
         if (_kcode === 'ArrowLeft' && leftDown) {
             leftDown = false;
             if (doubleMode) exitDoubleMode();
@@ -1705,6 +1892,8 @@ window.addEventListener('DOMContentLoaded', () => {
     };
     const { hud, hint } = buildHUD(scene);
     const TUCK_RATE = 3.0;
+    const PIKE_RATE = 2.0;
+    const PIKE_RELEASE_RATE = 5.0;
 
     // ── Flip-power meter ──────────────────────────────────────────────────────
     // Show while on approach; hold ↓ to fill, release to stop filling.
@@ -1765,7 +1954,7 @@ window.addEventListener('DOMContentLoaded', () => {
             const f = replayFrames[Math.min(replayIndex, replayFrames.length - 1)];
             character.root.position.y = f.rootY;
             character.root.position.z = f.posZ;
-            applyPose(character.meshes, f.tuckAmount, f.armDropL, f.armDropR, f.armSnap, f.layArmT, f.armRaise, f.grounded, f.pikeAmount || 0);
+            applyPose(character.meshes, f.tuckAmount, f.armDropL, f.armDropR, f.armSnap, f.layArmT, f.armRaise, f.grounded, f.pikeAmount || 0, f.pikeArmDrop || 0);
             const qFaceR = BABYLON.Quaternion.RotationAxis(BABYLON.Axis.Y, Math.PI);
             if (f.grounded) {
                 character.root.rotationQuaternion = qFaceR;
@@ -1785,7 +1974,20 @@ window.addEventListener('DOMContentLoaded', () => {
             const step  = TUCK_RATE * dt;
             state.tuckAmount += (Math.abs(tDiff) <= step) ? tDiff : Math.sign(tDiff) * step;
             const pDiff = state.pikeTarget - state.pikeAmount;
-            state.pikeAmount += (Math.abs(pDiff) <= step) ? pDiff : Math.sign(pDiff) * step;
+            const pStep = (pDiff < 0 ? PIKE_RELEASE_RATE : PIKE_RATE) * dt;
+            state.pikeAmount += (Math.abs(pDiff) <= pStep) ? pDiff : Math.sign(pDiff) * pStep;
+            // Drive arms down to sides when pike is releasing
+            if (state.pikeAmount > 0.001) {
+                if (state.pikeTarget === 0) {
+                    state.pikeArmDrop = Math.min(1, state.pikeArmDrop + PIKE_RELEASE_RATE * dt);
+                    state.armDropL    = 1.0;
+                    state.armDropR    = 1.0;
+                } else {
+                    state.pikeArmDrop = 0;
+                }
+            } else {
+                state.pikeArmDrop = 0;
+            }
             // Pike and tuck are mutually exclusive: whichever is currently active wins
             if (state.pikeAmount > 0.01) state.tuckAmount = 0;
             if (state.tuckAmount > 0.01) state.pikeAmount = 0;
@@ -1887,6 +2089,7 @@ window.addEventListener('DOMContentLoaded', () => {
                 state.vz       = state.vz * Math.cos(KICKER_ANGLE);
                 state.rootY    = terrainRootY(KICKER_END_Z) + 0.10;
                 state.grounded = false;
+                state.flipAngle = KICKER_ANGLE; // start from kicker lip tilt — no snap to upright on takeoff
                 // Reset per-flip twist tracking
                 state.perFlipTwists   = [];
                 state.lastFlipInt     = 0;
@@ -1915,13 +2118,12 @@ window.addEventListener('DOMContentLoaded', () => {
                         compHUDEl.textContent = compHudLabel(assignedTrick);
                     }
                 }
-                // Apply flip power: 3rd dash (75%) = world-normal flip speed
-                if (crossingJ1) {
-                    state.L_flip = I0 * TARGET_OMEGA_UNTUCKED * (Math.max(0.05, flipPower) / 0.75);
-                    // Reset meter for next jump
-                    flipPower = 0;
-                    pmFill.style.width = '0%';
-                }
+                // Apply flip power: 3rd dash (75%) = world-normal flip speed.
+                // Less charge = less flip; no charge = barely any rotation.
+                state.L_flip = I0 * TARGET_OMEGA_UNTUCKED * (Math.max(0.05, flipPower) / 0.75);
+                // Reset meter for next jump
+                flipPower = 0;
+                pmFill.style.width = '0%';
                     // Arm up at takeoff → 2 fast twists toward that side (only if held long enough)
                 if (rightDown && !leftDown && leftArmHoldTime >= ARM_HOLD_REQ) {
                     state.spinTarget = state.spinAngle + Math.PI * 4;
@@ -1965,7 +2167,53 @@ window.addEventListener('DOMContentLoaded', () => {
             const surY   = terrainRootY(state.posZ);
             if (!tramBouncing && state.rootY <= surY) {
                 if (_trampolineMode) {
+                    // ── Check landing zone ─────────────────────────────────
+                    const _tTWO_PI    = Math.PI * 2;
+                    const _tNorm      = ((state.flipAngle % _tTWO_PI) + _tTWO_PI) % _tTWO_PI;
+                    const _tFeetTol   = Math.PI / 3;              // 60° — clean feet-down
+                    const _tReboundTol = 100 * Math.PI / 180;     // 100° — snap-to-flat zone
+                    const _tFeetDown  = _tNorm < _tFeetTol || _tNorm > _tTWO_PI - _tFeetTol;
+                    const _tNearFeet  = _tNorm < _tReboundTol || _tNorm > _tTWO_PI - _tReboundTol;
+                    if (!_tNearFeet) {
+                        // CRASH — more than 100° from upright, too inverted to recover
+                        state.crashed    = true;
+                        state.vy         = 0;
+                        state.grounded   = true;
+                        state.rootY      = surY + 0.10;
+                        state.tuckAmount = 0;
+                        state.tuckTarget = 0;
+                        state.pikeAmount = 0;
+                        state.pikeTarget = 0;
+                        state.crashAngle = _tNorm < Math.PI ? Math.PI : Math.PI * 1.5;
+                    } else if (!_tFeetDown) {
+                        // Snap to stomach/back and rebound — 60°–100° from upright
+                        // Contact point based on actual angle before snapping
+                        const _crZ = Math.sin(_tNorm) * FOOT_OFFSET;
+                        tramContactNX = 0;
+                        tramContactNZ = Math.max(-1, Math.min(1, _crZ / (TRAM_GRID_D / 2)));
+                        tramSpringY  = 0;
+                        tramSpringVY = state.vy;  // negative (downward)
+                        tramBouncing = true;
+                        state.vy     = 0;
+                        state.rootY  = TRAMPOLINE_Y + 0.10;
+                        // Snap flip angle to nearest horizontal (back=π/2, stomach=3π/2)
+                        state.flipAngle = _tNorm < Math.PI ? Math.PI / 2 : Math.PI * 1.5;
+                        state.L_flip    = I0 * TARGET_OMEGA_UNTUCKED;
+                        state.frontFlipCount = 0;
+                        state.tuckAmount = 0;
+                        state.tuckTarget = 0;
+                        state.pikeAmount = 0;
+                        state.pikeTarget = 0;
+                        armSwapPhase   = false;
+                        autoSpinActive = false;
+                        powerWrapDown  = false;
+                        doubleMode     = false;
+                    } else {
                     // ── Trampoline contact: player's velocity drives spring ──
+                    // Contact point: feet (or touching body part) based on flip angle at landing
+                    const _cZ = Math.sin(state.flipAngle * state.flipDir) * FOOT_OFFSET;
+                    tramContactNX = 0;
+                    tramContactNZ = Math.max(-1, Math.min(1, _cZ / (TRAM_GRID_D / 2)));
                     tramSavedReboundVY = TRAMPOLINE_LAUNCH_VY;
                     // Hand off player's downward velocity to the spring — it
                     // decelerates naturally under spring force, reaches max
@@ -1976,7 +2224,9 @@ window.addEventListener('DOMContentLoaded', () => {
                     state.vy     = 0;
                     state.rootY  = TRAMPOLINE_Y + 0.10;
                     state.flipAngle = 0.0;
-                    state.flipDir  = 1;
+                    state.flipDir  = frontFlipQueued ? -1 : 1;
+                    frontFlipQueued = false;
+                    arrowUpDown = false;
                     state.L_flip   = I0 * TARGET_OMEGA_UNTUCKED;
                     // grounded stays false — spring drives position
                     state.tuckAmount = 0;
@@ -1992,6 +2242,7 @@ window.addEventListener('DOMContentLoaded', () => {
                     state.armDropR   = 1.0;
                     state.perFlipTwists   = [];
                     state.lastFlipInt     = 0;
+                    state.frontFlipCount  = 0;
                     state.spinAtFlipStart = 0;
                     state.spinBoundaries  = [];
                     state.perFlipTucked   = [];
@@ -2001,6 +2252,7 @@ window.addEventListener('DOMContentLoaded', () => {
                     autoSpinActive = false;
                     powerWrapDown  = false;
                     doubleMode     = false;
+                    } // end feet-down bounce
                 } else {
                 const TWO_PI  = Math.PI * 2;
                 const norm    = ((state.flipAngle % TWO_PI) + TWO_PI) % TWO_PI;
@@ -2161,15 +2413,14 @@ window.addEventListener('DOMContentLoaded', () => {
 
             // Frame rails stay fixed — only the grid deforms
 
-            // Deform grid surface vertices: edges pinned at y=0, center sinks with spring
+            // Deform grid surface vertices: contact-point Gaussian, edges pinned at y=0
             const nv = (TRAM_GRID_COLS + 1) * (TRAM_GRID_ROWS + 1);
             for (let i = 0; i < nv; i++) {
                 const nx = tramGridNXZ[i * 2];      // -1 to +1 along X
                 const nz = tramGridNXZ[i * 2 + 1];  // -1 to +1 along Z
-                // Edge factor: 0 at all borders, 1 at exact center
-                const ex = 1 - Math.abs(nx);
-                const ez = 1 - Math.abs(nz);
-                const f  = ex * ez;
+                const dx = nx - tramContactNX;
+                const dz = nz - tramContactNZ;
+                const f  = Math.exp(-(dx*dx + dz*dz) * 2.5) * (1 - nx*nx) * (1 - nz*nz);
                 tramGridPosArr[i * 3 + 1] = tramSpringY * f;
             }
             const gNrm = new Array(tramGridPosArr.length).fill(0);
@@ -2183,12 +2434,26 @@ window.addEventListener('DOMContentLoaded', () => {
         }
 
         // ── Angular momentum conservation: ω = L / I ──────────────────────
-        const I     = computeI(state.tuckAmount);
+        const I_base = computeI(state.tuckAmount);
+        const I_pike = computeI(state.pikeAmount); // pike uses same inertia curve as tuck
+        const I     = state.pikeAmount > 0 ? I_pike : I_base;
         const tuckBoost = _trampolineMode ? (1.0 + 0.3 * state.tuckAmount) : 1.0;
         const maxOmega = _trampolineMode ? 13.0 : MAX_OMEGA;
-        const omega = Math.min((state.L_flip / I) * tuckBoost, maxOmega);
+        let omega = Math.min((state.L_flip / I) * tuckBoost, maxOmega);
+        // During pike release: lerp omega linearly from the captured release omega to base speed
+        // so the deceleration rate is constant regardless of how far the pike was held.
+        if (state.pikeAmount > 0 && state.pikeTarget === 0) {
+            if (!state.pikeReleaseOmega) {
+                state.pikeReleaseOmega = omega; // capture at moment of release
+            }
+            const omegaBase = Math.min(state.L_flip / I0, maxOmega);
+            omega = omegaBase + (state.pikeReleaseOmega - omegaBase) * state.pikeAmount;
+        } else if (state.pikeTarget > 0 || state.pikeAmount === 0) {
+            state.pikeReleaseOmega = 0;
+        }
         if (!state.grounded && !tramBouncing) {
-            state.flipAngle += omega * state.flipDir * dt;
+            const flipDirBoost = (state.flipDir === -1) ? 1.11 : 1.0; // frontflip ~11% faster
+            state.flipAngle += omega * state.flipDir * flipDirBoost * dt;
         }
         // ── Crash: animate flip angle toward lying-flat position ───────────
         if (state.crashed) {
@@ -2234,6 +2499,10 @@ window.addEventListener('DOMContentLoaded', () => {
                 state.perFlipTucked.push(state.currentFlipTucked);
                 state.currentFlipTucked = false;
                 state.lastFlipInt = currentFlipInt;
+                if (_trampolineMode && state.flipDir === -1) {
+                    state.frontFlipCount++;
+                    // Don't switch flipDir mid-air — it resets to backflip on next bounce naturally
+                }
             }
         }
 
@@ -2285,7 +2554,7 @@ window.addEventListener('DOMContentLoaded', () => {
         state.layArmT    += Math.abs(dLayT) <= layTStep ? dLayT : Math.sign(dLayT) * layTStep;
 
         // ── Apply body pose ────────────────────────────────────────────────
-        applyPose(character.meshes, state.tuckAmount, state.armDropL, state.armDropR, state.armSnap, state.layArmT, state.armRaise, state.grounded, state.pikeAmount);
+        applyPose(character.meshes, state.tuckAmount, state.armDropL, state.armDropR, state.armSnap, state.layArmT, state.armRaise, state.grounded, state.pikeAmount, state.pikeArmDrop);
 
         // ── Character rotation ─────────────────────────────────────────────
         // qFace turns the character to face +Z (downhill direction).
@@ -2295,12 +2564,17 @@ window.addEventListener('DOMContentLoaded', () => {
         const qFace = BABYLON.Quaternion.RotationAxis(BABYLON.Axis.Y, Math.PI + readyYaw);
         if (state.grounded) {
             let tilt = 0;
-            if (state.posZ >= SLOPE_START_Z && state.posZ < FLAT_Z)           tilt = -SLOPE_ANGLE;
-            else if (state.posZ < SLOPE_START_Z)                               tilt = 0;
-            else if (state.posZ >= FLAT_Z && state.posZ < KICKER_Z)          tilt = 0;
-            else if (state.posZ >= KICKER_Z && state.posZ <= KICKER_END_Z)   tilt = KICKER_ANGLE;
-            else if (state.posZ > KICKER_END_Z && state.posZ <= OUTRUN_Z) tilt = -LANDING_ANGLE;
-            else if (state.posZ > OUTRUN_Z)                               tilt = 0; // flat outrun
+            if (state.posZ < SLOPE_START_Z) {
+                tilt = 0; // flat top
+            } else if (state.posZ > OUTRUN_Z) {
+                tilt = 0; // flat outrun
+            } else {
+                // Continuously derive surface angle from physics terrain — no step snaps.
+                // Matches slope, smooth transition, kicker, and landing automatically.
+                const _eps  = 0.05;
+                const _dydz = (terrainRootY(state.posZ + _eps) - terrainRootY(state.posZ - _eps)) / (2 * _eps);
+                tilt = Math.atan(_dydz);
+            }
             // During ready-state turn, blend tilt from 0 (upright) to full slope tilt
             if (readyState) tilt = tilt * readyTurnT;
             const qTilt  = BABYLON.Quaternion.RotationAxis(BABYLON.Axis.X, tilt);
@@ -2328,7 +2602,6 @@ window.addEventListener('DOMContentLoaded', () => {
         if (recordingActive) recordFrame();
 
         // ── HUD ───────────────────────────────────────────────────────────
-        const rotations = state.flipAngle / (2 * Math.PI);
         hud.text = '';
         hint.text = readyState && readyTurnT === 0.0
             ? '↑: Start run\ndrag: orbit'

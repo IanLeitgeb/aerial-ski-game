@@ -578,6 +578,7 @@
                 <tr><td>R</td><td>Reset to top of slope</td></tr>
                 <tr><td>Hold ←</td><td>Raise left arm (inrun setup)</td></tr>
                 <tr><td>Hold →</td><td>Raise right arm (inrun setup)</td></tr>
+                <tr><td>Hold ↓</td><td>Charge the flip-power meter — 3rd dash = perfect flip; less charge = less rotation</td></tr>
             </table>
             <h3>In Air</h3>
             <table>
@@ -806,7 +807,6 @@
                 function isQuintUnlocked() {
                     return allTrophiesEarned() || _lsGet('quint_unlocked') === '1';
                 }
-                function renderQuintButton() {}
                 function refreshTrophies() {
                     while (trophyGrid.firstChild) trophyGrid.removeChild(trophyGrid.firstChild);
                     var diffStyles = {
@@ -969,7 +969,7 @@
                     document.getElementById('trophyPanelTitle').textContent = '🏆 Trophies';
                     document.getElementById('achTabBtn').textContent = '🎖 Achievements';
                     refreshTrophies();
-                    renderQuintButton();
+                    refreshTrophies();
                     trophyPanel.classList.add('open');
                 });
                 document.getElementById('trophyCloseBtn').addEventListener('click', function() {
@@ -1007,7 +1007,6 @@
                             var qi = document.getElementById('quintWorldItem');
                             if (qi && !_realisticMode) qi.style.display = '';
                         }
-                        renderQuintButton();
                         refreshTrophies();
                     }
 
@@ -1046,7 +1045,6 @@
                         if (us) us.style.display = '';
                         var ob = document.getElementById('olympicsBtn');
                         if (ob) ob.style.display = 'inline-block';
-                        renderQuintButton();
                         refreshTrophies();
                     }
                 });
@@ -2633,8 +2631,8 @@
                     } else {
                         var worldNames = { single: 'Single', double: 'Double', triple: 'Triple', quad: 'Quad' };
                         var diffNames  = { easy: 'Easy', medium: 'Medium', hard: 'Hard', hardest: 'Hardest' };
-                        var wName = worldNames[worldParam] || worldParam;
-                        var dName = diffNames[diffParam]   || diffParam;
+                        var wName = worldNames[worldParam] || 'Unknown';
+                        var dName = diffNames[diffParam]   || 'Unknown';
                         msg = 'You completed <strong>' + wName + ' ' + dName + '</strong>!' + (alreadyHad ? '' : '<br>A trophy has been added to your collection.');
                     }
                     document.getElementById('congratsMsg').innerHTML = msg;
@@ -2658,7 +2656,7 @@
             document.body.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100vh;background:#000;font-family:sans-serif;color:#b8d8ff;text-align:center;padding:20px"><div><div style="font-size:48px;margin-bottom:20px">⛷</div><h2 style="color:#fff;margin-bottom:12px">Could not load game engine</h2><p style="color:#778899;max-width:400px;line-height:1.6">The game requires an internet connection to load its 3D engine (Babylon.js).<br><br>Please make sure you are connected to the internet and reload the page.<br><br>If you keep seeing this, try opening the file in <strong style="color:#b8d8ff">Chrome</strong> or <strong style="color:#b8d8ff">Firefox</strong>.</p></div></div>';
         }
     </script>
-    <script src="game.js"></script>
+    <script src="game.js?v=2"></script>
     <div id="mobileControls">
         <div class="mb-btn" id="mb-up">▲</div>
         <div class="mb-btn" id="mb-left">◀</div>
