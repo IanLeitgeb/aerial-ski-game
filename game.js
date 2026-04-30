@@ -661,9 +661,13 @@ const _trampolineMode       = _worldParam === 'trampoline';
 const TRAMPOLINE_Y          = 0.0;   // world Y of the trampoline surface
 const TRAMPOLINE_LAUNCH_VY  = 14.0;  // vertical velocity given on each bounce
 const OUTRUN_Z      = _worldParam === 'custom' ? KICKER_END_Z + _customLanding : KICKER_END_Z + (_worldParam === 'quint' ? 75 : 50); // landing slope ends here
-const FLAT_Z        = KICKER_Z - 10.0; // flat table starts here (10 m before kicker lip)
-const KICKER_START_Z = FLAT_Z + 4.0;   // kicker curve begins here — 4 m flat table, then long gradual arc
-const SLOPE_START_Z = _worldParam === 'custom' ? -_customInrun : _worldParam === 'quint' ? -43.0 : _worldParam === 'quad' ? -33.8 : _worldParam === 'triple' ? -19.8 : _worldParam === 'single' ? -4.3 : -11.3;
+const FLAT_Z        = KICKER_Z - 16.0; // flat table starts here (16 m before kicker lip → 10 m flat table)
+const KICKER_START_Z = FLAT_Z + 10.0;  // kicker curve begins here — 10 m flat table, then gradual arc
+const TRANS_LEN     = 3.0;             // transition extends this far before AND after FLAT_Z
+const TRANS_START_Z = FLAT_Z - TRANS_LEN; // inrun ends here
+const TRANS_END_Z   = FLAT_Z + TRANS_LEN; // flat table begins here
+const LANDING_TRANS_LEN = 4.0;         // bezier curve from flat table into landing slope
+const SLOPE_START_Z = _worldParam === 'custom' ? -_customInrun : _worldParam === 'quint' ? -51.0 : _worldParam === 'quad' ? -41.8 : _worldParam === 'triple' ? -27.8 : _worldParam === 'single' ? -12.3 : -19.3;
 
 // ── Kicker bezier control points (computed once at load) ─────────────────────
 // P0 and P1 share the same y (tableY) → zero entry tangent → curve NEVER dips below table.
@@ -672,6 +676,23 @@ const SLOPE_START_Z = _worldParam === 'custom' ? -_customInrun : _worldParam ===
 const _KBP_tY = -FLAT_Z * Math.tan(SLOPE_ANGLE);                            // table height
 const _KBP_lY = _KBP_tY + (KICKER_END_Z - KICKER_Z) * Math.tan(KICKER_ANGLE); // lip height
 const _KBP_h  = KICKER_END_Z - KICKER_START_Z;                              // total span
+// Transition bezier: leaves at slope angle, arrives flat at TRANS_END_Z
+const _tBP = [
+    [TRANS_START_Z,              -(TRANS_START_Z)              * Math.tan(SLOPE_ANGLE)],  // P0 on slope
+    [TRANS_START_Z + TRANS_LEN,  -(TRANS_START_Z + TRANS_LEN)  * Math.tan(SLOPE_ANGLE)],  // P1 on slope (handle = 1/2 total span)
+    [TRANS_END_Z   - TRANS_LEN,  -(FLAT_Z)                     * Math.tan(SLOPE_ANGLE)],  // P2 at tableY (handle = 1/2 total span)
+    [TRANS_END_Z,                -(FLAT_Z)                     * Math.tan(SLOPE_ANGLE)],  // P3 flat table
+];
+function _transBezY(z) {
+    let lo = 0, hi = 1;
+    for (let _i = 0; _i < 14; _i++) {
+        const _m = (lo + hi) * 0.5, _u = 1 - _m;
+        (_u*_u*_u*_tBP[0][0] + 3*_u*_u*_m*_tBP[1][0] + 3*_u*_m*_m*_tBP[2][0] + _m*_m*_m*_tBP[3][0] < z)
+            ? (lo = _m) : (hi = _m);
+    }
+    const _t = (lo + hi) * 0.5, _u = 1 - _t;
+    return _u*_u*_u*_tBP[0][1] + 3*_u*_u*_t*_tBP[1][1] + 3*_u*_t*_t*_tBP[2][1] + _t*_t*_t*_tBP[3][1];
+}
 const _kBP    = [
     [KICKER_START_Z,                                                                  _KBP_tY],  // P0
     [KICKER_START_Z + _KBP_h * 0.85,                                                 _KBP_tY],  // P1 — flat tangent, long handle → brief gradual rise, then steepens quickly
@@ -694,16 +715,20 @@ function terrainRootY(z) {
     if (_trampolineMode) return TRAMPOLINE_Y;
     if (z < SLOPE_START_Z) return -SLOPE_START_Z * Math.tan(SLOPE_ANGLE); // flat top
     const tableY = -FLAT_Z * Math.tan(SLOPE_ANGLE); // y-height of the flat table
-    if (z < FLAT_Z) return -z * Math.tan(SLOPE_ANGLE); // straight inrun slope
-    // ── Flat table (FLAT_Z → KICKER_START_Z) ────────────────────────────────────
+    if (z < TRANS_START_Z) return -z * Math.tan(SLOPE_ANGLE); // straight inrun slope
+    // ── Cubic bezier transition: slope angle → flat, 3m before + 3m after FLAT_Z ──
+    if (z < TRANS_END_Z) return _transBezY(z);
+    // ── Flat table (TRANS_END_Z → KICKER_START_Z) ────────────────────────────────
     if (z <= KICKER_START_Z) return tableY;
     // ── Kicker: pure convex bezier KICKER_START_Z (flat) → KICKER_END_Z (lip angle) ──
     // P0/P1 both at tableY → zero entry tangent → mathematically cannot dip below table.
     if (z <= KICKER_END_Z) return _kickerBezY(z);
-    const _lipY = tableY + (KICKER_END_Z - KICKER_Z) * Math.tan(KICKER_ANGLE);
-    const landingBaseY = _lipY - LANDING_DROP;
-    if (z <= OUTRUN_Z) return landingBaseY - (z - KICKER_END_Z) * Math.tan(LANDING_ANGLE);
-    return landingBaseY - (OUTRUN_Z - KICKER_END_Z) * Math.tan(LANDING_ANGLE); // flat outrun
+    const _backFaceEndZ   = KICKER_END_Z + 0.5;
+    const _landingStartZ  = _backFaceEndZ + 3.0;
+    // Landing: flat at tableY then simple straight slope downward
+    if (z <= _landingStartZ) return tableY;
+    if (z <= OUTRUN_Z) return tableY - (z - _landingStartZ) * Math.tan(LANDING_ANGLE);
+    return tableY - (OUTRUN_Z - _landingStartZ) * Math.tan(LANDING_ANGLE); // flat outrun
 }
 
 function terrainAccelZ(z) {
@@ -945,19 +970,42 @@ window.addEventListener('DOMContentLoaded', () => {
     const snowMat = new BABYLON.StandardMaterial('snowMat', scene);
     snowMat.diffuseColor = new BABYLON.Color3(0.92, 0.97, 1.0);
 
-    const kickerWidth = { single:2.3, double:3.4, triple:4.0, quad:4.6, quint:5.2, custom:3.0 }[_worldParam] || 3.4;
+    const kickerWidth = 3.4; // all hills use double width
 
-    // Straight inrun slope (SLOPE_START_Z → FLAT_Z)
+    // Straight inrun slope (SLOPE_START_Z → TRANS_START_Z)
     const slopeBox = BABYLON.MeshBuilder.CreateBox('slope',
-        { width: 10, height: 1.2, depth: (FLAT_Z - SLOPE_START_Z) / Math.cos(SLOPE_ANGLE) }, scene);
+        { width: 10, height: 1.2, depth: (TRANS_START_Z - SLOPE_START_Z) / Math.cos(SLOPE_ANGLE) }, scene);
     slopeBox.rotation.x = SLOPE_ANGLE;
-    slopeBox.position.set(0, terrainRootY((SLOPE_START_Z + FLAT_Z) / 2) - FOOT_OFFSET - 0.6, (SLOPE_START_Z + FLAT_Z) / 2);
+    slopeBox.position.set(0, terrainRootY((SLOPE_START_Z + TRANS_START_Z) / 2) - FOOT_OFFSET - 0.6, (SLOPE_START_Z + TRANS_START_Z) / 2);
     slopeBox.material = snowMat;
 
-    // Flat table (FLAT_Z → KICKER_START_Z)
+    // Transition curve (TRANS_START_Z → TRANS_END_Z) — segmented to follow bezier visually
+    {
+        const N_TRANS = 16;
+        for (let ti = 0; ti < N_TRANS; ti++) {
+            const z0 = TRANS_START_Z + (ti / N_TRANS) * TRANS_LEN * 2;
+            const z1 = TRANS_START_Z + ((ti + 1) / N_TRANS) * TRANS_LEN * 2;
+            const zm = (z0 + z1) / 2;
+            const y0 = terrainRootY(z0) - FOOT_OFFSET;
+            const y1 = terrainRootY(z1) - FOOT_OFFSET;
+            const dz = z1 - z0, dy = y1 - y0;
+            const segLen = Math.sqrt(dz*dz + dy*dy);
+            const angle  = Math.atan2(dy, dz);
+            const seg = BABYLON.MeshBuilder.CreateBox('trans_seg_' + ti,
+                { width: 10, height: 1.2, depth: segLen + 0.02 }, scene);
+            seg.rotation.x = -angle;
+            seg.position.set(0,
+                terrainRootY(zm) - FOOT_OFFSET - 0.6 * Math.cos(angle),
+                zm + 0.6 * Math.sin(angle));
+            seg.material = snowMat;
+        }
+    }
+
+    // Flat table — extends from transition all the way to the back-face block
+    const _tableTopY = _KBP_tY - FOOT_OFFSET;
     const flatTableBox = BABYLON.MeshBuilder.CreateBox('flatTable',
-        { width: 10, height: 1.2, depth: KICKER_START_Z - FLAT_Z }, scene);
-    flatTableBox.position.set(0, terrainRootY(FLAT_Z) - FOOT_OFFSET - 0.6, (FLAT_Z + KICKER_START_Z) / 2);
+        { width: 10, height: 1.2, depth: KICKER_END_Z + 0.5 - TRANS_END_Z }, scene);
+    flatTableBox.position.set(0, _tableTopY - 0.6, (TRANS_END_Z + KICKER_END_Z + 0.5) / 2);
     flatTableBox.material = snowMat;
 
     // Kicker bezier — uses exact same _kBP control points as physics → mesh matches surface.
@@ -980,47 +1028,142 @@ window.addEventListener('DOMContentLoaded', () => {
             const angle  = Math.atan2(dy, dz);
             const seg = BABYLON.MeshBuilder.CreateBox('kicker_seg_' + ki, {
                 width:  kickerWidth,
-                height: 1.5,
+                height: 0.5,
                 depth:  segLen + 0.04,
             }, scene);
             seg.rotation.x = -angle;
             seg.position.set(0,
-                pm.y - 0.75 * Math.cos(angle),
-                pm.z + 0.75 * Math.sin(angle));
+                pm.y - 0.25 * Math.cos(angle),
+                pm.z + 0.25 * Math.sin(angle));
             seg.material = snowMat;
+        }
+
+        // ── Fill the inside of the kicker: vertical slabs from surface down to table ──
+        {
+            const tableY = _KBP_tY - FOOT_OFFSET;
+            for (let ki = 0; ki < N_KSEGS; ki++) {
+                const p0 = kBez( ki      / N_KSEGS);
+                const p1 = kBez((ki + 1) / N_KSEGS);
+                // Pull top down by 0.3 so corners never clip through the angled surface segs above
+                const surfaceY = Math.min(p0.y, p1.y) - 0.3;
+                const midZ     = (p0.z + p1.z) / 2;
+                const slabH    = surfaceY - tableY;
+                if (slabH <= 0) continue;
+                const slab = BABYLON.MeshBuilder.CreateBox('kicker_fill_' + ki, {
+                    width: kickerWidth, height: slabH, depth: (p1.z - p0.z) + 0.04,
+                }, scene);
+                slab.position.set(0, tableY + slabH / 2, midZ);
+                slab.material = snowMat;
+            }
+        }
+
+        // ── Table continues under the jump all the way to the landing ──────────
+        {
+            const tableY  = _KBP_tY - FOOT_OFFSET;
+            const fillDepth = KICKER_END_Z + 0.5 - KICKER_START_Z;
+            const fillH   = 4.0;
+            const fillBox = BABYLON.MeshBuilder.CreateBox('kickerFill', {
+                width: kickerWidth, height: fillH, depth: fillDepth,
+            }, scene);
+            fillBox.position.set(0, tableY - fillH / 2, KICKER_START_Z + fillDepth / 2);
+            fillBox.material = snowMat;
+        }
+
+        // ── Visual back-face block: drops from kicker lip down to table level ─
+        {
+            const lipY      = _KBP_lY - FOOT_OFFSET;
+            const tableY    = _KBP_tY - FOOT_OFFSET;
+            const dropH     = lipY - tableY;
+            const backBox   = BABYLON.MeshBuilder.CreateBox('kickerBackFace', {
+                width: kickerWidth, height: dropH, depth: 0.5,
+            }, scene);
+            backBox.position.set(0, tableY + dropH / 2 + 0.017, KICKER_END_Z + 0.25);
+            backBox.material = snowMat;
         }
     }
 
-    // Kicker top-edge arc (red tube spanning the full width)
+    // Kicker edge lines — top 0.8 units down each side, 1 unit inward at bottom, 0.8 inward on top-back edge
     const cornerMat = new BABYLON.StandardMaterial('cornerMat', scene);
     cornerMat.diffuseColor  = new BABYLON.Color3(1, 0, 0);
     cornerMat.emissiveColor = new BABYLON.Color3(0.8, 0, 0);
-    const kickerTopY = terrainRootY(KICKER_END_Z);
-    const arcHalfW   = kickerWidth / 2;
-    const baseY      = kickerTopY + 0.11 - 2;
-    // Drops follow the kicker face angle rather than straight down
-    const dropDY = -Math.sin(KICKER_ANGLE);  // y component of 1-unit drop along kicker face
-    const dropDZ = -Math.cos(KICKER_ANGLE);  // z component
-    const arcPath    = [
-        new BABYLON.Vector3(-arcHalfW, baseY + dropDY + 0.6, KICKER_END_Z - 0.5 + dropDZ),  // bottom of left drop
-        new BABYLON.Vector3(-arcHalfW, baseY          + 0.6, KICKER_END_Z - 0.5),            // top-left corner
-        new BABYLON.Vector3(-0.5,      baseY          + 0.6, KICKER_END_Z - 0.5),            // inner end of left segment
-    ];
-    const arcTube = BABYLON.MeshBuilder.CreateTube('kickerArc',
-        { path: arcPath, radius: 0.06, tessellation: 8, cap: BABYLON.Mesh.CAP_ALL }, scene);
-    arcTube.material = cornerMat;
-    const arcPathR   = [
-        new BABYLON.Vector3( 0.5,      baseY          + 0.6, KICKER_END_Z - 0.5),            // inner end of right segment
-        new BABYLON.Vector3( arcHalfW, baseY          + 0.6, KICKER_END_Z - 0.5),            // top-right corner
-        new BABYLON.Vector3( arcHalfW, baseY + dropDY + 0.6, KICKER_END_Z - 0.5 + dropDZ),  // bottom of right drop
-    ];
-    const arcTubeR = BABYLON.MeshBuilder.CreateTube('kickerArcR',
-        { path: arcPathR, radius: 0.06, tessellation: 8, cap: BABYLON.Mesh.CAP_ALL }, scene);
-    arcTubeR.material = cornerMat;
+    {
+        const arcHalfW = kickerWidth / 2;
 
-    // Sloped landing zone
-    const landingMidZ = (KICKER_END_Z + OUTRUN_Z) / 2;
-    const landingDepth = OUTRUN_Z - KICKER_END_Z;
+        // Sample bezier points densely for arc-length measurement
+        const N_SAMP = 200;
+        const samples = [];
+        for (let si = 0; si <= N_SAMP; si++) {
+            const t = si / N_SAMP, u = 1 - t;
+            samples.push({
+                z: u*u*u*_kBP[0][0] + 3*u*u*t*_kBP[1][0] + 3*u*t*t*_kBP[2][0] + t*t*t*_kBP[3][0],
+                y: u*u*u*_kBP[0][1] + 3*u*u*t*_kBP[1][1] + 3*u*t*t*_kBP[2][1] + t*t*t*_kBP[3][1] - FOOT_OFFSET + 0.017,
+            });
+        }
+
+        // ── Top: 0.8 units down each side from the lip (walk backward from end of samples) ──
+        const topPathL = [], topPathR = [];
+        let arcLen = 0;
+        topPathL.push(new BABYLON.Vector3(-arcHalfW, samples[N_SAMP].y, samples[N_SAMP].z));
+        topPathR.push(new BABYLON.Vector3( arcHalfW, samples[N_SAMP].y, samples[N_SAMP].z));
+        for (let si = N_SAMP - 1; si >= 0; si--) {
+            const dz = samples[si+1].z - samples[si].z, dy = samples[si+1].y - samples[si].y;
+            arcLen += Math.sqrt(dz*dz + dy*dy);
+            if (arcLen > 0.8) break;
+            topPathL.push(new BABYLON.Vector3(-arcHalfW, samples[si].y, samples[si].z));
+            topPathR.push(new BABYLON.Vector3( arcHalfW, samples[si].y, samples[si].z));
+        }
+        if (topPathL.length >= 2) {
+            const tL = BABYLON.MeshBuilder.CreateTube('kickerTopL',
+                { path: topPathL, radius: 0.06, tessellation: 8, cap: BABYLON.Mesh.CAP_ALL }, scene);
+            tL.material = cornerMat;
+            const tR = BABYLON.MeshBuilder.CreateTube('kickerTopR',
+                { path: topPathR, radius: 0.06, tessellation: 8, cap: BABYLON.Mesh.CAP_ALL }, scene);
+            tR.material = cornerMat;
+        }
+
+        // ── Bottom: 1 unit up the kicker curve on each side from the base ──
+        const botPathL = [], botPathR = [];
+        let botArcLen = 0;
+        botPathL.push(new BABYLON.Vector3(-arcHalfW, samples[0].y, samples[0].z));
+        botPathR.push(new BABYLON.Vector3( arcHalfW, samples[0].y, samples[0].z));
+        for (let si = 1; si <= N_SAMP; si++) {
+            const dz = samples[si].z - samples[si-1].z, dy = samples[si].y - samples[si-1].y;
+            botArcLen += Math.sqrt(dz*dz + dy*dy);
+            if (botArcLen > 3.0) break;
+            botPathL.push(new BABYLON.Vector3(-arcHalfW, samples[si].y, samples[si].z));
+            botPathR.push(new BABYLON.Vector3( arcHalfW, samples[si].y, samples[si].z));
+        }
+        if (botPathL.length >= 2) {
+            const bL = BABYLON.MeshBuilder.CreateTube('kickerBotL',
+                { path: botPathL, radius: 0.06, tessellation: 8, cap: BABYLON.Mesh.CAP_ALL }, scene);
+            bL.material = cornerMat;
+            const bR = BABYLON.MeshBuilder.CreateTube('kickerBotR',
+                { path: botPathR, radius: 0.06, tessellation: 8, cap: BABYLON.Mesh.CAP_ALL }, scene);
+            bR.material = cornerMat;
+        }
+
+        // ── Top-back edge of block: 0.8 units inward from each side ──
+        const topEdgeY = _KBP_lY - FOOT_OFFSET + 0.017;
+        const topEdgeZ = KICKER_END_Z;
+        const edgeTubeL = BABYLON.MeshBuilder.CreateTube('kickerEdgeL',
+            { path: [new BABYLON.Vector3(-arcHalfW, topEdgeY, topEdgeZ), new BABYLON.Vector3(-arcHalfW + 0.8, topEdgeY, topEdgeZ)],
+              radius: 0.06, tessellation: 8, cap: BABYLON.Mesh.CAP_ALL }, scene);
+        edgeTubeL.material = cornerMat;
+        const edgeTubeR = BABYLON.MeshBuilder.CreateTube('kickerEdgeR',
+            { path: [new BABYLON.Vector3(arcHalfW - 0.8, topEdgeY, topEdgeZ), new BABYLON.Vector3(arcHalfW, topEdgeY, topEdgeZ)],
+              radius: 0.06, tessellation: 8, cap: BABYLON.Mesh.CAP_ALL }, scene);
+        edgeTubeR.material = cornerMat;
+    }
+
+    const _backFaceEndZv  = KICKER_END_Z + 0.5;
+    const _landingStartZv = _backFaceEndZv + 3.0;
+    // One flat table slab covering from transition end all the way to start of landing slope
+    const flatTableFullBox = BABYLON.MeshBuilder.CreateBox('flatTableFull',
+        { width: 10, height: 1.2, depth: _landingStartZv - TRANS_END_Z }, scene);
+    flatTableFullBox.position.set(0, _KBP_tY - FOOT_OFFSET - 0.6, (TRANS_END_Z + _landingStartZv) / 2);
+    flatTableFullBox.material = snowMat;
+    const landingMidZ = (_landingStartZv + OUTRUN_Z) / 2;
+    const landingDepth = OUTRUN_Z - _landingStartZv;
     const landingBox = BABYLON.MeshBuilder.CreateBox('landing',
         { width: 10, height: 1.2, depth: landingDepth / Math.cos(LANDING_ANGLE) }, scene);
     landingBox.rotation.x = LANDING_ANGLE;
@@ -1233,11 +1376,11 @@ window.addEventListener('DOMContentLoaded', () => {
     // SPIN:  Separate rotation axis (Y). Can be initiated mid-air via arm drops.
     //        Stub only in Phase 1 — tracked in state, shown in HUD, not animated.
     //
-    const TARGET_OMEGA_UNTUCKED = 4.5 * 0.9925 * (_worldParam === 'custom' ? _customFlipSpeed : _worldParam === 'trampoline' ? 1.407 : _worldParam === 'quint' ? 1.78 : _worldParam === 'quad' ? 1.48 : _worldParam === 'triple' ? 1.38 : _worldParam === 'single' ? 0.59 : 1.0); // rad/s at full extension
+    const TARGET_OMEGA_UNTUCKED = 4.5 * 0.9925 * (_worldParam === 'custom' ? _customFlipSpeed : _worldParam === 'trampoline' ? 1.407 : _worldParam === 'quint' ? 1.78 : _worldParam === 'quad' ? 1.48 : _worldParam === 'triple' ? 1.32 : _worldParam === 'single' ? 0.59 : 1.0); // rad/s at full extension
     const MAX_OMEGA = 9.75;            // rad/s cap — limits tucked flip speed
     const I0 = computeI(0);            // I at tuck = 0 (fully extended)
 
-    const SPIN_SPEED    = Math.PI * 2.0 * (_worldParam === 'custom' ? _customFlipSpeed : _worldParam === 'trampoline' ? 1.3 : _worldParam === 'quint' ? 1.45 : _worldParam === 'quad' ? 1.62 : _worldParam === 'triple' ? 1.5 : _worldParam === 'single' ? 0.68 : 1.0) * (_lsGet('setting_superspin') === '1' ? 2.0 : 1.0); // rad/s ~= 1.0 full twist/second
+    const SPIN_SPEED    = Math.PI * 2.0 * (_worldParam === 'custom' ? _customFlipSpeed : _worldParam === 'trampoline' ? 1.3 : _worldParam === 'quint' ? 1.45 : _worldParam === 'quad' ? 1.62 : _worldParam === 'triple' ? 1.6 : _worldParam === 'single' ? 0.68 : 1.08) * (_lsGet('setting_superspin') === '1' ? 2.0 : 1.0); // rad/s ~= 1.0 full twist/second
     const ARM_DROP_RATE = 4.0;            // arm transitions in ~0.25 s
     const GRAVITY       = 14.0;           // world-units / s²
 
