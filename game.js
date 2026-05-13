@@ -1381,7 +1381,7 @@ window.addEventListener('DOMContentLoaded', () => {
     const MAX_OMEGA = 9.75;            // rad/s cap — limits tucked flip speed
     const I0 = computeI(0);            // I at tuck = 0 (fully extended)
 
-    const SPIN_SPEED    = Math.PI * 2.0 * (_worldParam === 'custom' ? _customFlipSpeed : _worldParam === 'trampoline' ? 1.3 : _worldParam === 'quint' ? 1.55 : _worldParam === 'quad' ? 1.62 : _worldParam === 'triple' ? 1.6 : _worldParam === 'single' ? 0.68 : 1.08) * (superMode ? 3.0 : 1.0); // rad/s ~= 1.0 full twist/second
+    const SPIN_SPEED    = Math.PI * 2.0 * (_worldParam === 'custom' ? _customFlipSpeed : _worldParam === 'trampoline' ? 1.3 : _worldParam === 'quint' ? 1.55 : _worldParam === 'quad' ? 1.62 : _worldParam === 'triple' ? 1.6 : _worldParam === 'single' ? 0.68 : 1.08); // rad/s ~= 1.0 full twist/second
     const ARM_DROP_RATE = 4.0;            // arm transitions in ~0.25 s
     const GRAVITY       = 14.0;           // world-units / s²
 
@@ -1504,7 +1504,6 @@ window.addEventListener('DOMContentLoaded', () => {
     let readyTurnT      = 0.0;   // 0→1: progress of turn-to-face-downhill animation
     const READY_TURN_DUR = 0.7;  // seconds to complete the turn
     let doubleMode      = false; // both keys held → continuous 2x speed spin
-    let superMode       = _lsGet('setting_supermode') === '1'; // secret code "super" → 3x spin, auto land, 3x points
     let bothArmsSpinTarget = Infinity; // spinTarget value at which a both-arms twist was triggered
     let secondKeyTimer  = null;  // timeout handle; fires after hold threshold
     const DOUBLE_HOLD_MS = 180;  // ms — hold second key longer than this = double mode
@@ -2194,7 +2193,7 @@ window.addEventListener('DOMContentLoaded', () => {
                     const totalFlips  = state.perFlipTwists.length;
                     const totalTwists = state.perFlipTwists.reduce((a, b) => a + b, 0);
                     const dd    = calcDD(state.perFlipTwists);
-                    const score = Math.round(dd * state.execution * (_lsGet('setting_supermode') === '1' ? 30 : 10) / 10);
+                    const score = Math.round(dd * state.execution * 10) / 10;
                     const isNew = score > highScore;
                     if (isNew) { highScore = score; _lsSet(HS_KEY, score); }
                     bbName.text  = state.trickName;
@@ -2409,7 +2408,7 @@ window.addEventListener('DOMContentLoaded', () => {
                 const spinNorm = ((state.spinAngle % TWO_PI) + TWO_PI) % TWO_PI;
                 const SPIN_TOL = Math.PI / 4; // 45° — must be facing forward
                 const facingForward = spinNorm < SPIN_TOL || spinNorm > TWO_PI - SPIN_TOL;
-                const goodLanding = _lsGet('setting_supermode') === '1' || ((norm < LAND_TOL || norm > TWO_PI - LAND_TOL) && facingForward);
+                const goodLanding = (norm < LAND_TOL || norm > TWO_PI - LAND_TOL) && facingForward;
 
                 state.rootY      = surY + 0.10;
                 state.vy         = 0;

@@ -1127,30 +1127,6 @@
                     updateRightSpinBtn();
                     updateMirrorKeysBtn();
 
-                    // Secret code: type "super" to toggle super mode
-                    var keyBuffer = '';
-                    var superModeActive = _lsGet('setting_supermode') === '1';
-                    function updateSupermodeDisplay() {
-                        if (superModeActive) {
-                            settingsModal.style.borderColor = '#ffdd00';
-                        } else {
-                            settingsModal.style.borderColor = '';
-                        }
-                    }
-                    updateSupermodeDisplay();
-                    
-                    document.addEventListener('keydown', function(e) {
-                        if (!settingsModal.classList.contains('open')) return;
-                        keyBuffer += e.key.toLowerCase();
-                        if (keyBuffer.length > 5) keyBuffer = keyBuffer.slice(-5);
-                        if (keyBuffer === 'super') {
-                            superModeActive = superModeActive ? false : true;
-                            _lsSet('setting_supermode', superModeActive ? '1' : '0');
-                            updateSupermodeDisplay();
-                            keyBuffer = '';
-                        }
-                    });
-
                     var settingsBtn = document.getElementById('settingsBtn');
                     // settings always visible
                     var unlockSection = document.getElementById('settingsUnlockSection');
