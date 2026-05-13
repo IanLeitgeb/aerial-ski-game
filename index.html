@@ -352,20 +352,6 @@
         <div id="settingsModalBox">
             <h2>⚙️ Settings</h2>
             <div id="settingsUnlockSection" style="display:none">
-            <div class="settingRow">
-                <div>
-                    <div class="settingLabel">Auto Land</div>
-                    <div class="settingDesc">Land anywhere and ski away, even off the slope</div>
-                </div>
-                <button class="toggleBtn" id="autoLandBtn">OFF</button>
-            </div>
-            <div class="settingRow">
-                <div>
-                    <div class="settingLabel">Super Spin</div>
-                    <div class="settingDesc">2× spin (twist) speed</div>
-                </div>
-                <button class="toggleBtn" id="superSpinBtn">OFF</button>
-            </div>
             </div>
             <div class="settingRow">
                 <div>
@@ -1125,21 +1111,9 @@
                 // Settings modal
                 (function() {
                     var settingsModal = document.getElementById('settingsModal');
-                    var autoLandBtn   = document.getElementById('autoLandBtn');
-                    var superSpinBtn  = document.getElementById('superSpinBtn');
                     var rightSpinBtn  = document.getElementById('rightSpinBtn');
                     var mirrorKeysBtn = document.getElementById('mirrorKeysBtn');
 
-                    function updateAutoLandBtn() {
-                        var on = _lsGet('setting_autoland') === '1';
-                        autoLandBtn.textContent = on ? 'ON' : 'OFF';
-                        autoLandBtn.classList.toggle('on', on);
-                    }
-                    function updateSuperSpinBtn() {
-                        var on = _lsGet('setting_superspin') === '1';
-                        superSpinBtn.textContent = on ? 'ON' : 'OFF';
-                        superSpinBtn.classList.toggle('on', on);
-                    }
                     function updateRightSpinBtn() {
                         var on = _lsGet('setting_rightspin') === '1';
                         rightSpinBtn.textContent = on ? 'ON' : 'OFF';
@@ -1150,10 +1124,32 @@
                         mirrorKeysBtn.textContent = on ? 'ON' : 'OFF';
                         mirrorKeysBtn.classList.toggle('on', on);
                     }
-                    updateAutoLandBtn();
-                    updateSuperSpinBtn();
                     updateRightSpinBtn();
                     updateMirrorKeysBtn();
+
+                    // Secret code: type "super" to toggle super mode
+                    var keyBuffer = '';
+                    var superModeActive = _lsGet('setting_supermode') === '1';
+                    function updateSupermodeDisplay() {
+                        if (superModeActive) {
+                            settingsModal.style.borderColor = '#ffdd00';
+                        } else {
+                            settingsModal.style.borderColor = '';
+                        }
+                    }
+                    updateSupermodeDisplay();
+                    
+                    document.addEventListener('keydown', function(e) {
+                        if (!settingsModal.classList.contains('open')) return;
+                        keyBuffer += e.key.toLowerCase();
+                        if (keyBuffer.length > 5) keyBuffer = keyBuffer.slice(-5);
+                        if (keyBuffer === 'super') {
+                            superModeActive = superModeActive ? false : true;
+                            _lsSet('setting_supermode', superModeActive ? '1' : '0');
+                            updateSupermodeDisplay();
+                            keyBuffer = '';
+                        }
+                    });
 
                     var settingsBtn = document.getElementById('settingsBtn');
                     // settings always visible
@@ -1171,16 +1167,6 @@
                     document.getElementById('settingsCloseBtn').addEventListener('click', function() {
                         settingsModal.classList.remove('open');
                     });
-                    autoLandBtn.addEventListener('click', function() {
-                        var on = _lsGet('setting_autoland') === '1';
-                        _lsSet('setting_autoland', on ? '0' : '1');
-                        updateAutoLandBtn();
-                    });
-                    superSpinBtn.addEventListener('click', function() {
-                        var on = _lsGet('setting_superspin') === '1';
-                        _lsSet('setting_superspin', on ? '0' : '1');
-                        updateSuperSpinBtn();
-                    });
                     document.getElementById('resetProgressBtn').addEventListener('click', function() {
                         if (!confirm('Reset all progress? This will remove all trophies and unlock settings. Your custom map settings will be kept.')) return;
                         // Remove all competition trophies
@@ -1192,10 +1178,6 @@
                         });
                         _lsRemove('quint_unlocked');
                         // Remove unlocked settings
-                        _lsRemove('setting_autoland');
-                        _lsRemove('setting_superspin');
-                        updateAutoLandBtn();
-                        updateSuperSpinBtn();
                         unlockSection.style.display = 'none';
                         resetSection.style.display = 'none';
                         settingsModal.classList.remove('open');
@@ -1246,12 +1228,12 @@
 
                 // Qualify modal — trick reference sorted by DD
                 (function() {
-                    var TWIST_NAMES = ['Lay', 'Full', 'Double Full', 'Triple Full'];
+                    var TWIST_NAMES = ['Lay', 'Full', 'Double Full', 'Triple Full', 'Quad Full', 'Quint Full', 'Sextuple Full', 'Septuple Full', 'Octuple Full', 'Nonuple Full', 'Decuple Full'];
                     var NAME_OVERRIDES = { 'lay_tuck': 'Lay Tuck', 'lay_tuck_full': 'Lay Tuck Full', 'lay_full_tuck': 'Lay Full Tuck' };
                     var FLIP_COUNTS = { 'lay_tuck': 2, 'lay_tuck_full': 3, 'lay_full_tuck': 3 };
                     function keyToName(key) {
                         if (NAME_OVERRIDES[key]) return NAME_OVERRIDES[key];
-                        return key.split(',').map(function(n) { return TWIST_NAMES[+n] || n; }).join('-');
+                        return key.split(',').map(function(n) { return TWIST_NAMES[+n] || (n + 'x Full'); }).join('-');
                     }
                     function isValidTrick(key) {
                         if (NAME_OVERRIDES[key]) return true;

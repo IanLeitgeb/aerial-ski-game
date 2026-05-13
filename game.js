@@ -660,7 +660,8 @@ const _customFlipSpeed = _worldParam === 'custom' ? Math.max(0.3, Math.min(3.0, 
 const _trampolineMode       = _worldParam === 'trampoline';
 const TRAMPOLINE_Y          = 0.0;   // world Y of the trampoline surface
 const TRAMPOLINE_LAUNCH_VY  = 14.0;  // vertical velocity given on each bounce
-const OUTRUN_Z      = _worldParam === 'custom' ? KICKER_END_Z + _customLanding : KICKER_END_Z + (_worldParam === 'quint' ? 75 : 50); // landing slope ends here
+const LANDING_START_Z = _worldParam === 'custom' ? KICKER_END_Z + 3.5 : KICKER_END_Z + ({ single: 2, double: 5, triple: 8, quad: 13, quint: 15 }[_worldParam] || 5); // knuckle positioned so skier lands ~1-2m past it
+const OUTRUN_Z      = _worldParam === 'custom' ? KICKER_END_Z + _customLanding : LANDING_START_Z + ({ single: 25, double: 35, triple: 42, quad: 50, quint: 60 }[_worldParam] || 35); // landing slope ends here
 const FLAT_Z        = KICKER_Z - 16.0; // flat table starts here (16 m before kicker lip → 10 m flat table)
 const KICKER_START_Z = FLAT_Z + 10.0;  // kicker curve begins here — 10 m flat table, then gradual arc
 const TRANS_LEN     = 3.0;             // transition extends this far before AND after FLAT_Z
@@ -724,7 +725,7 @@ function terrainRootY(z) {
     // P0/P1 both at tableY → zero entry tangent → mathematically cannot dip below table.
     if (z <= KICKER_END_Z) return _kickerBezY(z);
     const _backFaceEndZ   = KICKER_END_Z + 0.5;
-    const _landingStartZ  = _backFaceEndZ + 3.0;
+    const _landingStartZ  = LANDING_START_Z;
     // Landing: flat at tableY then simple straight slope downward
     if (z <= _landingStartZ) return tableY;
     if (z <= OUTRUN_Z) return tableY - (z - _landingStartZ) * Math.tan(LANDING_ANGLE);
@@ -1156,7 +1157,7 @@ window.addEventListener('DOMContentLoaded', () => {
     }
 
     const _backFaceEndZv  = KICKER_END_Z + 0.5;
-    const _landingStartZv = _backFaceEndZv + 3.0;
+    const _landingStartZv = LANDING_START_Z;
     // One flat table slab covering from transition end all the way to start of landing slope
     const flatTableFullBox = BABYLON.MeshBuilder.CreateBox('flatTableFull',
         { width: 10, height: 1.2, depth: _landingStartZv - TRANS_END_Z }, scene);
@@ -1376,11 +1377,11 @@ window.addEventListener('DOMContentLoaded', () => {
     // SPIN:  Separate rotation axis (Y). Can be initiated mid-air via arm drops.
     //        Stub only in Phase 1 — tracked in state, shown in HUD, not animated.
     //
-    const TARGET_OMEGA_UNTUCKED = 4.5 * 0.9925 * (_worldParam === 'custom' ? _customFlipSpeed : _worldParam === 'trampoline' ? 1.407 : _worldParam === 'quint' ? 1.78 : _worldParam === 'quad' ? 1.48 : _worldParam === 'triple' ? 1.32 : _worldParam === 'single' ? 0.59 : 1.0); // rad/s at full extension
+    const TARGET_OMEGA_UNTUCKED = 4.5 * 0.9925 * (_worldParam === 'custom' ? _customFlipSpeed : _worldParam === 'trampoline' ? 1.407 : _worldParam === 'quint' ? 1.96 : _worldParam === 'quad' ? 1.63 : _worldParam === 'triple' ? 1.45 : _worldParam === 'single' ? 0.65 : 1.10); // rad/s at full extension
     const MAX_OMEGA = 9.75;            // rad/s cap — limits tucked flip speed
     const I0 = computeI(0);            // I at tuck = 0 (fully extended)
 
-    const SPIN_SPEED    = Math.PI * 2.0 * (_worldParam === 'custom' ? _customFlipSpeed : _worldParam === 'trampoline' ? 1.3 : _worldParam === 'quint' ? 1.45 : _worldParam === 'quad' ? 1.62 : _worldParam === 'triple' ? 1.6 : _worldParam === 'single' ? 0.68 : 1.08) * (_lsGet('setting_superspin') === '1' ? 2.0 : 1.0); // rad/s ~= 1.0 full twist/second
+    const SPIN_SPEED    = Math.PI * 2.0 * (_worldParam === 'custom' ? _customFlipSpeed : _worldParam === 'trampoline' ? 1.3 : _worldParam === 'quint' ? 1.55 : _worldParam === 'quad' ? 1.62 : _worldParam === 'triple' ? 1.6 : _worldParam === 'single' ? 0.68 : 1.08) * (superMode ? 3.0 : 1.0); // rad/s ~= 1.0 full twist/second
     const ARM_DROP_RATE = 4.0;            // arm transitions in ~0.25 s
     const GRAVITY       = 14.0;           // world-units / s²
 
@@ -1497,11 +1498,13 @@ window.addEventListener('DOMContentLoaded', () => {
     let cameraFollow    = true;  // C toggles: true = behind character, false = fixed side view
     let powerWrapDown   = false; // down arrow held → 1.3× spin rate
     let arrowUpDown     = false; // up arrow held mid-air → gradually slow flip
+    let targetL_flip    = 0.0;   // target L_flip to recover toward when arrow released
     let frontFlipQueued = false; // up pressed in air → do front flip on next bounce
     let readyState      = true;  // true = waiting at top, character facing sideways
     let readyTurnT      = 0.0;   // 0→1: progress of turn-to-face-downhill animation
     const READY_TURN_DUR = 0.7;  // seconds to complete the turn
     let doubleMode      = false; // both keys held → continuous 2x speed spin
+    let superMode       = _lsGet('setting_supermode') === '1'; // secret code "super" → 3x spin, auto land, 3x points
     let bothArmsSpinTarget = Infinity; // spinTarget value at which a both-arms twist was triggered
     let secondKeyTimer  = null;  // timeout handle; fires after hold threshold
     const DOUBLE_HOLD_MS = 180;  // ms — hold second key longer than this = double mode
@@ -1621,6 +1624,7 @@ window.addEventListener('DOMContentLoaded', () => {
             downHalfTwistFired = false;
             bothArmsSpinTarget = Infinity;
             doubleMode = false; powerWrapDown = false; arrowUpDown = false; frontFlipQueued = false;
+            targetL_flip = 0.0;
             flipPower = 0; pmFill.style.width = '0%';
             billboard.isVisible = false;
             compLandingResult = null;
@@ -1864,9 +1868,9 @@ window.addEventListener('DOMContentLoaded', () => {
     // Ultra — one trick per jump type, each on its matching world
     const ULTRA_POOL   = ['3','2,3','2,2,2','1,3,2','2,2,3,2'];
     const ULTRA_WORLDS = ULTRA_POOL.map(k => ['single','double','triple','quad'][k.split(',').length - 1]);
-    const TWIST_NAMES_COMP = ['Lay', 'Full', 'Double Full', 'Triple Full'];
+    const TWIST_NAMES_COMP = ['Lay', 'Full', 'Double Full', 'Triple Full', 'Quad Full', 'Quint Full', 'Sextuple Full', 'Septuple Full', 'Octuple Full', 'Nonuple Full', 'Decuple Full'];
     function trickKeyToName(key) {
-        return key.split(',').map(n => n === 't' ? 'Tuck' : TWIST_NAMES_COMP[+n]).join('-');
+        return key.split(',').map(n => n === 't' ? 'Tuck' : TWIST_NAMES_COMP[+n] || (n + 'x Full')).join('-');
     }
     // Match a landed trick against an assigned trick key.
     // 't' tokens require 0 twists AND the flip was tucked.
@@ -1973,7 +1977,7 @@ window.addEventListener('DOMContentLoaded', () => {
     // ── Billboard (shown when skier stops on outrun) ─────────────────────────
     const bbUI = BABYLON.GUI.AdvancedDynamicTexture.CreateFullscreenUI('bbUI', true, scene);
     const bbContainer = new BABYLON.GUI.Rectangle('bbContainer');
-    bbContainer.width           = '400px';
+    bbContainer.width           = '600px';
     bbContainer.height          = '200px';
     bbContainer.cornerRadius    = 14;
     bbContainer.color           = 'rgba(0,0,0,0)';
@@ -2180,6 +2184,7 @@ window.addEventListener('DOMContentLoaded', () => {
             }
             const prevZ = state.posZ;
             state.vz   += terrainAccelZ(state.posZ) * dt;
+            if (readyState && readyTurnT < 1.0) state.vz = 0; // prevent any slide before run begins
             if (state.posZ > OUTRUN_Z && state.vz < 0) {
                 state.vz = 0;
                 if (!state.stopped && !state.crashed && state.trickName) {
@@ -2189,7 +2194,7 @@ window.addEventListener('DOMContentLoaded', () => {
                     const totalFlips  = state.perFlipTwists.length;
                     const totalTwists = state.perFlipTwists.reduce((a, b) => a + b, 0);
                     const dd    = calcDD(state.perFlipTwists);
-                    const score = Math.round(dd * state.execution * 10) / 10;
+                    const score = Math.round(dd * state.execution * (_lsGet('setting_supermode') === '1' ? 30 : 10) / 10);
                     const isNew = score > highScore;
                     if (isNew) { highScore = score; _lsSet(HS_KEY, score); }
                     bbName.text  = state.trickName;
@@ -2263,7 +2268,8 @@ window.addEventListener('DOMContentLoaded', () => {
                 }
                 // Apply flip power: 3rd dash (75%) = world-normal flip speed.
                 // Less charge = less flip; no charge = barely any rotation.
-                state.L_flip = I0 * TARGET_OMEGA_UNTUCKED * (Math.max(0.05, flipPower) / 0.75);
+                targetL_flip = I0 * TARGET_OMEGA_UNTUCKED * (Math.max(0.05, flipPower) / 0.75);
+                state.L_flip = targetL_flip;
                 // Reset meter for next jump
                 flipPower = 0;
                 pmFill.style.width = '0%';
@@ -2403,8 +2409,7 @@ window.addEventListener('DOMContentLoaded', () => {
                 const spinNorm = ((state.spinAngle % TWO_PI) + TWO_PI) % TWO_PI;
                 const SPIN_TOL = Math.PI / 4; // 45° — must be facing forward
                 const facingForward = spinNorm < SPIN_TOL || spinNorm > TWO_PI - SPIN_TOL;
-                const autoLand = _lsGet('setting_autoland') === '1';
-                const goodLanding = autoLand || ((norm < LAND_TOL || norm > TWO_PI - LAND_TOL) && facingForward);
+                const goodLanding = _lsGet('setting_supermode') === '1' || ((norm < LAND_TOL || norm > TWO_PI - LAND_TOL) && facingForward);
 
                 state.rootY      = surY + 0.10;
                 state.vy         = 0;
@@ -2439,9 +2444,9 @@ window.addEventListener('DOMContentLoaded', () => {
                         state.perFlipTwists.push(Math.round(Math.abs(spinPoints[i + 1] - spinPoints[i]) / (Math.PI * 2)));
                     }
                     // Build trick name
-                    const TWIST_NAMES = ['Lay', 'Full', 'Double Full', 'Triple Full'];
+                    const TWIST_NAMES = ['Lay', 'Full', 'Double Full', 'Triple Full', 'Quad Full', 'Quint Full', 'Sextuple Full', 'Septuple Full', 'Octuple Full', 'Nonuple Full', 'Decuple Full'];
                     state.trickName = state.perFlipTwists
-                        .map((t, i) => t === 0 && tuckedPerFlip[i] ? 'Tuck' : TWIST_NAMES[Math.min(t, 3)])
+                        .map((t, i) => t === 0 && tuckedPerFlip[i] ? 'Tuck' : TWIST_NAMES[t] || (t + 'x Full'))
                         .join('-');
                     // ── Achievement: Triple Full-Triple Full-Triple Full on triple jump ─
                     if (_worldParam === 'triple' && state.trickName === 'Triple Full-Triple Full-Triple Full') {
@@ -2487,9 +2492,7 @@ window.addEventListener('DOMContentLoaded', () => {
                     // Forward lean (norm in [0, LAND_TOL]) scores highest — max forward = 30, upright = 15.
                     // Backward lean (norm in (TWO_PI-LAND_TOL, TWO_PI]) scores lowest — max backward = 0.
                     let execRaw;
-                    if (autoLand) {
-                        execRaw = 30;
-                    } else if (norm <= LAND_TOL) {
+                    if (norm <= LAND_TOL) {
                         // Forward lean: norm=0 (upright) → 29, norm=LAND_TOL (max forward) → 30
                         const fwd = norm / LAND_TOL;
                         execRaw = 29 + 1 * fwd;
@@ -2610,10 +2613,15 @@ window.addEventListener('DOMContentLoaded', () => {
         // ── Spin ──────────────────────────────────────────────────────────
         if (!state.grounded) {
             const powerWrapMult = powerWrapDown ? 1.3 : 1.0;
-            // Gradually slow flip while ↑ is held (min 30% of original)
+            // Gradually slow flip while ↑ is held (min 75% of target)
             if (arrowUpDown) {
-                const minL = I0 * TARGET_OMEGA_UNTUCKED * 0.75;
+                const minL = targetL_flip * 0.75;
                 state.L_flip = Math.max(minL, state.L_flip * (1 - 0.4 * dt));
+            } else {
+                // Gradually speed back up when ↑ is released
+                if (state.L_flip < targetL_flip) {
+                    state.L_flip = Math.min(targetL_flip, state.L_flip * (1 + 0.45 * dt));
+                }
             }
             if (doubleMode) {
                 // Continuous spin at 2× speed while both keys held
