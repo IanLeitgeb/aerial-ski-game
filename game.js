@@ -1846,8 +1846,10 @@ function _startGame() {
         doubleMode = false;
         const fullTwist = Math.PI * 2;
         const turns = state.spinAngle / fullTwist;
-        // Always snap backward to last completed full twist, never forward
-        const n = state.doubleDir > 0 ? Math.floor(turns) : Math.ceil(turns);
+        // Complete the current twist forward; allow ~10% backward correction if just past one
+        const n = state.doubleDir > 0
+            ? Math.ceil(turns - 0.1)
+            : Math.floor(turns + 0.1);
         state.spinTarget = n * fullTwist;
     }
 
@@ -3102,16 +3104,25 @@ function _startGame() {
             const floorY = (_trampolineMode || _trampolineMatMode)
                 ? (TRAMPOLINE_Y - FOOT_OFFSET)
                 : terrainRootY(state.posZ) - FOOT_OFFSET;
+
+            // Pass 1: compute every mesh's world position BEFORE any detachment.
+            // Must walk the full parent chain, so use getAbsolutePosition() not rootMatrix.
+            const worldPositions = {};
             character.root.computeWorldMatrix(true);
-            const rootMtx = character.root.getWorldMatrix();
             for (const name of Object.keys(character.meshes)) {
                 const mesh = character.meshes[name];
+                mesh.computeWorldMatrix(true);
+                worldPositions[name] = mesh.getAbsolutePosition().clone();
+            }
+
+            // Pass 2: detach and launch each piece independently.
+            for (const name of Object.keys(character.meshes)) {
+                const mesh    = character.meshes[name];
                 const origPos  = mesh.position.clone();
                 const origQuat = mesh.rotationQuaternion ? mesh.rotationQuaternion.clone() : null;
                 const origRot  = mesh.rotation ? mesh.rotation.clone() : new BABYLON.Vector3();
-                const worldPos = BABYLON.Vector3.TransformCoordinates(origPos, rootMtx);
                 mesh.parent = null;
-                mesh.position.copyFrom(worldPos);
+                mesh.position.copyFrom(worldPositions[name]);
                 mesh.rotationQuaternion = null;
                 mesh.rotation.set(
                     (Math.random() - 0.5) * 1.0,
