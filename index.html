@@ -607,12 +607,14 @@
         <button id="qualifyBtn" title="Trick list by DD">📊 Qualify</button>
         <button id="fisBtn">🏔 FIS</button>
         <div id="worldList">
-            <div onclick="location.href='?world=single'">Single</div>
-            <div onclick="location.href='?world=double'">Double</div>
-            <div onclick="location.href='?world=triple'">Triple</div>
-            <div onclick="location.href='?world=quad'">Quad</div>
+            <div class="skiJumpItem" onclick="location.href='?world=single'">Single</div>
+            <div class="skiJumpItem" onclick="location.href='?world=double'">Double</div>
+            <div class="skiJumpItem" onclick="location.href='?world=triple'">Triple</div>
+            <div class="skiJumpItem" onclick="location.href='?world=quad'">Quad</div>
             <div id="quintWorldItem" style="display:none" onclick="location.href='?world=quint'">⭐ Quint</div>
             <div id="customWorldItem" style="display:none" onclick=""></div>
+            <div id="tramBackItem" style="display:none" onclick="location.href='?world=trampoline'">🤸 Trampoline</div>
+            <div id="tramMatWorldItem" style="display:none" onclick="location.href='?world=trampoline_mat'">🛬 Mat</div>
         </div>
     </div>
     <div id="compHUD"></div>
@@ -653,8 +655,17 @@
             var wp = new URLSearchParams(location.search).get('world') || 'double';
             var _realisticMode = new URLSearchParams(location.search).get('mode') === 'realistic';
             document.addEventListener('DOMContentLoaded', function() {
-                var labelMap = { single: 'Single', double: 'Double', triple: 'Triple', quad: 'Quad', quint: '⭐ Quint', custom: '⭐ Custom' };
+                var labelMap = { single: 'Single', double: 'Double', triple: 'Triple', quad: 'Quad', quint: '⭐ Quint', custom: '⭐ Custom', trampoline: '🤸 Trampoline', trampoline_mat: '🛬 Mat' };
                 document.getElementById('worldLabel').textContent = labelMap[wp] || wp.charAt(0).toUpperCase() + wp.slice(1);
+
+                // Trampoline worlds: show only trampoline navigation items
+                if (wp === 'trampoline' || wp === 'trampoline_mat') {
+                    document.querySelectorAll('#worldList .skiJumpItem, #quintWorldItem, #customWorldItem').forEach(function(el) { el.style.display = 'none'; });
+                    document.getElementById('tramMatWorldItem').style.display = '';
+                    document.getElementById('tramBackItem').style.display = '';
+                    if (wp === 'trampoline_mat') document.getElementById('tramMatWorldItem').classList.add('active');
+                    else document.getElementById('tramBackItem').classList.add('active');
+                }
 
                 // ── Realistic mode: hide competitive UI ──────────────────
                 if (_realisticMode) {
@@ -2605,16 +2616,47 @@
             });
         })();
     </script>
-    <script src="https://cdn.babylonjs.com/babylon.js"></script>
-    <script src="https://cdn.babylonjs.com/gui/babylon.gui.min.js"></script>
+    <!-- Loading screen shown while Babylon.js is being fetched from CDN -->
+    <div id="_loadScreen" style="display:flex;align-items:center;justify-content:center;height:100vh;background:#000;position:fixed;inset:0;z-index:9999;font-family:sans-serif;color:#b8d8ff;flex-direction:column;gap:14px;pointer-events:none;">
+        <div style="font-size:48px">⛷</div>
+        <div id="_loadMsg" style="font-size:14px;color:#556677;letter-spacing:0.08em;">Loading...</div>
+    </div>
     <script>
-        // Guard: show a friendly error if Babylon.js failed to load
-        // (e.g. no internet, firewall blocking CDN, very old browser)
-        if (typeof BABYLON === 'undefined') {
-            document.body.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100vh;background:#000;font-family:sans-serif;color:#b8d8ff;text-align:center;padding:20px"><div><div style="font-size:48px;margin-bottom:20px">⛷</div><h2 style="color:#fff;margin-bottom:12px">Could not load game engine</h2><p style="color:#778899;max-width:400px;line-height:1.6">The game requires an internet connection to load its 3D engine (Babylon.js).<br><br>Please make sure you are connected to the internet and reload the page.<br><br>If you keep seeing this, try opening the file in <strong style="color:#b8d8ff">Chrome</strong> or <strong style="color:#b8d8ff">Firefox</strong>.</p></div></div>';
+    (function() {
+        // Sequential async loader with retry — fixes intermittent CDN failures in Edge.
+        // game.js is loaded last; it handles the case where DOMContentLoaded already fired.
+        var SRCS = [
+            'https://cdn.babylonjs.com/babylon.js',
+            'https://cdn.babylonjs.com/gui/babylon.gui.min.js',
+            'game.js?v=2'
+        ];
+        var ERR_HTML = '<div style="text-align:center;padding:20px"><div style="font-size:48px;margin-bottom:16px">⛷</div>'
+            + '<h2 style="color:#fff;margin-bottom:10px">Could not load game engine</h2>'
+            + '<p style="color:#778899;max-width:380px;line-height:1.6;margin:0 auto 20px">Make sure you are connected to the internet, then click Retry.<br>If it keeps failing, try Chrome or Firefox.</p>'
+            + '<button onclick="location.reload()" style="background:#1a2a3a;color:#b8d8ff;border:1px solid #445566;padding:9px 24px;font-size:14px;border-radius:5px;cursor:pointer;pointer-events:all">Retry</button></div>';
+
+        function loadSeq(i, tries, onDone) {
+            if (i >= SRCS.length) { onDone(); return; }
+            var s = document.createElement('script');
+            s.src = SRCS[i];
+            s.onload  = function() { loadSeq(i + 1, 0, onDone); };
+            s.onerror = function() {
+                if (tries < 3) {
+                    setTimeout(function() { loadSeq(i, tries + 1, onDone); }, 400 * (tries + 1));
+                } else {
+                    var ls = document.getElementById('_loadScreen');
+                    if (ls) { ls.style.pointerEvents = 'all'; ls.innerHTML = ERR_HTML; }
+                }
+            };
+            document.head.appendChild(s);
         }
+
+        loadSeq(0, 0, function() {
+            var ls = document.getElementById('_loadScreen');
+            if (ls) ls.style.display = 'none';
+        });
+    })();
     </script>
-    <script src="game.js?v=2"></script>
     <div id="mobileControls">
         <div class="mb-btn" id="mb-up">▲</div>
         <div class="mb-btn" id="mb-left">◀</div>

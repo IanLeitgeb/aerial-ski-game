@@ -658,8 +658,26 @@ const _customInrun    = _worldParam === 'custom' ? Math.max(4, Math.min(100, par
 const _customLanding  = _worldParam === 'custom' ? Math.max(20, Math.min(150, parseFloat(new URLSearchParams(location.search).get('landing')  || '50'))) : 0;
 const _customFlipSpeed = _worldParam === 'custom' ? Math.max(0.3, Math.min(3.0, parseFloat(new URLSearchParams(location.search).get('flipspeed') || '1.3'))) : 1.0;
 const _trampolineMode       = _worldParam === 'trampoline';
+const _trampolineMatMode    = _worldParam === 'trampoline_mat';
 const TRAMPOLINE_Y          = 0.0;   // world Y of the trampoline surface
 const TRAMPOLINE_LAUNCH_VY  = 14.0;  // vertical velocity given on each bounce
+// ── Trampoline-mat world constants ──────────────────────────────────────────
+const MAT_TRAM_START_Z      =  2.0;  // trampoline start Z
+const MAT_TRAM_END_Z        = 13.0;  // trampoline end Z
+const MAT_TRAM_CENTER_Z     =  7.5;  // trampoline center Z
+const MAT_LAND_START_Z      = 16.0;  // landing mat start Z
+const MAT_LAND_END_Z        = 26.0;  // landing mat end Z
+const MAT_LAND_CENTER_Z     = 21.0;  // landing mat center Z
+const MAT_BOUNCE1_VY        =  6.5;  // warmup bounce 1 launch speed
+const MAT_BOUNCE2_VY        = 10.0;  // warmup bounce 2 launch speed
+const MAT_BOUNCE3_VY        = 15.5;  // final launch speed (double frontflip)
+const MAT_BOUNCE1_VZ        =  2.5;  // forward speed after bounce 1
+const MAT_BOUNCE2_VZ        =  3.0;  // forward speed after bounce 2
+const MAT_BOUNCE3_VZ        =  4.0;  // forward speed for mat flight
+const MAT_TRAM_SPRING_K     = 110;   // trampoline spring stiffness
+const MAT_TRAM_SPRING_D     =   5;   // trampoline spring damping
+const MAT_LAND_SPRING_K     =  18;   // landing mat spring stiffness (soft foam)
+const MAT_LAND_SPRING_D     =  14;   // landing mat spring damping (overdamped)
 const LANDING_START_Z = _worldParam === 'custom' ? KICKER_END_Z + 3.5 : KICKER_END_Z + ({ single: 2, double: 5, triple: 8, quad: 13, quint: 15 }[_worldParam] || 5); // knuckle positioned so skier lands ~1-2m past it
 const OUTRUN_Z      = _worldParam === 'custom' ? KICKER_END_Z + _customLanding : LANDING_START_Z + ({ single: 25, double: 35, triple: 42, quad: 50, quint: 60 }[_worldParam] || 35); // landing slope ends here
 const FLAT_Z        = KICKER_Z - 16.0; // flat table starts here (16 m before kicker lip → 10 m flat table)
@@ -714,6 +732,11 @@ function _kickerBezY(z) {
 
 function terrainRootY(z) {
     if (_trampolineMode) return TRAMPOLINE_Y;
+    if (_trampolineMatMode) {
+        // Crash mat surface is 0.28m above gym floor; translate to rootY threshold
+        if (z >= MAT_LAND_START_Z && z <= MAT_LAND_END_Z) return TRAMPOLINE_Y + 0.28 + 0.10;
+        return TRAMPOLINE_Y;
+    }
     if (z < SLOPE_START_Z) return -SLOPE_START_Z * Math.tan(SLOPE_ANGLE); // flat top
     const tableY = -FLAT_Z * Math.tan(SLOPE_ANGLE); // y-height of the flat table
     if (z < TRANS_START_Z) return -z * Math.tan(SLOPE_ANGLE); // straight inrun slope
@@ -733,7 +756,7 @@ function terrainRootY(z) {
 }
 
 function terrainAccelZ(z) {
-    if (_trampolineMode) return 0;
+    if (_trampolineMode || _trampolineMatMode) return 0;
     const g = 14.0;
     if (z < SLOPE_START_Z) return 0;    // flat top
     if (z > OUTRUN_Z)      return -14.0; // flat outrun friction
@@ -746,7 +769,9 @@ function terrainAccelZ(z) {
 }
 
 // ── Entry point ────────────────────────────────────────────────────────────
-window.addEventListener('DOMContentLoaded', () => {
+// Works whether DOM is still loading (normal sync case) or already ready
+// (dynamic load case — CDN retry fires after DOMContentLoaded has passed).
+function _startGame() {
     const canvas = document.getElementById('renderCanvas');
     // Detect WebGL support before starting — shows a clear error on old/unsupported hardware
     if (!BABYLON.Engine.isSupported()) {
@@ -759,7 +784,7 @@ window.addEventListener('DOMContentLoaded', () => {
     // ── Scene ───────────────────────────────────────────────────────────────
     const scene = new BABYLON.Scene(engine);
     scene.clearColor = _trampolineMode
-        ? new BABYLON.Color4(0.93, 0.93, 0.93, 1)  // light grey gym background
+        ? new BABYLON.Color4(0.88, 0.87, 0.84, 1)  // gym background
         : new BABYLON.Color4(0.53, 0.81, 0.98, 1);  // sky blue
 
     // ── Orbiting orthographic camera ─────────────────────────────────────────
@@ -816,7 +841,7 @@ window.addEventListener('DOMContentLoaded', () => {
     applyPose(character.meshes, 0, 1, 1); // start fully extended, arms down
     window._characterMeshes = character.meshes;
 
-    // Hide skis and ski boots in trampoline mode
+    // Hide skis and ski boots in trampoline / trampoline-mat mode
     if (_trampolineMode) {
         if (character.meshes['skiL']) character.meshes['skiL'].isVisible = false;
         if (character.meshes['skiR']) character.meshes['skiR'].isVisible = false;
@@ -846,12 +871,30 @@ window.addEventListener('DOMContentLoaded', () => {
         _gymPadMat.specularColor = new BABYLON.Color3(0.02, 0.02, 0.02);
 
         const GYM_W = 26, GYM_H = 18, GYM_D = 36;
-        const GYM_FLOOR_Y = TRAMPOLINE_Y - FOOT_OFFSET - 1.3; // flush with bottom of trampoline legs
+        const GYM_FLOOR_Y = TRAMPOLINE_Y - FOOT_OFFSET; // inground: floor is level with trampoline surface
+        const PIT_HALF    = 6.0 / 2 + 0.22; // half-size of hole in floor (trampoline + frame border)
 
-        // Floor
-        const _gFloor = BABYLON.MeshBuilder.CreateBox('gymFloor', { width: GYM_W, height: 0.12, depth: GYM_D }, scene);
-        _gFloor.position.set(0, GYM_FLOOR_Y, 0);
-        _gFloor.material = _gymFloorMat;
+        // Floor — 4 panels with a square hole for the inground trampoline
+        // Left strip
+        const _floorL = BABYLON.MeshBuilder.CreateBox('gymFloorL', {
+            width: GYM_W / 2 - PIT_HALF, height: 0.12, depth: GYM_D }, scene);
+        _floorL.position.set(-(GYM_W / 4 + PIT_HALF / 2), GYM_FLOOR_Y, 0);
+        _floorL.material = _gymFloorMat;
+        // Right strip
+        const _floorR = BABYLON.MeshBuilder.CreateBox('gymFloorR', {
+            width: GYM_W / 2 - PIT_HALF, height: 0.12, depth: GYM_D }, scene);
+        _floorR.position.set(GYM_W / 4 + PIT_HALF / 2, GYM_FLOOR_Y, 0);
+        _floorR.material = _gymFloorMat;
+        // Front strip (−Z side)
+        const _floorF = BABYLON.MeshBuilder.CreateBox('gymFloorF', {
+            width: PIT_HALF * 2, height: 0.12, depth: GYM_D / 2 - PIT_HALF }, scene);
+        _floorF.position.set(0, GYM_FLOOR_Y, -(GYM_D / 4 + PIT_HALF / 2));
+        _floorF.material = _gymFloorMat;
+        // Back strip (+Z side)
+        const _floorB = BABYLON.MeshBuilder.CreateBox('gymFloorB', {
+            width: PIT_HALF * 2, height: 0.12, depth: GYM_D / 2 - PIT_HALF }, scene);
+        _floorB.position.set(0, GYM_FLOOR_Y, GYM_D / 4 + PIT_HALF / 2);
+        _floorB.material = _gymFloorMat;
 
         // Back wall (behind character — +Z)
         const _gWallBack = BABYLON.MeshBuilder.CreateBox('gymWallBack', { width: GYM_W, height: GYM_H, depth: 0.2 }, scene);
@@ -911,8 +954,241 @@ window.addEventListener('DOMContentLoaded', () => {
         // Update scene background to a slightly warmer grey to match gym interior
         scene.clearColor = new BABYLON.Color4(0.88, 0.87, 0.84, 1);
 
-        // Hide all UI buttons except Menu and Replay in trampoline mode
-        ['trophyBtn','customBtn','settingsBtn','worldMenu','compBtn','qualifyBtn',
+        // Hide all UI buttons except Menu, Replay, and world selector in trampoline mode
+        ['trophyBtn','customBtn','settingsBtn','compBtn','qualifyBtn',
+         'fisBtn','olympicsBtn','helpBtn','compHUD','qualifyHUD','powerMeter']
+            .forEach(id => { const el = document.getElementById(id); if (el) el.style.display = 'none'; });
+    }
+
+    // ── Trampoline-mat mode spring & mesh state ─────────────────────────────
+    let matBounceCount    = 0;
+    let matTramBouncing   = false;
+    let matTramSpringY    = 0;
+    let matTramSpringVY   = 0;
+    let matContactNX2     = 0;
+    let matContactNZ2     = 0;
+    let matLanded         = false;
+    let matLandSpringY    = 0;
+    let matLandSpringVY   = 0;
+    let matLandContactNZ2 = 0;
+    let matTramGridMesh   = null;
+    let matTramGridPosArr = null;
+    let matTramGridIdxArr = null;
+    const matTramGridNXZ  = [];
+    let matTramLines      = null;
+    let matLandGridMesh   = null;
+    let matLandGridPosArr = null;
+    let matLandGridIdxArr = null;
+    const matLandGridNXZ  = [];
+
+    function buildMatTramLines() {
+        const tCols = 20, tRows = 14, off = 0.003;
+        const lines = [];
+        for (let r = 0; r <= tRows; r++) {
+            const row = [];
+            for (let c = 0; c <= tCols; c++) {
+                const i = r * (tCols + 1) + c;
+                row.push(new BABYLON.Vector3(
+                    matTramGridPosArr[i*3],
+                    matTramGridPosArr[i*3+1] + off,
+                    matTramGridPosArr[i*3+2]
+                ));
+            }
+            lines.push(row);
+        }
+        for (let c = 0; c <= tCols; c++) {
+            const col = [];
+            for (let r = 0; r <= tRows; r++) {
+                const i = r * (tCols + 1) + c;
+                col.push(new BABYLON.Vector3(
+                    matTramGridPosArr[i*3],
+                    matTramGridPosArr[i*3+1] + off,
+                    matTramGridPosArr[i*3+2]
+                ));
+            }
+            lines.push(col);
+        }
+        return lines;
+    }
+
+    // ── Trampoline-mat world ─────────────────────────────────────────────────
+    if (_trampolineMatMode) {
+        // Hide skis and ski-boot details
+        if (character.meshes['skiL']) character.meshes['skiL'].isVisible = false;
+        if (character.meshes['skiR']) character.meshes['skiR'].isVisible = false;
+        ['lowerLegL', 'lowerLegR'].forEach(leg => {
+            ['_bootLower', '_bootCuff', '_buckle'].forEach(part => {
+                const m = scene.getMeshByName(leg + part);
+                if (m) m.isVisible = false;
+            });
+        });
+
+        const SURF_Y  = TRAMPOLINE_Y - FOOT_OFFSET;  // ground/trampoline surface Y
+        const MAT_H   = 0.28;
+        const TRAM_W  = 4.5;
+        const MAT_W   = 5.2;
+        const MAT_L   = MAT_LAND_END_Z - MAT_LAND_START_Z;
+        const PIT_D   = 1.5;   // pit depth below ground level
+        const GND_T   = 0.4;   // ground slab thickness
+        const SCENE_W = 20;
+
+        // Ground material (short grass)
+        const groundMat = new BABYLON.StandardMaterial('matGround', scene);
+        groundMat.diffuseColor  = new BABYLON.Color3(0.42, 0.56, 0.32);
+        groundMat.specularColor = new BABYLON.Color3(0.02, 0.02, 0.02);
+
+        // Ground as 4 strips leaving the pit hole open.
+        // Sunk 5 mm below SURF_Y so every mesh sitting at SURF_Y clears it with no coplanar faces.
+        const GND_SINK = 0.005;
+        const tramL = MAT_TRAM_END_Z - MAT_TRAM_START_Z;
+        const sideW = (SCENE_W - TRAM_W) / 2;
+        [
+            // front approach strip (z: -5 → tram start)
+            { w: SCENE_W, h: GND_T, d: MAT_TRAM_START_Z + 5,
+              x: 0, z: (MAT_TRAM_START_Z - 5) / 2 },
+            // back strip (after trampoline, includes mat area; z: tram end → 42)
+            { w: SCENE_W, h: GND_T, d: 42 - MAT_TRAM_END_Z,
+              x: 0, z: (MAT_TRAM_END_Z + 42) / 2 },
+            // left side strip alongside pit
+            { w: sideW, h: GND_T, d: tramL,
+              x: -(TRAM_W / 2 + sideW / 2), z: MAT_TRAM_CENTER_Z },
+            // right side strip alongside pit
+            { w: sideW, h: GND_T, d: tramL,
+              x:  (TRAM_W / 2 + sideW / 2), z: MAT_TRAM_CENTER_Z },
+        ].forEach((s, i) => {
+            const g = BABYLON.MeshBuilder.CreateBox('mgnd_' + i,
+                { width: s.w, height: s.h, depth: s.d }, scene);
+            g.position.set(s.x, SURF_Y - GND_SINK - s.h / 2, s.z);
+            g.material = groundMat;
+        });
+
+        // Pit walls and floor (dark concrete) — also sunk by GND_SINK so tops match ground
+        const pitMat = new BABYLON.StandardMaterial('pitMat', scene);
+        pitMat.diffuseColor  = new BABYLON.Color3(0.28, 0.28, 0.28);
+        pitMat.specularColor = new BABYLON.Color3(0.05, 0.05, 0.05);
+        const pitCY = SURF_Y - GND_SINK - PIT_D / 2;
+        [
+            // front wall (near approach side)
+            { w: TRAM_W, h: PIT_D, d: 0.15, x: 0, z: MAT_TRAM_START_Z },
+            // back wall
+            { w: TRAM_W, h: PIT_D, d: 0.15, x: 0, z: MAT_TRAM_END_Z },
+            // left wall
+            { w: 0.15, h: PIT_D, d: tramL, x: -TRAM_W / 2, z: MAT_TRAM_CENTER_Z },
+            // right wall
+            { w: 0.15, h: PIT_D, d: tramL, x:  TRAM_W / 2, z: MAT_TRAM_CENTER_Z },
+        ].forEach((pw, i) => {
+            const w = BABYLON.MeshBuilder.CreateBox('pwall_' + i,
+                { width: pw.w, height: pw.h, depth: pw.d }, scene);
+            w.position.set(pw.x, pitCY, pw.z);
+            w.material = pitMat;
+        });
+        // Pit floor
+        const pFloor = BABYLON.MeshBuilder.CreateBox('pitFloor',
+            { width: TRAM_W, height: 0.2, depth: tramL }, scene);
+        pFloor.position.set(0, SURF_Y - GND_SINK - PIT_D - 0.1, MAT_TRAM_CENTER_Z);
+        pFloor.material = pitMat;
+
+        // Trampoline frame rails
+        const frameMat2 = new BABYLON.StandardMaterial('matTramFrame', scene);
+        frameMat2.diffuseColor  = new BABYLON.Color3(0.55, 0.55, 0.55);
+        frameMat2.specularColor = new BABYLON.Color3(0.80, 0.80, 0.80);
+        frameMat2.specularPower = 60;
+        const RT = 0.22, RH = 0.10;
+        const RFX = TRAM_W / 2 + RT / 2;
+        [
+            { w: TRAM_W + RT * 2, d: RT, x: 0,    z: MAT_TRAM_START_Z - RT / 2 },
+            { w: TRAM_W + RT * 2, d: RT, x: 0,    z: MAT_TRAM_END_Z   + RT / 2 },
+            { w: RT, d: MAT_TRAM_END_Z - MAT_TRAM_START_Z, x: -RFX, z: MAT_TRAM_CENTER_Z },
+            { w: RT, d: MAT_TRAM_END_Z - MAT_TRAM_START_Z, x:  RFX, z: MAT_TRAM_CENTER_Z },
+        ].forEach((r, i) => {
+            const rail = BABYLON.MeshBuilder.CreateBox('mTRail_' + i,
+                { width: r.w, height: RH, depth: r.d }, scene);
+            rail.position.set(r.x, SURF_Y + RH / 2, r.z);
+            rail.material = frameMat2;
+        });
+
+        // Trampoline deformable surface
+        {
+            const tCols = 20, tRows = 14;
+            const tW = TRAM_W, tD = MAT_TRAM_END_Z - MAT_TRAM_START_Z;
+            const gP = [], gI = [], gU = [];
+            for (let r = 0; r <= tRows; r++) for (let c = 0; c <= tCols; c++) {
+                gP.push((c / tCols - 0.5) * tW, 0, (r / tRows - 0.5) * tD);
+                gU.push(c / tCols, r / tRows);
+                matTramGridNXZ.push((c / tCols) * 2 - 1, (r / tRows) * 2 - 1);
+            }
+            for (let r = 0; r < tRows; r++) for (let c = 0; c < tCols; c++) {
+                const a = r * (tCols + 1) + c;
+                gI.push(a, a + tCols + 1, a + 1, a + 1, a + tCols + 1, a + tCols + 2);
+            }
+            const gN = new Array(gP.length).fill(0);
+            BABYLON.VertexData.ComputeNormals(gP, gI, gN);
+            const gVD = new BABYLON.VertexData();
+            gVD.positions = gP; gVD.indices = gI; gVD.normals = gN; gVD.uvs = gU;
+            matTramGridMesh = new BABYLON.Mesh('matTramGrid', scene);
+            gVD.applyToMesh(matTramGridMesh, true);
+            matTramGridMesh.position.set(0, SURF_Y, MAT_TRAM_CENTER_Z);
+            matTramGridPosArr = gP.slice();
+            matTramGridIdxArr = gI.slice();
+            const tSurfMat = new BABYLON.StandardMaterial('matTramSurf', scene);
+            tSurfMat.diffuseColor    = new BABYLON.Color3(0.07, 0.07, 0.09);
+            tSurfMat.backFaceCulling = false;
+            matTramGridMesh.material = tSurfMat;
+            // Grid lines overlay
+            matTramLines = BABYLON.MeshBuilder.CreateLineSystem('matTramLines',
+                { lines: buildMatTramLines(), updatable: true }, scene);
+            matTramLines.color = new BABYLON.Color3(0.38, 0.38, 0.44);
+            matTramLines.position.set(0, SURF_Y, MAT_TRAM_CENTER_Z);
+        }
+
+        // Landing crash mat body
+        const matBodyMat = new BABYLON.StandardMaterial('matBody', scene);
+        matBodyMat.diffuseColor  = new BABYLON.Color3(0.10, 0.18, 0.65);
+        matBodyMat.specularColor = new BABYLON.Color3(0.02, 0.02, 0.08);
+        const matBody = BABYLON.MeshBuilder.CreateBox('matBody',
+            { width: MAT_W, height: MAT_H - 0.005, depth: MAT_L }, scene);
+        matBody.position.set(0, SURF_Y + (MAT_H - 0.005) / 2, MAT_LAND_CENTER_Z);
+        matBody.material = matBodyMat;
+
+        // Landing mat deformable surface (top of foam block)
+        {
+            const lCols = 18, lRows = 14;
+            const lW = MAT_W, lD = MAT_L;
+            const gP = [], gI = [], gU = [];
+            for (let r = 0; r <= lRows; r++) for (let c = 0; c <= lCols; c++) {
+                gP.push((c / lCols - 0.5) * lW, 0, (r / lRows - 0.5) * lD);
+                gU.push(c / lCols, r / lRows);
+                matLandGridNXZ.push((c / lCols) * 2 - 1, (r / lRows) * 2 - 1);
+            }
+            for (let r = 0; r < lRows; r++) for (let c = 0; c < lCols; c++) {
+                const a = r * (lCols + 1) + c;
+                gI.push(a, a + lCols + 1, a + 1, a + 1, a + lCols + 1, a + lCols + 2);
+            }
+            const gN = new Array(gP.length).fill(0);
+            BABYLON.VertexData.ComputeNormals(gP, gI, gN);
+            const gVD = new BABYLON.VertexData();
+            gVD.positions = gP; gVD.indices = gI; gVD.normals = gN; gVD.uvs = gU;
+            matLandGridMesh = new BABYLON.Mesh('matLandGrid', scene);
+            gVD.applyToMesh(matLandGridMesh, true);
+            matLandGridMesh.position.set(0, SURF_Y + MAT_H, MAT_LAND_CENTER_Z);
+            matLandGridPosArr = gP.slice();
+            matLandGridIdxArr = gI.slice();
+            const lSurfMat = new BABYLON.StandardMaterial('matLandSurf', scene);
+            lSurfMat.diffuseColor  = new BABYLON.Color3(0.14, 0.26, 0.85);
+            lSurfMat.specularColor = new BABYLON.Color3(0.05, 0.05, 0.20);
+            lSurfMat.specularPower = 30;
+            matLandGridMesh.material = lSurfMat;
+        }
+
+        // Outdoor daylight
+        const matSun = new BABYLON.HemisphericLight('matSun',
+            new BABYLON.Vector3(0.3, 1, 0.2), scene);
+        matSun.intensity    = 1.1;
+        matSun.diffuse      = new BABYLON.Color3(1, 0.98, 0.92);
+        matSun.groundColor  = new BABYLON.Color3(0.35, 0.40, 0.30);
+
+        // Hide competition UI
+        ['trophyBtn','customBtn','settingsBtn','compBtn','qualifyBtn',
          'fisBtn','olympicsBtn','helpBtn','compHUD','qualifyHUD','powerMeter']
             .forEach(id => { const el = document.getElementById(id); if (el) el.style.display = 'none'; });
     }
@@ -967,7 +1243,7 @@ window.addEventListener('DOMContentLoaded', () => {
     };
 
     // ── Terrain meshes (visual — physics uses terrainRootY()) ────────────────────
-    if (!_trampolineMode) {
+    if (!_trampolineMode && !_trampolineMatMode) {
     const snowMat = new BABYLON.StandardMaterial('snowMat', scene);
     snowMat.diffuseColor = new BABYLON.Color3(0.92, 0.97, 1.0);
 
@@ -1239,14 +1515,15 @@ window.addEventListener('DOMContentLoaded', () => {
     let tramContactNX  = 0;       // normalized (-1..1) contact X on trampoline surface
     let tramContactNZ  = 0;       // normalized (-1..1) contact Z on trampoline surface
     const TRAM_BED_REST_Y   = TRAMPOLINE_Y - FOOT_OFFSET - 0.04;
+
     const TRAM_FRAME_REST_Y = TRAMPOLINE_Y - FOOT_OFFSET - 0.06;
     const TRAM_GRID_REST_Y  = TRAMPOLINE_Y - FOOT_OFFSET;
     const TRAM_SPRING_K     = 90;
     const TRAM_SPRING_DAMP  = 5;
-    const TRAM_GRID_COLS    = 12;
-    const TRAM_GRID_ROWS    = 10;
-    const TRAM_GRID_W       = 2.42;
-    const TRAM_GRID_D       = 4.95;
+    const TRAM_GRID_COLS    = 20;
+    const TRAM_GRID_ROWS    = 20;
+    const TRAM_GRID_W       = 6.0;
+    const TRAM_GRID_D       = 6.0;
     const tramGridNXZ       = []; // [nx0,nz0, nx1,nz1, ...] per vertex
     // Builds the deformed line positions for the grid overlay
     function buildTramLines(sy) {
@@ -1257,7 +1534,10 @@ window.addEventListener('DOMContentLoaded', () => {
             const nz = (r / TRAM_GRID_ROWS) * 2 - 1;
             const dx = nx - tramContactNX;
             const dz = nz - tramContactNZ;
-            const f  = Math.exp(-(dx*dx + dz*dz) * 2.5) * (1 - nx*nx) * (1 - nz*nz);
+            const edgePin = Math.sqrt(Math.max(0, (1 - nx*nx) * (1 - nz*nz)));
+            const wide    = Math.exp(-(dx*dx + dz*dz) * 0.35);
+            const local   = Math.exp(-(dx*dx + dz*dz) * 4.0) * 0.35;
+            const f       = (wide + local) * edgePin;
             return sy * f + off;
         }
         for (let r = 0; r <= TRAM_GRID_ROWS; r++) {
@@ -1296,11 +1576,12 @@ window.addEventListener('DOMContentLoaded', () => {
         tramBedMesh = new BABYLON.TransformNode('tramBed', scene);
         tramBedMesh.position.set(0, TRAM_BED_REST_Y, 0);
 
-        // ── Hollow rectangular frame (4 rails) ────────────────────────────
-        const RAIL_T = 0.14;  // thickness of each rail
-        const RAIL_H = 0.10;
+        // ── Border lip around pit (replaces raised frame rails) ──────────
+        const RAIL_T = 0.22;  // border thickness — matches PIT_HALF overhang
+        const RAIL_H = 0.12;  // sits flush at floor level
         const FX = TRAM_GRID_W / 2 + RAIL_T / 2;  // x-center of side rails
         const FZ = TRAM_GRID_D / 2 + RAIL_T / 2;  // z-center of end rails
+        const FRAME_Y = TRAM_FRAME_REST_Y + 0.06;  // sit right at floor surface
         const railDefs = [
             { w: TRAM_GRID_W + RAIL_T * 2, d: RAIL_T, x: 0,   z: -FZ },  // front
             { w: TRAM_GRID_W + RAIL_T * 2, d: RAIL_T, x: 0,   z:  FZ },  // back
@@ -1310,19 +1591,39 @@ window.addEventListener('DOMContentLoaded', () => {
         railDefs.forEach((r, i) => {
             const rail = BABYLON.MeshBuilder.CreateBox('tramRail_' + i,
                 { width: r.w, height: RAIL_H, depth: r.d }, scene);
-            rail.position.set(r.x, TRAM_FRAME_REST_Y, r.z);
+            rail.position.set(r.x, FRAME_Y, r.z);
             rail.material = frameMat;
             tramFrameRails.push(rail);
         });
         tramFrameMesh = tramFrameRails[0];
 
-        // ── 4 Legs ────────────────────────────────────────────────────────
-        [[-FX, -FZ], [-FX, FZ], [FX, -FZ], [FX, FZ]].forEach(([lx, lz], i) => {
-            const leg = BABYLON.MeshBuilder.CreateCylinder('tramLeg_' + i,
-                { height: 1.2, diameter: 0.10, tessellation: 8 }, scene);
-            leg.position.set(lx, TRAMPOLINE_Y - FOOT_OFFSET - 0.7, lz);
-            leg.material = frameMat;
+        // ── Pit walls (inground) ──────────────────────────────────────────
+        const pitMat = new BABYLON.StandardMaterial('pitMat', scene);
+        pitMat.diffuseColor  = new BABYLON.Color3(0.55, 0.50, 0.45);
+        pitMat.specularColor = new BABYLON.Color3(0.1, 0.1, 0.1);
+        const PIT_W = TRAM_GRID_W + 0.44;  // matches hole in floor (PIT_HALF*2)
+        const PIT_D = TRAM_GRID_D + 0.44;
+        const PIT_DEPTH_MESH = 1.5;
+        const pitWallY = TRAM_GRID_REST_Y - PIT_DEPTH_MESH / 2;
+        // Front & back walls
+        [[-PIT_D / 2, 0], [PIT_D / 2, 0]].forEach(([pz], i) => {
+            const w = BABYLON.MeshBuilder.CreateBox('pitWallFB_' + i,
+                { width: PIT_W, height: PIT_DEPTH_MESH, depth: 0.08 }, scene);
+            w.position.set(0, pitWallY, pz);
+            w.material = pitMat;
         });
+        // Left & right walls
+        [[-PIT_W / 2, 0], [PIT_W / 2, 0]].forEach(([px], i) => {
+            const w = BABYLON.MeshBuilder.CreateBox('pitWallLR_' + i,
+                { width: 0.08, height: PIT_DEPTH_MESH, depth: PIT_D }, scene);
+            w.position.set(px, pitWallY, 0);
+            w.material = pitMat;
+        });
+        // Pit floor
+        const pitFloor = BABYLON.MeshBuilder.CreateBox('pitFloor',
+            { width: PIT_W, height: 0.10, depth: PIT_D }, scene);
+        pitFloor.position.set(0, TRAM_GRID_REST_Y - PIT_DEPTH_MESH, 0);
+        pitFloor.material = pitMat;
 
         // ── Deformable jumping surface (6 × 10 = 60 quads) ────────────────
         const gPos = [], gIdx = [], gUV = [];
@@ -1403,7 +1704,7 @@ window.addEventListener('DOMContentLoaded', () => {
         armDropR:   1.0,
         rootY:      0.0,  // world Y of character root
         vy:         0.0,  // vertical velocity (world-units/s)
-        posZ:       _trampolineMode ? 0 : SLOPE_START_Z + 2.0, // start near top of inrun (or trampoline center)
+        posZ:       _trampolineMode ? 0 : _trampolineMatMode ? 4.0 : SLOPE_START_Z + 2.0, // start near top of inrun (or trampoline center)
         vz:         0.0,  // Z velocity — frictionless, only gravity along slope
         grounded:   true,
         crashed:    false, // true when landed badly
@@ -1499,7 +1800,13 @@ window.addEventListener('DOMContentLoaded', () => {
     let powerWrapDown   = false; // down arrow held → 1.3× spin rate
     let arrowUpDown     = false; // up arrow held mid-air → gradually slow flip
     let targetL_flip    = 0.0;   // target L_flip to recover toward when arrow released
-    let frontFlipQueued = false; // up pressed in air → do front flip on next bounce
+    let frontFlipQueued    = false; // up pressed in air → do front flip on next bounce
+    let singleLayoutMode   = false; // active during air phase: cap rotation to 1 flip
+    let singleFlipQueued   = false; // D pressed while grounded → apply on next launch
+    let crashActive        = false; // true while ragdoll animation is running
+    let crashTimer         = 0;
+    let crashFallDir       = 1;
+    let crashPieces        = [];   // detached body-part physics pieces
     let readyState      = true;  // true = waiting at top, character facing sideways
     let readyTurnT      = 0.0;   // 0→1: progress of turn-to-face-downhill animation
     const READY_TURN_DUR = 0.7;  // seconds to complete the turn
@@ -1537,7 +1844,11 @@ window.addEventListener('DOMContentLoaded', () => {
     function exitDoubleMode() {
         if (secondKeyTimer !== null) { clearTimeout(secondKeyTimer); secondKeyTimer = null; }
         doubleMode = false;
-        state.spinTarget = Math.round(state.spinAngle / (Math.PI * 2)) * Math.PI * 2;
+        const fullTwist = Math.PI * 2;
+        const turns = state.spinAngle / fullTwist;
+        // Always snap backward to last completed full twist, never forward
+        const n = state.doubleDir > 0 ? Math.floor(turns) : Math.ceil(turns);
+        state.spinTarget = n * fullTwist;
     }
 
     window.addEventListener('keydown', e => {
@@ -1598,10 +1909,14 @@ window.addEventListener('DOMContentLoaded', () => {
             state.armDropL    = 1.0;
             state.armDropR    = 1.0;
             state.vy          = 0.0;
-            state.posZ        = _trampolineMode ? 0 : SLOPE_START_Z + 2.0;
+            state.posZ        = _trampolineMode ? 0 : _trampolineMatMode ? 4.0 : SLOPE_START_Z + 2.0;
             state.vz          = 0.0;
             state.grounded    = true;
             state.crashed     = false;
+            // Reset mat-mode state
+            matBounceCount = 0; matTramBouncing = false;
+            matTramSpringY = 0; matTramSpringVY = 0;
+            matLanded = false; matLandSpringY = 0; matLandSpringVY = 0;
             state.crashAngle  = 0.0;
             state.stopped     = false;
             state.perFlipTwists   = [];
@@ -1616,13 +1931,29 @@ window.addEventListener('DOMContentLoaded', () => {
             state.layArmT     = 0.0;
             state.armSnapTarget = 0;
             state.airTime     = 0.0;
+            if (crashActive) {
+                crashActive = false;
+                crashTimer  = 0;
+                for (const p of crashPieces) {
+                    p.mesh.parent = character.root;
+                    p.mesh.position.copyFrom(p.origPos);
+                    if (p.origQuat) {
+                        p.mesh.rotationQuaternion = p.origQuat.clone();
+                    } else {
+                        p.mesh.rotationQuaternion = null;
+                        p.mesh.rotation.copyFrom(p.origRot);
+                    }
+                }
+                crashPieces = [];
+                character.root.setEnabled(true);
+            }
             leftDown = false; rightDown = false;
             autoSpinActive = false; armSwapPhase = false;
             leftArmHoldTime = 0; rightArmHoldTime = 0;
             rightArmHoldTime = 0; leftArmHoldTime = 0;
             downHalfTwistFired = false;
             bothArmsSpinTarget = Infinity;
-            doubleMode = false; powerWrapDown = false; arrowUpDown = false; frontFlipQueued = false;
+            doubleMode = false; powerWrapDown = false; arrowUpDown = false; frontFlipQueued = false; singleLayoutMode = false; singleFlipQueued = false;
             targetL_flip = 0.0;
             flipPower = 0; pmFill.style.width = '0%';
             billboard.isVisible = false;
@@ -1677,6 +2008,22 @@ window.addEventListener('DOMContentLoaded', () => {
                 state.armRaise  = 0.0;
                 state.armRaiseTarget = 0;
                 state.armSnapTarget  = 0;
+                singleLayoutMode = singleFlipQueued; // re-apply each jump without consuming
+                startRecording();
+            } else if (_trampolineMatMode) {
+                // Start bouncing on the trampoline
+                readyState      = false;
+                matBounceCount  = 1;
+                matTramBouncing = true;
+                state.grounded  = false;
+                state.vy        = 0;
+                state.vz        = 0;
+                state.flipAngle = 0;
+                state.L_flip    = 0;
+                matTramSpringY  = 0;
+                matTramSpringVY = -4.5;
+                matContactNX2   = 0;
+                matContactNZ2   = 0;
                 startRecording();
             } else {
                 // Begin turn-to-face-downhill animation
@@ -1693,6 +2040,9 @@ window.addEventListener('DOMContentLoaded', () => {
             } else if (_trampolineMode && !tramBouncing) {
                 frontFlipQueued = true; // queued for next landing contact
             }
+        }
+        if (_kcode === 'KeyD' && !state.crashed) {
+            singleFlipQueued = !singleFlipQueued; // toggle; takes effect on next jump
         }
         if (_kcode === 'ArrowLeft' && !leftDown && !state.crashed) {
             e.preventDefault();
@@ -2076,7 +2426,7 @@ window.addEventListener('DOMContentLoaded', () => {
 
     // ── Physics / render loop ─────────────────────────────────────────────────
     // Tuck transitions over 1/TUCK_RATE seconds (0.17 s)
-    scene.registerBeforeRender(() => {
+    scene.registerBeforeRender(() => { try {
         const rawDt = engine.getDeltaTime() / 1000; // seconds
         const dt = rawDt * (window._tutorialTimeScale !== undefined ? window._tutorialTimeScale : 1.0);
         if (paused || rawDt <= 0 || rawDt > 0.1) return; // skip when paused / stalled
@@ -2141,7 +2491,7 @@ window.addEventListener('DOMContentLoaded', () => {
 
         // ── Terrain physics (frictionless) ────────────────────────────────
         // ── Power meter visibility ──────────────────────────────────────────
-        const onApproach = !_trampolineMode && state.grounded && state.posZ >= APPROACH_START_Z && state.posZ < KICKER_END_Z;
+        const onApproach = !_trampolineMode && !_trampolineMatMode && state.grounded && state.posZ >= APPROACH_START_Z && state.posZ < KICKER_END_Z;
         if (onApproach && !pmActive) {
             pmActive = true;
             pmEl.style.display = 'block';
@@ -2158,8 +2508,8 @@ window.addEventListener('DOMContentLoaded', () => {
             if (rightDown && !leftDown) leftArmHoldTime  += dt; else leftArmHoldTime  = 0;
             if (leftDown && !rightDown) rightArmHoldTime += dt; else rightArmHoldTime = 0;
         }
-        // ── Down mid-air press → half twist (trampoline only) ─────────────
-        if (_trampolineMode && !state.grounded && !state.crashed && powerWrapDown && !doubleMode && !downHalfTwistFired) {
+        // ── Down mid-air press → half twist ───────────────────────────────
+        if (!state.grounded && !state.crashed && powerWrapDown && !doubleMode && !downHalfTwistFired) {
             const _rightSpin = _lsGet('setting_rightspin') === '1';
             state.spinTarget += _rightSpin ? Math.PI : -Math.PI;
             downHalfTwistFired = true;
@@ -2229,6 +2579,7 @@ window.addEventListener('DOMContentLoaded', () => {
             }
 
             state.posZ += state.vz * dt;
+
             // Only launch when actually crossing the kicker tip (not after landing past it)
             const crossingJ1 = prevZ <= KICKER_END_Z && state.posZ > KICKER_END_Z;
             if (crossingJ1) {
@@ -2285,7 +2636,9 @@ window.addEventListener('DOMContentLoaded', () => {
                     autoSpinActive = false;
                 }
             } else {
-                state.rootY = terrainRootY(state.posZ) + 0.10;
+                if (!(_trampolineMatMode && matLanded)) {
+                    state.rootY = terrainRootY(state.posZ) + 0.10;
+                }
                 // When upright (readyState, tilt=0) the full FOOT_OFFSET goes straight
                 // down so the skis sit on the surface. As tilt increases, compensate so
                 // the foot doesn't sink: rootY lifts by FOOT_OFFSET*(1-cos(tilt)).
@@ -2298,10 +2651,12 @@ window.addEventListener('DOMContentLoaded', () => {
                 state.rootY -= state.tuckAmount * 0.35;
             }
         } else {
-            // Skip gravity & position update while riding the trampoline spring
-            if (!tramBouncing) {
+            // Skip gravity & position update while riding the trampoline spring or mat tram spring
+            if (!tramBouncing && !matTramBouncing) {
                 state.vy    -= GRAVITY * dt;
                 state.rootY += state.vy * dt;
+            }
+            if (!tramBouncing) {
                 state.posZ  += state.vz * dt;
             }
             // Track air time and tuck time for execution scoring
@@ -2313,8 +2668,48 @@ window.addEventListener('DOMContentLoaded', () => {
             }
 
             const surY   = terrainRootY(state.posZ);
-            if (!tramBouncing && state.rootY <= surY) {
-                if (_trampolineMode) {
+            if (!tramBouncing && !matTramBouncing && state.rootY <= surY) {
+                if (_trampolineMatMode) {
+                    // ── Mat-mode landing detection ──────────────────────────
+                    const onTram = state.posZ >= MAT_TRAM_START_Z && state.posZ <= MAT_TRAM_END_Z;
+                    if (!matLanded && (matBounceCount === 1 || matBounceCount === 2) && onTram) {
+                        // Bounces 2 and 3: land back on trampoline → trigger next spring
+                        matBounceCount++;
+                        matTramBouncing = true;
+                        matTramSpringY  = 0;
+                        matTramSpringVY = state.vy;
+                        state.vy    = 0;
+                        state.rootY = TRAMPOLINE_Y + 0.10;
+                        matContactNX2 = 0;
+                        matContactNZ2 = Math.max(-1, Math.min(1,
+                            (state.posZ - MAT_TRAM_CENTER_Z) / ((MAT_TRAM_END_Z - MAT_TRAM_START_Z) / 2)));
+                    } else if (!matLanded && matBounceCount === 3 &&
+                               state.posZ >= MAT_LAND_START_Z && state.posZ <= MAT_LAND_END_Z) {
+                        // Land on crash mat
+                        const incomingVY = state.vy;
+                        matLanded = true;
+                        matLandSpringY    = Math.min(0, Math.max(-0.40, incomingVY / 25.0));
+                        matLandSpringVY   = 0;
+                        matLandContactNZ2 = Math.max(-1, Math.min(1,
+                            (state.posZ - MAT_LAND_CENTER_Z) / ((MAT_LAND_END_Z - MAT_LAND_START_Z) / 2)));
+                        state.vy      = 0;
+                        state.vz      = 0;
+                        state.grounded = true;
+                        state.rootY   = TRAMPOLINE_Y + 0.38; // feet on mat surface (MAT_H=0.28 + 0.10)
+                        state.tuckTarget = 0;
+                        state.tuckAmount = 0;
+                        state.pikeTarget = 0;
+                        state.pikeAmount = 0;
+                        state.flipAngle  = 0;
+                        state.stopped    = true;
+                    } else if (!matLanded && matBounceCount >= 3) {
+                        // Missed or overshot mat — crash
+                        state.crashed  = true;
+                        state.vy = 0; state.vz = 0;
+                        state.grounded = true;
+                        state.rootY = surY + 0.10;
+                    }
+                } else if (_trampolineMode) {
                     // ── Check landing zone ─────────────────────────────────
                     const _tTWO_PI    = Math.PI * 2;
                     const _tNorm      = ((state.flipAngle % _tTWO_PI) + _tTWO_PI) % _tTWO_PI;
@@ -2406,16 +2801,19 @@ window.addEventListener('DOMContentLoaded', () => {
                 const norm    = ((state.flipAngle % TWO_PI) + TWO_PI) % TWO_PI;
                 const LAND_TOL = Math.PI / 4; // 45° — clean landing window
                 const spinNorm = ((state.spinAngle % TWO_PI) + TWO_PI) % TWO_PI;
-                const SPIN_TOL = Math.PI / 4; // 45° — must be facing forward
-                const facingForward = spinNorm < SPIN_TOL || spinNorm > TWO_PI - SPIN_TOL;
-                const goodLanding = (norm < LAND_TOL || norm > TWO_PI - LAND_TOL) && facingForward;
+                const SPIN_TOL = Math.PI / 4; // 45° tolerance
+                const facingForward  = spinNorm < SPIN_TOL || spinNorm > TWO_PI - SPIN_TOL;
+                const facingBackward = Math.abs(spinNorm - Math.PI) < SPIN_TOL;
+                const goodLanding = (norm < LAND_TOL || norm > TWO_PI - LAND_TOL) && (facingForward || facingBackward);
 
                 state.rootY      = surY + 0.10;
                 state.vy         = 0;
                 state.grounded   = true;
                 const capturedSpin = state.spinAngle;
-                state.spinAngle  = 0;
-                state.spinTarget = 0;
+                // Snap to nearest half-turn so backward landings stay backward
+                const snapSpin   = Math.round(capturedSpin / Math.PI) * Math.PI;
+                state.spinAngle  = snapSpin;
+                state.spinTarget = snapSpin;
                 state.tuckTarget = 0;
                 state.tuckAmount = 0;
                 state.pikeTarget = 0;
@@ -2551,6 +2949,7 @@ window.addEventListener('DOMContentLoaded', () => {
                     tramBouncing  = false;
                     tramSpringY   = 0;
                     tramSpringVY  = 0;
+                    singleLayoutMode = singleFlipQueued; // re-apply each bounce without consuming
                     // Always launch at fixed height; spring trajectory is already smooth
                     state.vy = tramSavedReboundVY;
                 }
@@ -2565,7 +2964,10 @@ window.addEventListener('DOMContentLoaded', () => {
                 const nz = tramGridNXZ[i * 2 + 1];  // -1 to +1 along Z
                 const dx = nx - tramContactNX;
                 const dz = nz - tramContactNZ;
-                const f  = Math.exp(-(dx*dx + dz*dz) * 2.5) * (1 - nx*nx) * (1 - nz*nz);
+                const edgePin = Math.sqrt(Math.max(0, (1 - nx*nx) * (1 - nz*nz)));
+                const wide    = Math.exp(-(dx*dx + dz*dz) * 0.35);
+                const local   = Math.exp(-(dx*dx + dz*dz) * 4.0) * 0.35;
+                const f       = (wide + local) * edgePin;
                 tramGridPosArr[i * 3 + 1] = tramSpringY * f;
             }
             const gNrm = new Array(tramGridPosArr.length).fill(0);
@@ -2578,6 +2980,91 @@ window.addEventListener('DOMContentLoaded', () => {
                 { lines: buildTramLines(tramSpringY), instance: tramGridLines }, scene);
         }
 
+        // ── Trampoline-mat spring animation ───────────────────────────────
+        if (_trampolineMatMode) {
+            // Bounce spring (character rides it)
+            if (matTramBouncing) {
+                const acc = -MAT_TRAM_SPRING_K * matTramSpringY - MAT_TRAM_SPRING_D * matTramSpringVY;
+                matTramSpringVY += acc * dt;
+                matTramSpringY  += matTramSpringVY * dt;
+                state.rootY = TRAMPOLINE_Y + matTramSpringY + 0.10;
+                character.root.position.y = state.rootY;
+                character.root.position.z = state.posZ;
+                if (matTramSpringY >= -0.01 && matTramSpringVY >= 0) {
+                    matTramBouncing = false;
+                    matTramSpringY  = 0;
+                    matTramSpringVY = 0;
+                    state.grounded  = false;
+                    if (matBounceCount === 1) {
+                        state.vy     = MAT_BOUNCE1_VY;
+                        state.vz     = MAT_BOUNCE1_VZ;
+                        state.L_flip = 0;
+                        state.flipAngle = 0;
+                    } else if (matBounceCount === 2) {
+                        state.vy     = MAT_BOUNCE2_VY;
+                        state.vz     = MAT_BOUNCE2_VZ;
+                        state.L_flip = 0;
+                        state.flipAngle = 0;
+                    } else {
+                        state.vy      = MAT_BOUNCE3_VY;
+                        state.vz      = MAT_BOUNCE3_VZ;
+                        state.flipDir = -1;
+                        state.L_flip  = (singleFlipQueued ? I0 * 2.6 : I0 * 5.5);
+                        state.flipAngle = 0;
+                    }
+                }
+            }
+            // Landing mat spring (visual deformation only, overdamped)
+            if (matLandSpringY !== 0 || matLandSpringVY !== 0) {
+                const acc = -MAT_LAND_SPRING_K * matLandSpringY - MAT_LAND_SPRING_D * matLandSpringVY;
+                matLandSpringVY += acc * dt;
+                matLandSpringY  += matLandSpringVY * dt;
+                if (matLandSpringY > 0) { matLandSpringY = 0; matLandSpringVY = 0; }
+                if (Math.abs(matLandSpringY) < 0.001 && Math.abs(matLandSpringVY) < 0.001) {
+                    matLandSpringY = 0; matLandSpringVY = 0;
+                }
+            }
+            // Deform trampoline surface
+            if (matTramGridMesh) {
+                const nv = matTramGridNXZ.length / 2;
+                for (let i = 0; i < nv; i++) {
+                    const nx = matTramGridNXZ[i * 2];
+                    const nz = matTramGridNXZ[i * 2 + 1];
+                    const dx = nx - matContactNX2;
+                    const dz = nz - matContactNZ2;
+                    const edgePin = Math.sqrt(Math.max(0, (1 - nx*nx) * (1 - nz*nz)));
+                    const wide    = Math.exp(-(dx*dx + dz*dz) * 0.35);
+                    const local   = Math.exp(-(dx*dx + dz*dz) * 4.0) * 0.35;
+                    matTramGridPosArr[i * 3 + 1] = matTramSpringY * (wide + local) * edgePin;
+                }
+                const gNrm = new Array(matTramGridPosArr.length).fill(0);
+                BABYLON.VertexData.ComputeNormals(matTramGridPosArr, matTramGridIdxArr, gNrm);
+                matTramGridMesh.updateVerticesData(BABYLON.VertexBuffer.PositionKind, matTramGridPosArr);
+                matTramGridMesh.updateVerticesData(BABYLON.VertexBuffer.NormalKind, gNrm);
+                if (matTramLines) {
+                    BABYLON.MeshBuilder.CreateLineSystem('matTramLines',
+                        { lines: buildMatTramLines(), instance: matTramLines }, scene);
+                }
+            }
+            // Deform landing mat surface
+            if (matLandGridMesh) {
+                const nv = matLandGridNXZ.length / 2;
+                for (let i = 0; i < nv; i++) {
+                    const nx = matLandGridNXZ[i * 2];
+                    const nz = matLandGridNXZ[i * 2 + 1];
+                    const dz = nz - matLandContactNZ2;
+                    const edgePin = Math.sqrt(Math.max(0, (1 - nx*nx) * (1 - nz*nz)));
+                    const wide    = Math.exp(-(nx*nx + dz*dz) * 0.35);
+                    const local   = Math.exp(-(nx*nx + dz*dz) * 4.0) * 0.35;
+                    matLandGridPosArr[i * 3 + 1] = matLandSpringY * (wide + local) * edgePin;
+                }
+                const gNrm = new Array(matLandGridPosArr.length).fill(0);
+                BABYLON.VertexData.ComputeNormals(matLandGridPosArr, matLandGridIdxArr, gNrm);
+                matLandGridMesh.updateVerticesData(BABYLON.VertexBuffer.PositionKind, matLandGridPosArr);
+                matLandGridMesh.updateVerticesData(BABYLON.VertexBuffer.NormalKind, gNrm);
+            }
+        }
+
         // ── Angular momentum conservation: ω = L / I ──────────────────────
         const I_base = computeI(state.tuckAmount);
         const I_pike = computeI(state.pikeAmount); // pike uses same inertia curve as tuck
@@ -2585,6 +3072,11 @@ window.addEventListener('DOMContentLoaded', () => {
         const tuckBoost = _trampolineMode ? (1.0 + 0.3 * state.tuckAmount) : 1.0;
         const maxOmega = _trampolineMode ? 13.0 : MAX_OMEGA;
         let omega = Math.min((state.L_flip / I) * tuckBoost, maxOmega);
+        // D key (trampoline): single flip — untucked = ~1 flip; full tuck/pike = 3×
+        if (singleLayoutMode) {
+            const boost = Math.max(state.tuckAmount, state.pikeAmount) * 2.0;
+            omega = Math.min(omega, Math.PI * (1.0 + boost));
+        }
         // During pike release: lerp omega linearly from the captured release omega to base speed
         // so the deceleration rate is constant regardless of how far the pike was held.
         if (state.pikeAmount > 0 && state.pikeTarget === 0) {
@@ -2596,17 +3088,78 @@ window.addEventListener('DOMContentLoaded', () => {
         } else if (state.pikeTarget > 0 || state.pikeAmount === 0) {
             state.pikeReleaseOmega = 0;
         }
-        if (!state.grounded && !tramBouncing) {
+        if (!state.grounded && !tramBouncing && !matTramBouncing) {
             const flipDirBoost = (state.flipDir === -1) ? 1.11 : 1.0; // frontflip ~11% faster
             state.flipAngle += omega * state.flipDir * flipDirBoost * dt;
+            if (singleLayoutMode && !_trampolineMode) {
+                state.flipAngle = Math.max(-Math.PI * 2, Math.min(Math.PI * 2, state.flipAngle));
+            }
         }
-        // ── Crash: animate flip angle toward lying-flat position ───────────
-        if (state.crashed) {
-            const diff = state.crashAngle - state.flipAngle;
-            // normalise to [-π, π] so we always take the short arc
-            const normDiff = ((diff + Math.PI) % (Math.PI * 2)) - Math.PI;
-            const step = 6.0 * dt;
-            state.flipAngle += Math.abs(normDiff) <= step ? normDiff : Math.sign(normDiff) * step;
+        // ── Crash: ragdoll ────────────────────────────────────────────────
+        if (state.crashed && !crashActive) {
+            crashActive = true;
+            crashTimer  = 0;
+            const floorY = (_trampolineMode || _trampolineMatMode)
+                ? (TRAMPOLINE_Y - FOOT_OFFSET)
+                : terrainRootY(state.posZ) - FOOT_OFFSET;
+            character.root.computeWorldMatrix(true);
+            const rootMtx = character.root.getWorldMatrix();
+            for (const name of Object.keys(character.meshes)) {
+                const mesh = character.meshes[name];
+                const origPos  = mesh.position.clone();
+                const origQuat = mesh.rotationQuaternion ? mesh.rotationQuaternion.clone() : null;
+                const origRot  = mesh.rotation ? mesh.rotation.clone() : new BABYLON.Vector3();
+                const worldPos = BABYLON.Vector3.TransformCoordinates(origPos, rootMtx);
+                mesh.parent = null;
+                mesh.position.copyFrom(worldPos);
+                mesh.rotationQuaternion = null;
+                mesh.rotation.set(
+                    (Math.random() - 0.5) * 1.0,
+                    (Math.random() - 0.5) * 1.0,
+                    (Math.random() - 0.5) * 1.0
+                );
+                const angle   = Math.random() * Math.PI * 2;
+                const outward = 2.0 + Math.random() * 5.0;
+                crashPieces.push({
+                    mesh, origPos, origQuat, origRot,
+                    vx: Math.cos(angle) * outward,
+                    vy: 2.0 + Math.random() * 7.0,
+                    vz: Math.sin(angle) * outward * 0.7 + (state.vz || 0) * 0.35,
+                    rotVx: (Math.random() - 0.5) * 24,
+                    rotVy: (Math.random() - 0.5) * 24,
+                    rotVz: (Math.random() - 0.5) * 24,
+                    floorY, bounces: 0,
+                });
+            }
+            character.root.setEnabled(false);
+        }
+        if (crashActive) {
+            crashTimer += dt;
+            for (const p of crashPieces) {
+                p.vy -= GRAVITY * dt;
+                p.mesh.position.x += p.vx * dt;
+                p.mesh.position.y += p.vy * dt;
+                p.mesh.position.z += p.vz * dt;
+                p.mesh.rotation.x += p.rotVx * dt;
+                p.mesh.rotation.y += p.rotVy * dt;
+                p.mesh.rotation.z += p.rotVz * dt;
+                if (p.mesh.position.y < p.floorY) {
+                    p.mesh.position.y = p.floorY;
+                    if (p.bounces < 2 && Math.abs(p.vy) > 1.5) {
+                        p.vy = Math.abs(p.vy) * 0.32;
+                        p.vx *= 0.55; p.vz *= 0.55;
+                        p.rotVx *= 0.45; p.rotVy *= 0.45; p.rotVz *= 0.45;
+                        p.bounces++;
+                    } else {
+                        p.vy = 0;
+                        p.vx *= Math.max(0, 1 - 4 * dt);
+                        p.vz *= Math.max(0, 1 - 4 * dt);
+                        p.rotVx *= Math.max(0, 1 - 5 * dt);
+                        p.rotVy *= Math.max(0, 1 - 5 * dt);
+                        p.rotVz *= Math.max(0, 1 - 5 * dt);
+                    }
+                }
+            }
         }
 
         // ── Spin ──────────────────────────────────────────────────────────
@@ -2704,39 +3257,41 @@ window.addEventListener('DOMContentLoaded', () => {
         state.layArmT    += Math.abs(dLayT) <= layTStep ? dLayT : Math.sign(dLayT) * layTStep;
 
         // ── Apply body pose ────────────────────────────────────────────────
-        applyPose(character.meshes, state.tuckAmount, state.armDropL, state.armDropR, state.armSnap, state.layArmT, state.armRaise, state.grounded, state.pikeAmount, state.pikeArmDrop);
+        if (!crashActive) {
+            applyPose(character.meshes, state.tuckAmount, state.armDropL, state.armDropR, state.armSnap, state.layArmT, state.armRaise, state.grounded, state.pikeAmount, state.pikeArmDrop);
+        }
 
         // ── Character rotation ─────────────────────────────────────────────
-        // qFace turns the character to face +Z (downhill direction).
-        // In readyState the character starts facing sideways (+π/2) and smoothly
-        // rotates to face downhill (0) as readyTurnT goes 0→1.
-        const readyYaw = readyState ? (1.0 - readyTurnT) * (Math.PI / 2) : 0.0;
-        const qFace = BABYLON.Quaternion.RotationAxis(BABYLON.Axis.Y, Math.PI + readyYaw);
-        if (state.grounded) {
-            let tilt = 0;
-            if (state.posZ < SLOPE_START_Z) {
-                tilt = 0; // flat top
-            } else if (state.posZ > OUTRUN_Z) {
-                tilt = 0; // flat outrun
+        if (!crashActive) {
+            // qFace turns the character to face +Z (downhill direction).
+            // In readyState the character starts facing sideways (+π/2) and smoothly
+            // rotates to face downhill (0) as readyTurnT goes 0→1.
+            const readyYaw = readyState ? (1.0 - readyTurnT) * (Math.PI / 2) : 0.0;
+            const qFace = BABYLON.Quaternion.RotationAxis(BABYLON.Axis.Y, Math.PI + readyYaw);
+            if (state.grounded) {
+                let tilt = 0;
+                if (state.posZ < SLOPE_START_Z) {
+                    tilt = 0; // flat top
+                } else if (state.posZ > OUTRUN_Z) {
+                    tilt = 0; // flat outrun
+                } else {
+                    // Continuously derive surface angle from physics terrain — no step snaps.
+                    // Matches slope, smooth transition, kicker, and landing automatically.
+                    const _eps  = 0.05;
+                    const _dydz = (terrainRootY(state.posZ + _eps) - terrainRootY(state.posZ - _eps)) / (2 * _eps);
+                    tilt = Math.atan(_dydz);
+                }
+                // During ready-state turn, blend tilt from 0 (upright) to full slope tilt
+                if (readyState) tilt = tilt * readyTurnT;
+                const qTilt = BABYLON.Quaternion.RotationAxis(BABYLON.Axis.X, tilt);
+                const qSpin = BABYLON.Quaternion.RotationAxis(BABYLON.Axis.Y, state.spinAngle);
+                character.root.rotationQuaternion = qFace.multiply(qTilt).multiply(qSpin);
             } else {
-                // Continuously derive surface angle from physics terrain — no step snaps.
-                // Matches slope, smooth transition, kicker, and landing automatically.
-                const _eps  = 0.05;
-                const _dydz = (terrainRootY(state.posZ + _eps) - terrainRootY(state.posZ - _eps)) / (2 * _eps);
-                tilt = Math.atan(_dydz);
+                // qFlip * qSpin — spin in body-local space (head-to-feet axis)
+                const qFlip = BABYLON.Quaternion.RotationAxis(BABYLON.Axis.X, state.flipAngle);
+                const qSpin = BABYLON.Quaternion.RotationAxis(BABYLON.Axis.Y, state.spinAngle);
+                character.root.rotationQuaternion = qFace.multiply(qFlip).multiply(qSpin);
             }
-            // During ready-state turn, blend tilt from 0 (upright) to full slope tilt
-            if (readyState) tilt = tilt * readyTurnT;
-            const qTilt  = BABYLON.Quaternion.RotationAxis(BABYLON.Axis.X, tilt);
-            const qCrash = state.crashed
-                ? BABYLON.Quaternion.RotationAxis(BABYLON.Axis.X, state.flipAngle)
-                : BABYLON.Quaternion.Identity();
-            character.root.rotationQuaternion = qFace.multiply(qTilt).multiply(qCrash);
-        } else {
-            // qFlip * qSpin — spin in body-local space (head-to-feet axis)
-            const qFlip = BABYLON.Quaternion.RotationAxis(BABYLON.Axis.X, state.flipAngle);
-            const qSpin = BABYLON.Quaternion.RotationAxis(BABYLON.Axis.Y, state.spinAngle);
-            character.root.rotationQuaternion = qFace.multiply(qFlip).multiply(qSpin);
         }
 
         // ── Camera follow ──────────────────────────────────────────────────────────────
@@ -2755,9 +3310,14 @@ window.addEventListener('DOMContentLoaded', () => {
         hud.text = '';
         hint.text = readyState && readyTurnT === 0.0
             ? '↑: Start run\ndrag: orbit'
-            : 'SPACE: tuck\n← then →: left twist\n→ then ←: right twist\n↓: power wrap\ndrag: orbit';
-    });
+            : 'SPACE: tuck\n← then →: left twist\n→ then ←: right twist\n↓: half twist\ndrag: orbit';
+    } catch(e) { hud.text = 'ERR: ' + e.message; console.error(e); } });
 
     // ── Run ───────────────────────────────────────────────────────────────────
     engine.runRenderLoop(() => scene.render());
-});
+}
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', _startGame);
+} else {
+    _startGame();
+}
