@@ -1254,11 +1254,19 @@ function _startGame() {
     const POOL_W        = 9.5;
     const POOL_DEPTH    = 24.0;
     const POOL_WALL_T   = 0.45;
-    const POOL_DIVE_PLATFORM_Z = POOL_Z_START - 0.5;           // platform edge, facing pool
-    const POOL_DIVE_PLATFORM_Y = poolSurfaceY + 5.5;           // visual top of diving board
-    const POOL_DIVE_ROOT_Y     = POOL_DIVE_PLATFORM_Y + FOOT_OFFSET + 0.10; // character rootY on platform
-    const POOL_DIVE_LAUNCH_VY  = 8.5;                          // max upward velocity (full charge)
-    const POOL_DIVE_LAUNCH_VZ  = 5.0;                          // max forward velocity (full charge)
+    // Three platforms side by side on the shore, different heights
+    const PLATFORM_CONFIGS = [
+        { label: '8m',  height:  8.0, x: -4.0, launchVZ: 4.0 },
+        { label: '12m', height: 12.0, x:  0.0, launchVZ: 3.5 },
+        { label: '18m', height: 18.0, x:  4.0, launchVZ: 3.0 },
+    ];
+    const POOL_DIVE_SHORE_Z    = POOL_Z_START - 0.5; // all platforms at pool edge
+    let   activePlatIdx        = 0;
+    let   POOL_DIVE_PLATFORM_Z = POOL_DIVE_SHORE_Z;
+    let   POOL_DIVE_PLATFORM_X = PLATFORM_CONFIGS[0].x;
+    let   POOL_DIVE_PLATFORM_Y = poolSurfaceY + PLATFORM_CONFIGS[0].height;
+    let   POOL_DIVE_ROOT_Y     = POOL_DIVE_PLATFORM_Y + FOOT_OFFSET + 0.10;
+    const POOL_DIVE_LAUNCH_VY  = 8.5;
     let   poolWalls     = [];
     let   waterMesh     = null;
     let   _splashTex    = null;
@@ -1608,30 +1616,32 @@ function _startGame() {
             panel.material = _deckMat;
         });
 
-        // ── Diving platform (tower + board + handrails) ──────────────────────
+        // ── Three separate diving towers alongside the pool ──────────────────
         const _platMat = new BABYLON.StandardMaterial('platMat', scene);
         _platMat.diffuseColor = new BABYLON.Color3(0.55, 0.58, 0.65);
-        const _boardBottomY = POOL_DIVE_PLATFORM_Y - 0.18; // board top = POOL_DIVE_PLATFORM_Y, height=0.18
-        const _towerH = _boardBottomY - _deckTopY;
-        const _tower = BABYLON.MeshBuilder.CreateBox('diveTower',
-            { width: 0.6, height: _towerH, depth: 0.6 }, scene);
-        _tower.position.set(0, _deckTopY + _towerH / 2, POOL_DIVE_PLATFORM_Z - 0.8);
-        _tower.material = _platMat;
-
-        // Board: top surface is exactly POOL_DIVE_PLATFORM_Y
-        const _board = BABYLON.MeshBuilder.CreateBox('diveBoard',
-            { width: 1.8, height: 0.18, depth: 2.0 }, scene);
-        _board.position.set(0, POOL_DIVE_PLATFORM_Y - 0.09, POOL_DIVE_PLATFORM_Z - 0.2);
-        _board.material = _platMat;
-
-        // Handrails
         const _railMat = new BABYLON.StandardMaterial('railMat', scene);
         _railMat.diffuseColor = new BABYLON.Color3(0.85, 0.87, 0.9);
-        [-0.85, 0.85].forEach((rx, ri) => {
-            const _rail = BABYLON.MeshBuilder.CreateCylinder(`diveRail_${ri}`,
-                { height: 1.1, diameter: 0.06, tessellation: 8 }, scene);
-            _rail.position.set(rx, POOL_DIVE_PLATFORM_Y + 0.46, POOL_DIVE_PLATFORM_Z - 0.9);
-            _rail.material = _railMat;
+
+        PLATFORM_CONFIGS.forEach((cfg, li) => {
+            const platY   = poolSurfaceY + cfg.height;
+            const towerH  = platY - 0.18 - _deckTopY;
+            // Tower at shore, offset in X
+            const tower = BABYLON.MeshBuilder.CreateBox(`diveTower_${li}`,
+                { width: 0.6, height: towerH, depth: 0.6 }, scene);
+            tower.position.set(cfg.x, _deckTopY + towerH / 2, POOL_DIVE_SHORE_Z - 0.8);
+            tower.material = _platMat;
+            // Board (top surface = platY)
+            const brd = BABYLON.MeshBuilder.CreateBox(`diveBoard_${li}`,
+                { width: 1.8, height: 0.18, depth: 2.0 }, scene);
+            brd.position.set(cfg.x, platY - 0.09, POOL_DIVE_SHORE_Z - 0.2);
+            brd.material = _platMat;
+            // Handrails
+            [-0.85, 0.85].forEach((rx, ri) => {
+                const rail = BABYLON.MeshBuilder.CreateCylinder(`diveRail_${li}_${ri}`,
+                    { height: 1.0, diameter: 0.06, tessellation: 8 }, scene);
+                rail.position.set(cfg.x + rx, platY + 0.41, POOL_DIVE_SHORE_Z - 0.9);
+                rail.material = _railMat;
+            });
         });
 
         // Sky backdrop
@@ -1642,6 +1652,36 @@ function _startGame() {
         const _sky = BABYLON.MeshBuilder.CreatePlane('sky', { width: 80, height: 40 }, scene);
         _sky.position.set(0, poolSurfaceY + 8, poolCenterZ + 30);
         _sky.material = _skyMat;
+
+        // ── Platform dropdown handler ────────────────────────────────────────
+        // Hide world/jump selector — not relevant in pool dive mode
+        const _wm = document.getElementById('worldMenu');
+        if (_wm) _wm.style.display = 'none';
+        const _platSelWrap = document.getElementById('platformSelectWrap');
+        const _platSel     = document.getElementById('platformSelect');
+        if (_platSelWrap) _platSelWrap.style.display = 'block';
+        if (_platSel) {
+            _platSel.value = String(activePlatIdx);
+            _platSel.addEventListener('change', () => {
+                switchPlatform(parseInt(_platSel.value));
+                // Reset diver to new platform
+                poolEntered = false; poolDivePushing = false; poolAutoLaunch = false;
+                poolSplashAmp = 0; poolEntryDrag = 5.5;
+                readyState = true;
+                state.posZ = POOL_DIVE_PLATFORM_Z;
+                state.rootY = POOL_DIVE_ROOT_Y;
+                state.vy = 0; state.vz = 0;
+                state.grounded = true; state.stopped = false; state.crashed = false;
+                state.flipAngle = 0; state.spinAngle = 0; state.spinTarget = 0;
+                state.tuckAmount = 0; state.tuckTarget = 0;
+                state.pikeAmount = 0; state.pikeTarget = 0;
+                state.armDropL = 1; state.armDropR = 1;
+                state.armRaise = 0; state.armRaiseTarget = 0;
+                state.L_flip = I0 * TARGET_OMEGA_UNTUCKED;
+                flipPower = 0; pmFill.style.width = '0%';
+                billboard.isVisible = false;
+            });
+        }
     }
 
     // ── Trampoline spring & grid state ──────────────────────────────────────
@@ -1941,7 +1981,17 @@ function _startGame() {
     let poolAutoLaunch     = false;
     let poolDivePushing    = false; // true during leg-extension push-off before launch
     let _poolDiveLaunchPwr = 0;     // flipPower captured at push-off trigger
-    let poolEntryDrag  = 5.5;   // drag coefficient while in water (computed from entry quality)
+    let poolEntryDrag  = 5.5;
+
+    // Defined here (not inside if block) so restart handler can always call it
+    function switchPlatform(idx) {
+        activePlatIdx        = idx;
+        const cfg            = PLATFORM_CONFIGS[idx];
+        POOL_DIVE_PLATFORM_Z = POOL_DIVE_SHORE_Z;
+        POOL_DIVE_PLATFORM_X = cfg.x;
+        POOL_DIVE_PLATFORM_Y = poolSurfaceY + cfg.height;
+        POOL_DIVE_ROOT_Y     = POOL_DIVE_PLATFORM_Y + FOOT_OFFSET + 0.10;
+    }   // drag coefficient while in water (computed from entry quality)
     let poolWaveT      = 0;
     let poolSplashAmp  = 0;
     let poolSplashImpX = 0;
@@ -2026,13 +2076,13 @@ function _startGame() {
     function exitDoubleMode() {
         if (secondKeyTimer !== null) { clearTimeout(secondKeyTimer); secondKeyTimer = null; }
         doubleMode = false;
-        const fullTwist = Math.PI * 2;
-        const turns = state.spinAngle / fullTwist;
-        // Complete the current twist forward; allow ~10% backward correction if just past one
+        const halfTwist = Math.PI;
+        const halves = state.spinAngle / halfTwist;
+        // Snap to nearest half-twist; allow ~10% backward correction if just past one
         const n = state.doubleDir > 0
-            ? Math.ceil(turns - 0.1)
-            : Math.floor(turns + 0.1);
-        state.spinTarget = n * fullTwist;
+            ? Math.ceil(halves - 0.1)
+            : Math.floor(halves + 0.1);
+        state.spinTarget = n * halfTwist;
     }
 
     window.addEventListener('keydown', e => {
@@ -2085,7 +2135,11 @@ function _startGame() {
             _poolDiveLaunchPwr = 0;
             poolEntryDrag      = 5.5;
             poolSplashAmp  = 0;
-            if (_poolDiveMode) { state.rootY = POOL_DIVE_ROOT_Y; }
+            if (_poolDiveMode) {
+                switchPlatform(activePlatIdx); // recompute Y/Z from current selection
+                state.posZ  = POOL_DIVE_PLATFORM_Z;
+                state.rootY = POOL_DIVE_ROOT_Y;
+            }
             state.L_flip      = I0 * TARGET_OMEGA_UNTUCKED;
             state.flipAngle   = 0.0;
             state.tuckAmount  = 0.0;
@@ -2739,7 +2793,7 @@ function _startGame() {
                         state.grounded  = false;
                         const _cp = Math.max(0.25, _poolDiveLaunchPwr);
                         state.vy = 1.5 + (POOL_DIVE_LAUNCH_VY - 1.5) * _cp;
-                        state.vz = 1.0 + (POOL_DIVE_LAUNCH_VZ - 1.0) * _cp;
+                        state.vz = PLATFORM_CONFIGS[activePlatIdx].launchVZ * Math.max(0.3, _cp);
                         state.flipDir   = 1;
                         state.L_flip    = I0 * TARGET_OMEGA_UNTUCKED * (Math.max(0.05, _poolDiveLaunchPwr) / 0.75);
                         state.perFlipTwists = []; state.lastFlipInt = 0;
@@ -3266,6 +3320,7 @@ function _startGame() {
         }
         character.root.position.y = state.rootY;
         character.root.position.z = state.posZ;
+        if (_poolDiveMode) character.root.position.x = POOL_DIVE_PLATFORM_X;
 
         // ── Trampoline spring animation ────────────────────────────────────
         if (_trampolineMode && tramGridMesh) {
@@ -3652,6 +3707,7 @@ function _startGame() {
         // ── Camera follow ──────────────────────────────────────────────────────────────
         camera.target.y = state.rootY;
         camera.target.z = state.posZ;
+        if (_poolDiveMode) camera.target.x = POOL_DIVE_PLATFORM_X;
         {
             // Target alpha/beta per mode
             const BASE_BETA = Math.PI / 3.2 - 2 * Math.PI / 180;

@@ -46,6 +46,9 @@
         #customBtn:hover { background: #2a2a3a; }
         #settingsBtn { position: absolute; top: 10px; left: 166px; z-index: 10; background: #1a2030; color: #b8d8ff; border: 1px solid #335566; padding: 5px 11px; cursor: pointer; font-size: 14px; border-radius: 6px; line-height: 1; }
         #settingsBtn:hover { background: #243040; }
+        #platformSelectWrap { display: none; position: absolute; top: 10px; left: 50%; transform: translateX(-50%); z-index: 10; }
+        #platformSelect { background: #0a1a2a; color: #88ccff; border: 1px solid #335566; padding: 6px 18px; font-size: 15px; border-radius: 6px; cursor: pointer; outline: none; font-family: sans-serif; }
+        #platformSelect:hover { background: #142234; }
         #settingsModal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.78); z-index: 200; align-items: center; justify-content: center; }
         #settingsModal.open { display: flex; }
         #settingsModalBox { background: #0f1e2e; border: 1px solid #445566; border-radius: 12px; padding: 28px 36px; min-width: 300px; color: #b8d8ff; font-family: sans-serif; }
@@ -348,6 +351,13 @@
     <button id="replayBtn" title="Replay last jump">🔄</button>
     <button id="customBtn" title="Custom World">⭐</button>
     <button id="settingsBtn" title="Settings">⚙️ Settings</button>
+    <div id="platformSelectWrap">
+        <select id="platformSelect">
+            <option value="0">5m Platform</option>
+            <option value="1">7.5m Platform</option>
+            <option value="2">10m Platform</option>
+        </select>
+    </div>
     <div id="settingsModal">
         <div id="settingsModalBox">
             <h2>⚙️ Settings</h2>
