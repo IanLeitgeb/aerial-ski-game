@@ -659,6 +659,7 @@ const _customLanding  = _worldParam === 'custom' ? Math.max(20, Math.min(150, pa
 const _customFlipSpeed = _worldParam === 'custom' ? Math.max(0.3, Math.min(3.0, parseFloat(new URLSearchParams(location.search).get('flipspeed') || '1.3'))) : 1.0;
 const _trampolineMode       = _worldParam === 'trampoline';
 const _trampolineMatMode    = _worldParam === 'trampoline_mat';
+const _poolDiveMode         = _worldParam === 'pool';
 const TRAMPOLINE_Y          = 0.0;   // world Y of the trampoline surface
 const TRAMPOLINE_LAUNCH_VY  = 14.0;  // vertical velocity given on each bounce
 // ── Trampoline-mat world constants ──────────────────────────────────────────
@@ -756,7 +757,7 @@ function terrainRootY(z) {
 }
 
 function terrainAccelZ(z) {
-    if (_trampolineMode || _trampolineMatMode) return 0;
+    if (_trampolineMode || _trampolineMatMode || _poolDiveMode) return 0;
     const g = 14.0;
     if (z < SLOPE_START_Z) return 0;    // flat top
     if (z > OUTRUN_Z)      return -14.0; // flat outrun friction
@@ -784,8 +785,10 @@ function _startGame() {
     // ── Scene ───────────────────────────────────────────────────────────────
     const scene = new BABYLON.Scene(engine);
     scene.clearColor = _trampolineMode
-        ? new BABYLON.Color4(0.88, 0.87, 0.84, 1)  // gym background
-        : new BABYLON.Color4(0.53, 0.81, 0.98, 1);  // sky blue
+        ? new BABYLON.Color4(0.88, 0.87, 0.84, 1)  // gym interior
+        : _poolDiveMode
+        ? new BABYLON.Color4(0.42, 0.68, 0.92, 1)  // outdoor pool sky
+        : new BABYLON.Color4(0.53, 0.81, 0.98, 1);  // ski sky blue
 
     // ── Orbiting orthographic camera ─────────────────────────────────────────
     // ArcRotateCamera orbits the origin on left-click drag / touch drag.
@@ -813,7 +816,7 @@ function _startGame() {
         camera.orthoRight  =  halfH * (w / h);
     }
     setOrtho();
-    window.addEventListener('resize', () => { engine.resize(); if (!cameraFollow) setOrtho(3.0); });
+    window.addEventListener('resize', () => { engine.resize(); setOrtho(3.0); });
 
     // ── Lighting ─────────────────────────────────────────────────────────────
     const hemi = new BABYLON.HemisphericLight('hemi', new BABYLON.Vector3(0.4, 1, -0.8), scene);
@@ -841,8 +844,8 @@ function _startGame() {
     applyPose(character.meshes, 0, 1, 1); // start fully extended, arms down
     window._characterMeshes = character.meshes;
 
-    // Hide skis and ski boots in trampoline / trampoline-mat mode
-    if (_trampolineMode) {
+    // Hide skis and ski boots in trampoline / trampoline-mat / pool-dive mode
+    if (_trampolineMode || _poolDiveMode) {
         if (character.meshes['skiL']) character.meshes['skiL'].isVisible = false;
         if (character.meshes['skiR']) character.meshes['skiR'].isVisible = false;
         ['lowerLegL', 'lowerLegR'].forEach(leg => {
@@ -1242,8 +1245,26 @@ function _startGame() {
         });
     };
 
+    // ── Pool geometry constants ──────────────────────────────────────────────
+    const POOL_Z_START  = OUTRUN_Z + 5;
+    const POOL_Z_END    = OUTRUN_Z + 25;
+    const poolLen       = POOL_Z_END - POOL_Z_START;
+    const poolCenterZ   = (POOL_Z_START + POOL_Z_END) / 2;
+    const poolSurfaceY  = terrainRootY(OUTRUN_Z) - FOOT_OFFSET + 0.05;
+    const POOL_W        = 9.5;
+    const POOL_DEPTH    = 24.0;
+    const POOL_WALL_T   = 0.45;
+    const POOL_DIVE_PLATFORM_Z = POOL_Z_START - 0.5;           // platform edge, facing pool
+    const POOL_DIVE_PLATFORM_Y = poolSurfaceY + 5.5;           // visual top of diving board
+    const POOL_DIVE_ROOT_Y     = POOL_DIVE_PLATFORM_Y + FOOT_OFFSET + 0.10; // character rootY on platform
+    const POOL_DIVE_LAUNCH_VY  = 8.5;                          // max upward velocity (full charge)
+    const POOL_DIVE_LAUNCH_VZ  = 5.0;                          // max forward velocity (full charge)
+    let   poolWalls     = [];
+    let   waterMesh     = null;
+    let   _splashTex    = null;
+
     // ── Terrain meshes (visual — physics uses terrainRootY()) ────────────────────
-    if (!_trampolineMode && !_trampolineMatMode) {
+    if (!_trampolineMode && !_trampolineMatMode && !_poolDiveMode) {
     const snowMat = new BABYLON.StandardMaterial('snowMat', scene);
     snowMat.diffuseColor = new BABYLON.Color3(0.92, 0.97, 1.0);
 
@@ -1500,6 +1521,129 @@ function _startGame() {
     } // end trees
     } // end !_trampolineMode terrain
 
+    // ── Pool dive environment ────────────────────────────────────────────────
+    if (_poolDiveMode) {
+        // ── Pool geometry (walls + water surface + splash texture) ──────────
+        const _pwMat = new BABYLON.StandardMaterial('poolWallMat', scene);
+        _pwMat.diffuseColor = new BABYLON.Color3(0.50, 0.55, 0.62);
+        const _pfMat = new BABYLON.StandardMaterial('poolFloorMat', scene);
+        _pfMat.diffuseColor = new BABYLON.Color3(0.10, 0.28, 0.50);
+        const _pCY = poolSurfaceY - POOL_DEPTH / 2 - POOL_WALL_T / 2;
+        [   // [width, height, depth, x, y, z, material]
+            [POOL_W+POOL_WALL_T*2, POOL_DEPTH+POOL_WALL_T, POOL_WALL_T,  0,                        _pCY, POOL_Z_START-POOL_WALL_T/2, _pwMat],
+            [POOL_W+POOL_WALL_T*2, POOL_DEPTH+POOL_WALL_T, POOL_WALL_T,  0,                        _pCY, POOL_Z_END+POOL_WALL_T/2,   _pwMat],
+            [POOL_WALL_T,          POOL_DEPTH+POOL_WALL_T, poolLen,      -(POOL_W/2+POOL_WALL_T/2), _pCY, poolCenterZ,               _pwMat],
+            [POOL_WALL_T,          POOL_DEPTH+POOL_WALL_T, poolLen,       (POOL_W/2+POOL_WALL_T/2), _pCY, poolCenterZ,               _pwMat],
+            [POOL_W,               POOL_WALL_T,            poolLen,       0, poolSurfaceY-POOL_DEPTH-POOL_WALL_T/2, poolCenterZ,     _pfMat],
+        ].forEach(([w,h,d,x,y,z,mat], i) => {
+            const wall = BABYLON.MeshBuilder.CreateBox(`poolWall_${i}`, { width:w, height:h, depth:d }, scene);
+            wall.position.set(x, y, z);  wall.material = mat;
+            poolWalls.push(wall);
+        });
+
+        // Animated vertex-grid water surface
+        const WZ = 24, WX = 12;
+        const _wVerts = (WZ+1)*(WX+1);
+        const _wPos  = new Float32Array(_wVerts*3);
+        const _wNorm = new Float32Array(_wVerts*3);
+        const _wUV   = new Float32Array(_wVerts*2);
+        const _wIdx  = [];
+        let _wp = 0, _wu = 0;
+        for (let iz = 0; iz <= WZ; iz++)
+            for (let ix = 0; ix <= WX; ix++) {
+                _wPos[_wp++] = -POOL_W/2 + (ix/WX)*POOL_W;
+                _wPos[_wp++] = poolSurfaceY;
+                _wPos[_wp++] = POOL_Z_START + (iz/WZ)*poolLen;
+                _wNorm[_wp-3]=0; _wNorm[_wp-2]=1; _wNorm[_wp-1]=0;
+                _wUV[_wu++] = ix/WX;  _wUV[_wu++] = iz/WZ;
+            }
+        for (let iz = 0; iz < WZ; iz++)
+            for (let ix = 0; ix < WX; ix++) {
+                const a = iz*(WX+1)+ix;
+                _wIdx.push(a, a+WX+1, a+1, a+1, a+WX+1, a+WX+2);
+            }
+        waterMesh = new BABYLON.Mesh('waterSurface', scene);
+        const _wVD = new BABYLON.VertexData();
+        _wVD.positions = _wPos; _wVD.indices = _wIdx; _wVD.normals = _wNorm; _wVD.uvs = _wUV;
+        _wVD.applyToMesh(waterMesh, true);
+        const _wMat = new BABYLON.StandardMaterial('waterMat', scene);
+        _wMat.diffuseColor = new BABYLON.Color3(0.07, 0.36, 0.72);
+        _wMat.specularColor = new BABYLON.Color3(0.65, 0.85, 1.0);
+        _wMat.specularPower = 90;
+        _wMat.alpha = 0.82;
+        _wMat.backFaceCulling = false;
+        waterMesh.material = _wMat;
+
+        // Splash particle texture
+        _splashTex = new BABYLON.DynamicTexture('splashTex', { width:64, height:64 }, scene, false);
+        { const _c = _splashTex.getContext();
+          const _g = _c.createRadialGradient(32,32,0,32,32,32);
+          _g.addColorStop(0,   'rgba(255,255,255,1)');
+          _g.addColorStop(0.4, 'rgba(160,220,255,0.9)');
+          _g.addColorStop(1,   'rgba(80,160,255,0)');
+          _c.fillStyle = _g; _c.arc(32,32,32,0,Math.PI*2); _c.fill();
+          _splashTex.update(); }
+
+        // ── Outdoor pool deck ────────────────────────────────────────────────
+        const _deckMat = new BABYLON.StandardMaterial('deckMat', scene);
+        _deckMat.diffuseColor = new BABYLON.Color3(0.72, 0.72, 0.68);
+        // Deck top sits at pool rim level (poolSurfaceY), NOT across the opening
+        const _deckTopY = poolSurfaceY;
+        const _deckH = 0.3;
+        const _deckCY = _deckTopY - _deckH / 2;
+        const _deckExt = 4.0; // how far deck extends beyond pool wall on each side
+        const _rimZ0 = POOL_Z_START - POOL_WALL_T;
+        const _rimZ1 = POOL_Z_END   + POOL_WALL_T;
+        const _rimX  = POOL_W / 2   + POOL_WALL_T;
+        // 4 panels surrounding the pool — none covers the opening
+        [
+            { w: _rimX*2 + _deckExt*2, d: _deckExt, x: 0,              z: _rimZ0 - _deckExt/2 }, // back
+            { w: _rimX*2 + _deckExt*2, d: _deckExt, x: 0,              z: _rimZ1 + _deckExt/2 }, // front
+            { w: _deckExt,             d: poolLen + POOL_WALL_T*2, x: -(_rimX + _deckExt/2), z: poolCenterZ }, // left
+            { w: _deckExt,             d: poolLen + POOL_WALL_T*2, x:  (_rimX + _deckExt/2), z: poolCenterZ }, // right
+        ].forEach((p, i) => {
+            const panel = BABYLON.MeshBuilder.CreateBox(`deck_${i}`,
+                { width: p.w, height: _deckH, depth: p.d }, scene);
+            panel.position.set(p.x, _deckCY, p.z);
+            panel.material = _deckMat;
+        });
+
+        // ── Diving platform (tower + board + handrails) ──────────────────────
+        const _platMat = new BABYLON.StandardMaterial('platMat', scene);
+        _platMat.diffuseColor = new BABYLON.Color3(0.55, 0.58, 0.65);
+        const _boardBottomY = POOL_DIVE_PLATFORM_Y - 0.18; // board top = POOL_DIVE_PLATFORM_Y, height=0.18
+        const _towerH = _boardBottomY - _deckTopY;
+        const _tower = BABYLON.MeshBuilder.CreateBox('diveTower',
+            { width: 0.6, height: _towerH, depth: 0.6 }, scene);
+        _tower.position.set(0, _deckTopY + _towerH / 2, POOL_DIVE_PLATFORM_Z - 0.8);
+        _tower.material = _platMat;
+
+        // Board: top surface is exactly POOL_DIVE_PLATFORM_Y
+        const _board = BABYLON.MeshBuilder.CreateBox('diveBoard',
+            { width: 1.8, height: 0.18, depth: 2.0 }, scene);
+        _board.position.set(0, POOL_DIVE_PLATFORM_Y - 0.09, POOL_DIVE_PLATFORM_Z - 0.2);
+        _board.material = _platMat;
+
+        // Handrails
+        const _railMat = new BABYLON.StandardMaterial('railMat', scene);
+        _railMat.diffuseColor = new BABYLON.Color3(0.85, 0.87, 0.9);
+        [-0.85, 0.85].forEach((rx, ri) => {
+            const _rail = BABYLON.MeshBuilder.CreateCylinder(`diveRail_${ri}`,
+                { height: 1.1, diameter: 0.06, tessellation: 8 }, scene);
+            _rail.position.set(rx, POOL_DIVE_PLATFORM_Y + 0.46, POOL_DIVE_PLATFORM_Z - 0.9);
+            _rail.material = _railMat;
+        });
+
+        // Sky backdrop
+        const _skyMat = new BABYLON.StandardMaterial('skyMat', scene);
+        _skyMat.diffuseColor  = new BABYLON.Color3(0.42, 0.68, 0.92);
+        _skyMat.emissiveColor = new BABYLON.Color3(0.42, 0.68, 0.92);
+        _skyMat.backFaceCulling = false;
+        const _sky = BABYLON.MeshBuilder.CreatePlane('sky', { width: 80, height: 40 }, scene);
+        _sky.position.set(0, poolSurfaceY + 8, poolCenterZ + 30);
+        _sky.material = _skyMat;
+    }
+
     // ── Trampoline spring & grid state ──────────────────────────────────────
     let tramBedMesh    = null;   // invisible spring node
     let tramFrameRails = [];     // 4 visible metal frame rails
@@ -1702,9 +1846,9 @@ function _startGame() {
         doubleDir:  1,    // +1 = left twist, -1 = right twist (used in double mode)
         armDropL:   1.0,  // 0 = raised, 1 = dropped to side
         armDropR:   1.0,
-        rootY:      0.0,  // world Y of character root
+        rootY:      _poolDiveMode ? POOL_DIVE_ROOT_Y : 0.0,  // world Y of character root
         vy:         0.0,  // vertical velocity (world-units/s)
-        posZ:       _trampolineMode ? 0 : _trampolineMatMode ? 4.0 : SLOPE_START_Z + 2.0, // start near top of inrun (or trampoline center)
+        posZ:       _trampolineMode ? 0 : _trampolineMatMode ? 4.0 : _poolDiveMode ? POOL_DIVE_PLATFORM_Z : SLOPE_START_Z + 2.0, // start near top of inrun (or trampoline center)
         vz:         0.0,  // Z velocity — frictionless, only gravity along slope
         grounded:   true,
         crashed:    false, // true when landed badly
@@ -1790,13 +1934,51 @@ function _startGame() {
         });
     }
     let replayAccum  = 0;    // fractional frame accumulator for speed control
+
+    // ── Pool state ───────────────────────────────────────────────────────────
+    let poolVisible        = _poolDiveMode;
+    let poolEntered        = false;
+    let poolAutoLaunch     = false;
+    let poolDivePushing    = false; // true during leg-extension push-off before launch
+    let _poolDiveLaunchPwr = 0;     // flipPower captured at push-off trigger
+    let poolEntryDrag  = 5.5;   // drag coefficient while in water (computed from entry quality)
+    let poolWaveT      = 0;
+    let poolSplashAmp  = 0;
+    let poolSplashImpX = 0;
+    let poolSplashImpZ = poolCenterZ;
+
+    function _spawnSplash(impX, impZ) {
+        if (!_splashTex) return;
+        const ps = new BABYLON.ParticleSystem('splash', 400, scene);
+        ps.particleTexture = _splashTex;
+        ps.emitter         = new BABYLON.Vector3(impX, poolSurfaceY, impZ);
+        ps.minEmitBox      = new BABYLON.Vector3(-0.4, 0, -0.4);
+        ps.maxEmitBox      = new BABYLON.Vector3( 0.4, 0,  0.4);
+        ps.color1          = new BABYLON.Color4(0.6, 0.85, 1.0, 1.0);
+        ps.color2          = new BABYLON.Color4(0.9, 0.97, 1.0, 0.7);
+        ps.colorDead       = new BABYLON.Color4(0.3, 0.6, 0.9, 0.0);
+        ps.minSize         = 0.06;  ps.maxSize      = 0.32;
+        ps.minLifeTime     = 0.35;  ps.maxLifeTime  = 1.5;
+        ps.emitRate        = 0;
+        ps.manualEmitCount = 400;
+        ps.direction1      = new BABYLON.Vector3(-2.5,  5.0, -2.5);
+        ps.direction2      = new BABYLON.Vector3( 2.5, 14.0,  2.5);
+        ps.minAngularSpeed = 0;    ps.maxAngularSpeed = Math.PI;
+        ps.minEmitPower    = 0.5;  ps.maxEmitPower    = 7.5;
+        ps.updateSpeed     = 0.02;
+        ps.gravity         = new BABYLON.Vector3(0, -12, 0);
+        ps.blendMode       = BABYLON.ParticleSystem.BLENDMODE_ONEONE;
+        ps.start();
+        setTimeout(() => { try { ps.dispose(); } catch(_){} }, 3000);
+    }
+
     let leftArmHoldTime = 0;    // seconds right arrow held alone on inrun (left arm up)
     let rightArmHoldTime= 0;    // seconds left arrow held alone on inrun (right arm up)
     const ARM_HOLD_REQ  = 0.5;  // seconds arm must be up before jump
     let downHalfTwistFired = false; // true after down fires a half-twist mid-air
     const RIGHT_HALF_TWIST_HOLD = 0.05; // hold right alone this long mid-air → half twist left
     let paused          = false;
-    let cameraFollow    = true;  // C toggles: true = behind character, false = fixed side view
+    let cameraMode      = 0;     // 0=side  1=front  2=back  (C cycles)
     let powerWrapDown   = false; // down arrow held → 1.3× spin rate
     let arrowUpDown     = false; // up arrow held mid-air → gradually slow flip
     let targetL_flip    = 0.0;   // target L_flip to recover toward when arrow released
@@ -1896,7 +2078,14 @@ function _startGame() {
             recordingActive = false;
             replayFrames = [];
             replayActive = false;
-            // Reset to top of slope
+            // Reset to top of slope / platform
+            poolEntered        = false;
+            poolAutoLaunch     = false;
+            poolDivePushing    = false;
+            _poolDiveLaunchPwr = 0;
+            poolEntryDrag      = 5.5;
+            poolSplashAmp  = 0;
+            if (_poolDiveMode) { state.rootY = POOL_DIVE_ROOT_Y; }
             state.L_flip      = I0 * TARGET_OMEGA_UNTUCKED;
             state.flipAngle   = 0.0;
             state.tuckAmount  = 0.0;
@@ -1911,7 +2100,7 @@ function _startGame() {
             state.armDropL    = 1.0;
             state.armDropR    = 1.0;
             state.vy          = 0.0;
-            state.posZ        = _trampolineMode ? 0 : _trampolineMatMode ? 4.0 : SLOPE_START_Z + 2.0;
+            state.posZ        = _trampolineMode ? 0 : _trampolineMatMode ? 4.0 : _poolDiveMode ? POOL_DIVE_PLATFORM_Z : SLOPE_START_Z + 2.0;
             state.vz          = 0.0;
             state.grounded    = true;
             state.crashed     = false;
@@ -1933,6 +2122,8 @@ function _startGame() {
             state.layArmT     = 0.0;
             state.armSnapTarget = 0;
             state.airTime     = 0.0;
+            poolEntered   = false;
+            poolSplashAmp = 0;
             if (crashActive) {
                 crashActive = false;
                 crashTimer  = 0;
@@ -1969,6 +2160,7 @@ function _startGame() {
             return;
         }
         if (e.code === 'KeyC') {
+            cameraMode = (cameraMode + 1) % 3;
             return;
         }
         if (paused) return;
@@ -2027,6 +2219,15 @@ function _startGame() {
                 matContactNX2   = 0;
                 matContactNZ2   = 0;
                 startRecording();
+            } else if (_poolDiveMode) {
+                // Begin push-off — legs extend, actual launch fires when straight
+                _poolDiveLaunchPwr = flipPower;
+                flipPower = 0; pmFill.style.width = '0%';
+                poolDivePushing    = true;
+                readyState         = false;
+                state.tuckTarget   = 0;
+                state.armRaise     = state.tuckAmount * 0.6;
+                state.armRaiseTarget = 1;
             } else {
                 // Begin turn-to-face-downhill animation
                 readyTurnT = 0.001; // small non-zero to start animation
@@ -2423,7 +2624,11 @@ function _startGame() {
         if (e.code === 'ArrowDown' && state.grounded && !state.crashed) pmDownHeld = true;
     });
     window.addEventListener('keyup', e => {
-        if (e.code === 'ArrowDown') pmDownHeld = false;
+        if (e.code === 'ArrowDown') {
+            pmDownHeld = false;
+            if (_poolDiveMode && pmActive && flipPower > 0 && readyState && !poolEntered)
+                poolAutoLaunch = true;
+        }
     });
 
     // ── Physics / render loop ─────────────────────────────────────────────────
@@ -2493,7 +2698,9 @@ function _startGame() {
 
         // ── Terrain physics (frictionless) ────────────────────────────────
         // ── Power meter visibility ──────────────────────────────────────────
-        const onApproach = !_trampolineMode && !_trampolineMatMode && state.grounded && state.posZ >= APPROACH_START_Z && state.posZ < KICKER_END_Z;
+        const onApproach = _poolDiveMode
+            ? (state.grounded && readyState)
+            : (!_trampolineMode && !_trampolineMatMode && state.grounded && state.posZ >= APPROACH_START_Z && state.posZ < KICKER_END_Z);
         if (onApproach && !pmActive) {
             pmActive = true;
             pmEl.style.display = 'block';
@@ -2501,7 +2708,7 @@ function _startGame() {
             pmActive = false;
             pmEl.style.display = 'none';
         }
-        if (pmActive && pmDownHeld && !readyState) {
+        if (pmActive && pmDownHeld && (_poolDiveMode || !readyState)) {
             flipPower = Math.min(1, flipPower + dt / FLIP_POWER_RATE);
             pmFill.style.width = (flipPower * 100).toFixed(1) + '%';
         }
@@ -2517,6 +2724,49 @@ function _startGame() {
             downHalfTwistFired = true;
         }
         if (state.grounded) {
+            // ── Pool dive: platform lock, crouch, push-off ─────────────────────
+            if (_poolDiveMode && !poolEntered) {
+                state.vz   = 0;
+                state.posZ = POOL_DIVE_PLATFORM_Z;
+
+                if (poolDivePushing) {
+                    // Legs are springing out — character rises with them
+                    state.tuckTarget = 0;
+                    state.rootY = POOL_DIVE_ROOT_Y - state.tuckAmount * 0.45;
+                    // Launch the moment legs are nearly straight
+                    if (state.tuckAmount < 0.06) {
+                        poolDivePushing = false;
+                        state.grounded  = false;
+                        const _cp = Math.max(0.25, _poolDiveLaunchPwr);
+                        state.vy = 1.5 + (POOL_DIVE_LAUNCH_VY - 1.5) * _cp;
+                        state.vz = 1.0 + (POOL_DIVE_LAUNCH_VZ - 1.0) * _cp;
+                        state.flipDir   = 1;
+                        state.L_flip    = I0 * TARGET_OMEGA_UNTUCKED * (Math.max(0.05, _poolDiveLaunchPwr) / 0.75);
+                        state.perFlipTwists = []; state.lastFlipInt = 0;
+                        state.spinAtFlipStart = state.spinAngle;
+                        state.spinBoundaries = []; state.perFlipTucked = [];
+                        state.currentFlipTucked = false; state.airTime = 0.0;
+                        state.armSnap = 0.0; state.layArmT = 0.0; state.armSnapTarget = 0;
+                        startRecording();
+                    }
+                } else if (readyState) {
+                    // Crouch only while ↓ is held
+                    state.tuckTarget = pmDownHeld ? 0.85 : 0;
+                    state.rootY = POOL_DIVE_ROOT_Y - state.tuckAmount * 0.45;
+                }
+
+                // Trigger push-off (from auto-release or manual ↑)
+                if (poolAutoLaunch && readyState) {
+                    poolAutoLaunch     = false;
+                    _poolDiveLaunchPwr = flipPower;
+                    flipPower = 0; pmFill.style.width = '0%';
+                    poolDivePushing    = true;
+                    readyState         = false;
+                    state.tuckTarget   = 0;
+                    state.armRaise     = state.tuckAmount * 0.6;
+                    state.armRaiseTarget = 1;
+                }
+            }
             // ── Ready state: freeze at top until ↑ pressed ──────────────────
             if (readyState) {
                 if (readyTurnT > 0) {
@@ -2536,7 +2786,7 @@ function _startGame() {
             const prevZ = state.posZ;
             state.vz   += terrainAccelZ(state.posZ) * dt;
             if (readyState && readyTurnT < 1.0) state.vz = 0; // prevent any slide before run begins
-            if (state.posZ > OUTRUN_Z && state.vz < 0) {
+            if (!_poolDiveMode && state.posZ > OUTRUN_Z && state.vz < 0) {
                 state.vz = 0;
                 if (!state.stopped && !state.crashed && state.trickName) {
                     state.stopped = true;
@@ -2583,7 +2833,7 @@ function _startGame() {
             state.posZ += state.vz * dt;
 
             // Only launch when actually crossing the kicker tip (not after landing past it)
-            const crossingJ1 = prevZ <= KICKER_END_Z && state.posZ > KICKER_END_Z;
+            const crossingJ1 = !_poolDiveMode && prevZ <= KICKER_END_Z && state.posZ > KICKER_END_Z;
             if (crossingJ1) {
                 state.vy       = state.vz * Math.sin(KICKER_ANGLE);
                 state.vz       = state.vz * Math.cos(KICKER_ANGLE);
@@ -2638,28 +2888,50 @@ function _startGame() {
                     autoSpinActive = false;
                 }
             } else {
-                if (!(_trampolineMatMode && matLanded)) {
-                    state.rootY = terrainRootY(state.posZ) + 0.10;
+                if (_poolDiveMode && !poolEntered) {
+                    state.rootY = POOL_DIVE_ROOT_Y - state.tuckAmount * 0.45; // sink into crouch
+                } else if (!_poolDiveMode) {
+                    if (!(_trampolineMatMode && matLanded)) {
+                        state.rootY = terrainRootY(state.posZ) + 0.10;
+                    }
+                    // When upright (readyState, tilt=0) the full FOOT_OFFSET goes straight
+                    // down so the skis sit on the surface. As tilt increases, compensate so
+                    // the foot doesn't sink: rootY lifts by FOOT_OFFSET*(1-cos(tilt)).
+                    if (readyState && readyTurnT < 1.0) {
+                        const rawTilt = -SLOPE_ANGLE; // slope angle at start position
+                        const blendedTilt = rawTilt * readyTurnT;
+                        state.rootY += FOOT_OFFSET * (1.0 - Math.cos(blendedTilt));
+                    }
+                    // Inrun crouch: sink root down so body comes toward skis
+                    state.rootY -= state.tuckAmount * 0.35;
                 }
-                // When upright (readyState, tilt=0) the full FOOT_OFFSET goes straight
-                // down so the skis sit on the surface. As tilt increases, compensate so
-                // the foot doesn't sink: rootY lifts by FOOT_OFFSET*(1-cos(tilt)).
-                if (readyState && readyTurnT < 1.0) {
-                    const rawTilt = -SLOPE_ANGLE; // slope angle at start position
-                    const blendedTilt = rawTilt * readyTurnT;
-                    state.rootY += FOOT_OFFSET * (1.0 - Math.cos(blendedTilt));
-                }
-                // Inrun crouch: sink root down so body comes toward skis
-                state.rootY -= state.tuckAmount * 0.35;
             }
         } else {
             // Skip gravity & position update while riding the trampoline spring or mat tram spring
             if (!tramBouncing && !matTramBouncing) {
-                state.vy    -= GRAVITY * dt;
+                if (poolEntered) {
+                    // Water drag — strength set by entry quality at impact
+                    const _wD = Math.max(0, 1 - poolEntryDrag * dt);
+                    state.vy *= _wD;
+                    state.vz *= _wD;
+                } else {
+                    state.vy -= GRAVITY * dt;
+                }
                 state.rootY += state.vy * dt;
             }
             if (!tramBouncing) {
                 state.posZ  += state.vz * dt;
+            }
+            // Stop at pool bottom or when slow enough
+            if (poolEntered && !state.grounded) {
+                const _pBot = poolSurfaceY - POOL_DEPTH + 1.0;
+                if (state.rootY < _pBot) {
+                    state.rootY = _pBot; state.vy = 0; state.vz = 0;
+                    state.grounded = true; state.stopped = true;
+                } else if (Math.abs(state.vy) < 0.25 && Math.abs(state.vz) < 0.1) {
+                    state.vy = 0; state.vz = 0;
+                    state.grounded = true; state.stopped = true;
+                }
             }
             // Track air time and tuck time for execution scoring
             state.airTime    += dt;
@@ -2670,7 +2942,7 @@ function _startGame() {
             }
 
             const surY   = terrainRootY(state.posZ);
-            if (!tramBouncing && !matTramBouncing && state.rootY <= surY) {
+            if (!_poolDiveMode && !tramBouncing && !matTramBouncing && state.rootY <= surY) {
                 if (_trampolineMatMode) {
                     // ── Mat-mode landing detection ──────────────────────────
                     const onTram = state.posZ >= MAT_TRAM_START_Z && state.posZ <= MAT_TRAM_END_Z;
@@ -2930,6 +3202,67 @@ function _startGame() {
                 }
                 } // end !_trampolineMode landing
             }
+            // ── Pool entry ─────────────────────────────────────────────────
+            if (poolVisible && !poolEntered && !state.grounded &&
+                state.posZ >= POOL_Z_START && state.posZ <= POOL_Z_END &&
+                state.rootY <= poolSurfaceY) {
+                poolEntered    = true;
+                poolSplashAmp  = Math.min(0.55, Math.abs(state.vy) * 0.055);
+                poolSplashImpX = 0;
+                poolSplashImpZ = state.posZ;
+                // Build trick + score (mirrors normal landing logic)
+                const _pPI2  = Math.PI * 2;
+                const _pNorm = ((state.flipAngle % _pPI2) + _pPI2) % _pPI2;
+                const _pTOL  = Math.PI / 4;
+                const _pSpN  = ((state.spinAngle % _pPI2) + _pPI2) % _pPI2;
+                const _pGood = (_pNorm < _pTOL || _pNorm > _pPI2-_pTOL) &&
+                               (_pSpN < _pTOL || _pSpN > _pPI2-_pTOL || Math.abs(_pSpN-Math.PI) < _pTOL);
+                const _pFlips = Math.round(Math.abs(state.flipAngle) / _pPI2);
+                const _pPts   = [state.spinAtFlipStart, ...state.spinBoundaries];
+                if (_pPts.length - 1 < _pFlips) _pPts.push(state.spinAngle);
+                const _pTucks = [...state.perFlipTucked];
+                if (_pTucks.length < _pFlips) _pTucks.push(state.currentFlipTucked || state.tuckAmount > 0.3);
+                const _pTwists = [];
+                for (let _pi = 0; _pi < _pPts.length-1; _pi++)
+                    _pTwists.push(Math.round(Math.abs(_pPts[_pi+1]-_pPts[_pi]) / _pPI2));
+                const _TN = ['Lay','Full','Double Full','Triple Full','Quad Full','Quint Full'];
+                state.perFlipTwists = _pTwists;
+                state.trickName = _pTwists.length
+                    ? _pTwists.map((t,i) => t===0&&_pTucks[i]?'Tuck':(_TN[t]||(t+'x Full'))).join('-')
+                    : '';
+                if (_pGood) {
+                    const _ef = _pNorm <= _pTOL ? _pNorm/_pTOL : (_pPI2-_pNorm)/_pTOL;
+                    state.execution = Math.max(0, Math.round((28 + _ef)*10)/10);
+                } else {
+                    state.execution = Math.max(0, Math.round(10*(1-Math.min(1,Math.min(_pNorm,_pPI2-_pNorm)/Math.PI))*10)/10);
+                }
+                // Entry quality: vertical (feet/head first) = 1, belly/back flop = 0
+                const _eq = Math.abs(Math.cos(state.flipAngle));
+                // Good entry preserves more velocity; flop absorbs most of it
+                const _keep = 0.30 + 0.20 * _eq;  // flop=0.30, perfect=0.50
+                state.vy *= _keep;
+                state.vz *= _keep;
+                // Good entry → lower drag → noticeably deeper but not extreme
+                poolEntryDrag = 4.5 - 2.6 * _eq;  // flop≈4.5, perfect≈1.9
+                state.L_flip = 0;
+                state.spinTarget = state.spinAngle;
+                stopRecording();
+                // Score display only in ski mode (pool dive has no score yet)
+                if (!_poolDiveMode && (_pTwists.length > 0 || _pFlips > 0)) {
+                    const _pFC = _pTwists.length || _pFlips;
+                    const _pTC = _pTwists.reduce((a,b)=>a+b, 0);
+                    const _pDD = calcDD(_pTwists.length ? _pTwists : Array(_pFlips).fill(0));
+                    const _pSc = Math.round(_pDD * state.execution * 10) / 10;
+                    const _pNew = _pSc > highScore;
+                    if (_pNew) { highScore = _pSc; _lsSet(HS_KEY, _pSc); }
+                    bbName.text  = (state.trickName||`${_pFC} flip${_pFC!==1?'s':''}`) + '  💦';
+                    bbSub.text   = `${_pFC} flip${_pFC!==1?'s':''} \xB7 ${_pTC} twist${_pTC!==1?'s':''} \xB7 DD ${_pDD} \xD7 exec ${state.execution}`;
+                    bbScore.text = _pNew ? `★ NEW BEST  ${_pSc}` : `${_pSc}  (best: ${highScore})`;
+                    bbSub.isVisible = true;  bbScore.isVisible = true;
+                    billboard.isVisible = true;
+                }
+                _spawnSplash(0, state.posZ);
+            }
         }
         character.root.position.y = state.rootY;
         character.root.position.z = state.posZ;
@@ -3067,9 +3400,20 @@ function _startGame() {
             }
         }
 
+        // ── Kick-out: drain angular momentum as tuck/pike releases ──────────
+        // Pike drains more aggressively so post-release is noticeably slower
+        if (!state.grounded && !tramBouncing && !matTramBouncing) {
+            const _tDrain = state.tuckTarget === 0 ? state.tuckAmount * 0.40 : 0;
+            const _pDrain = state.pikeTarget === 0 ? state.pikeAmount * 1.10 : 0;
+            const _drain  = _tDrain + _pDrain;
+            if (_drain > 0.02) {
+                state.L_flip *= Math.max(0, 1 - _drain * dt);
+            }
+        }
+
         // ── Angular momentum conservation: ω = L / I ──────────────────────
         const I_base = computeI(state.tuckAmount);
-        const I_pike = computeI(state.pikeAmount); // pike uses same inertia curve as tuck
+        const I_pike = computeI(state.pikeAmount); // pike spins fast (same curve as tuck)
         const I     = state.pikeAmount > 0 ? I_pike : I_base;
         const tuckBoost = _trampolineMode ? (1.0 + 0.3 * state.tuckAmount) : 1.0;
         const maxOmega = _trampolineMode ? 13.0 : MAX_OMEGA;
@@ -3260,7 +3604,7 @@ function _startGame() {
         if (state.grounded) { state.armSnapTarget = 0; state.armRaiseTarget = 0; }
 
         // ── Lay T-pose: arms drift out to sides when no inputs on first flip ──
-        const inFirstFlip = !state.grounded && !state.crashed && Math.abs(state.flipAngle) < Math.PI * 2 && !_trampolineMode;
+        const inFirstFlip = !state.grounded && !state.crashed && Math.abs(state.flipAngle) < Math.PI * 2 && !_trampolineMode && !_poolDiveMode;
         const noInputs    = !leftDown && !rightDown && state.tuckTarget === 0 && !doubleMode;
         const layTTarget  = inFirstFlip && noInputs ? 1.0 : 0.0;
         const layTStep    = 1.8 * dt; // ~0.55 s to fully extend
@@ -3277,7 +3621,7 @@ function _startGame() {
             // qFace turns the character to face +Z (downhill direction).
             // In readyState the character starts facing sideways (+π/2) and smoothly
             // rotates to face downhill (0) as readyTurnT goes 0→1.
-            const readyYaw = readyState ? (1.0 - readyTurnT) * (Math.PI / 2) : 0.0;
+            const readyYaw = (readyState && !_poolDiveMode) ? (1.0 - readyTurnT) * (Math.PI / 2) : 0.0;
             const qFace = BABYLON.Quaternion.RotationAxis(BABYLON.Axis.Y, Math.PI + readyYaw);
             if (state.grounded) {
                 let tilt = 0;
@@ -3308,10 +3652,50 @@ function _startGame() {
         // ── Camera follow ──────────────────────────────────────────────────────────────
         camera.target.y = state.rootY;
         camera.target.z = state.posZ;
-        if (cameraFollow) {
+        {
+            // Target alpha/beta per mode
             const BASE_BETA = Math.PI / 3.2 - 2 * Math.PI / 180;
-            const betaTarget = state.grounded ? BASE_BETA : BASE_BETA - 4 * Math.PI / 180;
-            camera.beta += (betaTarget - camera.beta) * Math.min(1, 5 * dt);
+            let tAlpha, tBeta;
+            if (cameraMode === 0) {       // side
+                tAlpha = Math.PI;
+                tBeta  = state.grounded ? BASE_BETA : BASE_BETA - 4 * Math.PI / 180;
+            } else if (cameraMode === 1) { // front — camera at +Z, diver comes toward lens
+                tAlpha = Math.PI / 2;
+                tBeta  = Math.PI / 2.5;
+            } else {                       // back — camera at -Z, looks over diver's shoulder
+                tAlpha = Math.PI * 1.5;
+                tBeta  = BASE_BETA;
+            }
+            // Shortest-path alpha lerp
+            let da = tAlpha - camera.alpha;
+            if (da >  Math.PI) da -= Math.PI * 2;
+            if (da < -Math.PI) da += Math.PI * 2;
+            camera.alpha += da   * Math.min(1, 4 * dt);
+            camera.beta  += (tBeta - camera.beta) * Math.min(1, 4 * dt);
+        }
+
+        // ── Pool water wave animation ──────────────────────────────────────
+        if (poolVisible && waterMesh) {
+            poolWaveT += dt;
+            if (poolSplashAmp > 0) poolSplashAmp = Math.max(0, poolSplashAmp - dt * 0.32);
+            const _wv = waterMesh.getVerticesData(BABYLON.VertexBuffer.PositionKind);
+            const _wn = new Float32Array(_wv.length);
+            for (let _i = 0; _i < _wv.length; _i += 3) {
+                const _wx = _wv[_i], _wz = _wv[_i+2];
+                let _wy = poolSurfaceY;
+                _wy += 0.014 * Math.sin(_wx*3.6 + poolWaveT*2.3);
+                _wy += 0.010 * Math.sin(_wz*2.7 + poolWaveT*1.8 + 1.1);
+                _wy += 0.007 * Math.sin((_wx+_wz)*3.9 + poolWaveT*3.0);
+                if (poolSplashAmp > 0.001) {
+                    const _dx = _wx - poolSplashImpX, _dz = _wz - poolSplashImpZ;
+                    const _dd = Math.sqrt(_dx*_dx + _dz*_dz) + 0.01;
+                    _wy += poolSplashAmp * Math.exp(-_dd*0.55) * Math.cos(_dd*3.2 - poolWaveT*7.5);
+                }
+                _wv[_i+1] = _wy;
+                _wn[_i]=0; _wn[_i+1]=1; _wn[_i+2]=0;
+            }
+            waterMesh.updateVerticesData(BABYLON.VertexBuffer.PositionKind, _wv);
+            waterMesh.updateVerticesData(BABYLON.VertexBuffer.NormalKind, _wn);
         }
 
         // ── Record frame ───────────────────────────────────────────────────
@@ -3319,9 +3703,15 @@ function _startGame() {
 
         // ── HUD ───────────────────────────────────────────────────────────
         hud.text = '';
-        hint.text = readyState && readyTurnT === 0.0
-            ? '↑: Start run\ndrag: orbit'
-            : 'SPACE: tuck\n← then →: left twist\n→ then ←: right twist\n↓: half twist\ndrag: orbit';
+        if (_poolDiveMode) {
+            hint.text = readyState
+                ? '↓: charge power\n↑: dive\ndrag: orbit'
+                : 'SPACE: tuck\n← then →: left twist\n→ then ←: right twist\ndrag: orbit';
+        } else {
+            hint.text = readyState && readyTurnT === 0.0
+                ? '↑: Start run\ndrag: orbit'
+                : 'SPACE: tuck\n← then →: left twist\n→ then ←: right twist\n↓: half twist\ndrag: orbit';
+        }
     } catch(e) { hud.text = 'ERR: ' + e.message; console.error(e); } });
 
     // ── Run ───────────────────────────────────────────────────────────────────
