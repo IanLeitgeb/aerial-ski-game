@@ -801,6 +801,7 @@ function _startGame() {
 
     camera.attachControl(canvas, true);
     camera.inputs.removeByType('ArcRotateCameraKeyboardMoveInput');
+    camera.inertia          = 0;             // no drift after mouse release
     camera.lowerBetaLimit   = 0.05;          // prevent flipping under the scene
     camera.upperBetaLimit   = Math.PI - 0.05;
     camera.lowerRadiusLimit = 10;            // lock zoom — meaningless in ortho
@@ -820,23 +821,51 @@ function _startGame() {
 
     // ── Lighting ─────────────────────────────────────────────────────────────
     const hemi = new BABYLON.HemisphericLight('hemi', new BABYLON.Vector3(0.4, 1, -0.8), scene);
-    hemi.intensity   = 1.0;
-    hemi.groundColor = new BABYLON.Color3(0.2, 0.2, 0.3); // subtle cool fill from below
+    hemi.intensity   = 0.45; // reduced — sun provides the primary light
+    hemi.groundColor = new BABYLON.Color3(0.18, 0.22, 0.30); // cool shadow fill from below
 
-    // ── Depth of field pipeline (active only in behind-character view) ────────
-    // Use hdr=false to avoid requiring WebGL2; DOF is disabled by default anyway
+    // Directional sun light — afternoon angle from upper-left-back
+    const sunLight = new BABYLON.DirectionalLight('sun', new BABYLON.Vector3(0.35, -1, 0.45), scene);
+    sunLight.position  = new BABYLON.Vector3(-30, 60, -40);
+    sunLight.intensity = 0.82;
+    sunLight.diffuse   = new BABYLON.Color3(1.0, 0.96, 0.85); // warm afternoon tint
+    sunLight.specular  = new BABYLON.Color3(1.0, 0.96, 0.85);
+
+    // Shadow generator — 1024 map, Poisson soft shadows, performance-friendly
+    let shadowGen = null;
+    try {
+        shadowGen = new BABYLON.ShadowGenerator(1024, sunLight);
+        shadowGen.usePoissonSampling = true;
+        shadowGen.bias = 0.0002;
+    } catch(e) { shadowGen = null; }
+
+    // ── Atmospheric fog — makes distant terrain fade into the sky ──────────────
+    if (!_trampolineMode) {
+        scene.fogMode    = BABYLON.Scene.FOGMODE_EXP2;
+        scene.fogDensity = _poolDiveMode ? 0.006 : 0.010;
+        scene.fogColor   = _poolDiveMode
+            ? new BABYLON.Color3(0.50, 0.72, 0.95)
+            : new BABYLON.Color3(0.68, 0.87, 0.99);
+    }
+
+    // ── Depth of field + bloom pipeline ──────────────────────────────────────
     let dofPipeline = null;
     try {
         dofPipeline = new BABYLON.DefaultRenderingPipeline('dof', false, scene, [camera]);
-        dofPipeline.depthOfFieldEnabled  = false;
+        dofPipeline.depthOfFieldEnabled   = false;
         dofPipeline.depthOfFieldBlurLevel = BABYLON.DepthOfFieldEffectBlurLevel.Medium;
         if (dofPipeline.depthOfField) {
             dofPipeline.depthOfField.fStop        = 1.4;
             dofPipeline.depthOfField.focalLength  = 50;
             dofPipeline.depthOfField.focusDistance = 10000;
         }
+        // Subtle bloom — white snow and bright sky get a soft glow
+        dofPipeline.bloomEnabled   = true;
+        dofPipeline.bloomWeight    = 0.18;
+        dofPipeline.bloomThreshold = 0.72;
+        dofPipeline.bloomScale     = 0.5;
     } catch(e) {
-        dofPipeline = null; // Silently skip DOF if pipeline fails (some GPU drivers)
+        dofPipeline = null;
     }
 
     // ── Character ─────────────────────────────────────────────────────────────
@@ -1256,16 +1285,17 @@ function _startGame() {
     const POOL_WALL_T   = 0.45;
     // Three platforms side by side on the shore, different heights
     const PLATFORM_CONFIGS = [
-        { label: '8m',  height:  8.0, x: -4.0, launchVZ: 4.0 },
-        { label: '12m', height: 12.0, x:  0.0, launchVZ: 3.5 },
-        { label: '18m', height: 18.0, x:  4.0, launchVZ: 3.0 },
+        { label: '8m',  height:  8.0, x: -4.0, launchVZ: 2.2 },
+        { label: '12m', height: 12.0, x:  0.0, launchVZ: 1.8 },
+        { label: '18m', height: 18.0, x:  4.0, launchVZ: 1.4 },
     ];
     const POOL_DIVE_SHORE_Z    = POOL_Z_START - 0.5; // all platforms at pool edge
+    const POOL_DIVE_TIP_Z      = POOL_DIVE_SHORE_Z + 0.6; // near front of board (front edge = SHORE_Z+0.8)
     let   activePlatIdx        = 0;
-    let   POOL_DIVE_PLATFORM_Z = POOL_DIVE_SHORE_Z;
+    let   POOL_DIVE_PLATFORM_Z = POOL_DIVE_TIP_Z;
     let   POOL_DIVE_PLATFORM_X = PLATFORM_CONFIGS[0].x;
     let   POOL_DIVE_PLATFORM_Y = poolSurfaceY + PLATFORM_CONFIGS[0].height;
-    let   POOL_DIVE_ROOT_Y     = POOL_DIVE_PLATFORM_Y + FOOT_OFFSET + 0.10;
+    let   POOL_DIVE_ROOT_Y     = POOL_DIVE_PLATFORM_Y + FOOT_OFFSET;
     const POOL_DIVE_LAUNCH_VY  = 8.5;
     let   poolWalls     = [];
     let   waterMesh     = null;
@@ -1274,7 +1304,9 @@ function _startGame() {
     // ── Terrain meshes (visual — physics uses terrainRootY()) ────────────────────
     if (!_trampolineMode && !_trampolineMatMode && !_poolDiveMode) {
     const snowMat = new BABYLON.StandardMaterial('snowMat', scene);
-    snowMat.diffuseColor = new BABYLON.Color3(0.92, 0.97, 1.0);
+    snowMat.diffuseColor  = new BABYLON.Color3(0.78, 0.84, 0.91); // groomed course snow — not pure white
+    snowMat.specularColor = new BABYLON.Color3(0.20, 0.26, 0.38);
+    snowMat.specularPower = 22;
 
     const kickerWidth = 3.4; // all hills use double width
 
@@ -1491,43 +1523,191 @@ function _startGame() {
     startBox.position.set(0, -FOOT_OFFSET - 0.6, SLOPE_START_Z - 9);
     startBox.material = snowMat;
 
-    // ── Background trees ──────────────────────────────────────────────────────
+    // ── Alpine forest — grid-based placement across full mountain terrain ───────
     {
-    const trunkMat = new BABYLON.StandardMaterial('trunkMat', scene);
-    trunkMat.diffuseColor = new BABYLON.Color3(0.38, 0.24, 0.14);
-    const foliageMat = new BABYLON.StandardMaterial('foliageMat', scene);
-    foliageMat.diffuseColor = new BABYLON.Color3(0.13, 0.38, 0.18);
+    const tkMat = new BABYLON.StandardMaterial('trunkMat', scene);
+    tkMat.diffuseColor = new BABYLON.Color3(0.36, 0.22, 0.12);
+    const flMat = new BABYLON.StandardMaterial('foliageMat', scene);
+    flMat.diffuseColor = new BABYLON.Color3(0.11, 0.31, 0.14);
 
-    const treeBaseY = terrainRootY(OUTRUN_Z) - FOOT_OFFSET;
-    const treePositions = [
-        { z: OUTRUN_Z + 5,  x: 3.5, scale: 1.0 },
-        { z: OUTRUN_Z + 15, x: 4.5, scale: 1.3 },
-        { z: OUTRUN_Z + 28, x: 3.0, scale: 0.9 },
-        { z: OUTRUN_Z + 40, x: 5.0, scale: 1.2 },
-        { z: OUTRUN_Z + 52, x: 3.8, scale: 1.1 },
-        { z: OUTRUN_Z + 63, x: 4.2, scale: 1.4 },
-        { z: OUTRUN_Z + 74, x: 3.2, scale: 0.85 },
-        { z: KICKER_END_Z + 10, x: 4.0, scale: 1.0 },
-        { z: KICKER_END_Z + 22, x: 5.2, scale: 1.2 },
-    ];
-    treePositions.forEach(function(t, i) {
-        const trunkH = 0.7 * t.scale;
-        const trunkR = 0.12 * t.scale;
-        const foliageH = 1.8 * t.scale;
-        const foliageR = 0.65 * t.scale;
+    // Deterministic hash → float in [0, 1) from two integers
+    function _tRng(a, b) {
+        let h = Math.imul((a * 1619 + b * 31337) | 0, 0x45d9f3b);
+        h = Math.imul(h ^ (h >>> 16), 0x5af6c39b);
+        return ((h >>> 0) & 0xFFFF) / 65536;
+    }
 
-        const trunk = BABYLON.MeshBuilder.CreateCylinder('tree_trunk_' + i,
-            { height: trunkH, diameter: trunkR * 2, tessellation: 6 }, scene);
-        trunk.position.set(t.x, treeBaseY + trunkH / 2, t.z);
-        trunk.material = trunkMat;
+    const cellX = 10, cellZ = 9;
+    const zStart = SLOPE_START_Z - 25;
+    const zEnd   = OUTRUN_Z + 100;
+    const zCells = Math.ceil((zEnd - zStart) / cellZ);
+    const xCells = 6;  // covers X ≈ ±60
 
-        const foliage = BABYLON.MeshBuilder.CreateCylinder('tree_foliage_' + i,
-            { height: foliageH, diameterTop: 0, diameterBottom: foliageR * 2, tessellation: 7 }, scene);
-        foliage.position.set(t.x, treeBaseY + trunkH + foliageH / 2, t.z);
-        foliage.material = foliageMat;
-    });
+    for (let gx = -xCells; gx <= xCells; gx++) {
+        for (let gz = 0; gz < zCells; gz++) {
+            const rx = _tRng(gx,         gz);
+            const rz = _tRng(gx + 500,   gz + 500);
+            const rs = _tRng(gx * 3,     gz * 7);
+            const rp = _tRng(gx * 7 + 1, gz * 3 + 1);
+
+            const tx = gx * cellX + (rx - 0.5) * cellX * 0.75;
+            const tz = zStart + gz * cellZ + (rz - 0.5) * cellZ * 0.75;
+            const absTx = Math.abs(tx);
+
+            if (absTx < 7.0) continue;   // clear course corridor
+            if (absTx > 58)  continue;   // stay on terrain
+
+            // Sparser near course edges, denser further out.
+            // Camera side (-X) gets 55% density to avoid blocking the view.
+            const distFromCourse = absTx - 7.0;
+            const sideFactor = tx < 0 ? 0.55 : 1.0;
+            const prob = (1 - Math.exp(-distFromCourse * 0.10)) * sideFactor;
+            if (rp > prob) continue;
+
+            // Alpine conifers: trunk 2.8–5 units, total height 11–18 units
+            const s = 0.85 + rs * 0.90;
+            const trunkH  = 3.0 * s,  trunkR  = 0.26 * s;
+            const foliageH = 10.5 * s, foliageR = 2.3 * s;
+
+            const ty = terrainRootY(tz) - FOOT_OFFSET;
+            const ti = (gx + xCells) * zCells + gz;
+
+            const trunk = BABYLON.MeshBuilder.CreateCylinder('tr_' + ti,
+                { height: trunkH, diameter: trunkR * 2, tessellation: 6 }, scene);
+            trunk.position.set(tx, ty + trunkH / 2, tz);
+            trunk.material = tkMat;
+
+            const foliage = BABYLON.MeshBuilder.CreateCylinder('fl_' + ti,
+                { height: foliageH, diameterTop: 0, diameterBottom: foliageR * 2, tessellation: 7 }, scene);
+            foliage.position.set(tx, ty + trunkH + foliageH / 2, tz);
+            foliage.material = flMat;
+        }
+    }
     } // end trees
+
+    // ── Mountain environment — makes the jump feel embedded in a real ski resort ──
+    {
+    // Natural ungroomed snow — slightly darker and less specular than the prepared course
+    const lsMat = new BABYLON.StandardMaterial('lsMat', scene);
+    lsMat.diffuseColor  = new BABYLON.Color3(0.71, 0.78, 0.87);
+    lsMat.specularColor = new BABYLON.Color3(0.09, 0.12, 0.18);
+    lsMat.specularPower = 7;
+
+    // Rock face — for mountain bodies below the snow line
+    const rockMat = new BABYLON.StandardMaterial('rockMat', scene);
+    rockMat.diffuseColor  = new BABYLON.Color3(0.41, 0.37, 0.33);
+    rockMat.specularColor = new BABYLON.Color3(0.04, 0.04, 0.04);
+
+    const valleyFloorY = terrainRootY(OUTRUN_Z) - FOOT_OFFSET;  // lowest playable surface
+    const topPlatY     = terrainRootY(SLOPE_START_Z) - FOOT_OFFSET; // top of inrun start
+
+    // ── Wide terrain fills — the jump corridor is 10 units wide; these extend
+    //    the same slope angles out to 110 units on each side so there's no void ─
+    // Inrun slope
+    {
+        const midZ  = (SLOPE_START_Z + TRANS_START_Z) / 2;
+        const depth = (TRANS_START_Z - SLOPE_START_Z) / Math.cos(SLOPE_ANGLE);
+        const wb = BABYLON.MeshBuilder.CreateBox('wInrun', { width: 110, height: 1.6, depth }, scene);
+        wb.rotation.x = SLOPE_ANGLE;
+        wb.position.set(0, terrainRootY(midZ) - FOOT_OFFSET - 0.88, midZ + 0.12 * Math.sin(SLOPE_ANGLE));
+        wb.material = lsMat;
+    }
+    // Flat table (transition end → kicker)
+    {
+        const tableTopY = _KBP_tY - FOOT_OFFSET;
+        const depth = KICKER_END_Z + 1 - TRANS_END_Z;
+        const midZ  = (TRANS_END_Z + KICKER_END_Z + 1) / 2;
+        const wb = BABYLON.MeshBuilder.CreateBox('wTable', { width: 110, height: 1.6, depth }, scene);
+        wb.position.set(0, tableTopY - 0.88, midZ);
+        wb.material = lsMat;
+    }
+    // Landing slope
+    {
+        const depth = landingDepth / Math.cos(LANDING_ANGLE) + 2;
+        const wb = BABYLON.MeshBuilder.CreateBox('wLanding', { width: 110, height: 1.6, depth }, scene);
+        wb.rotation.x = LANDING_ANGLE;
+        wb.position.set(0, terrainRootY(landingMidZ) - FOOT_OFFSET - 0.88 / Math.cos(LANDING_ANGLE), landingMidZ);
+        wb.material = lsMat;
+    }
+    // Flat outrun + beyond
+    {
+        const depth = OUTRUN_LEN + 100;
+        const midZ  = OUTRUN_Z + depth / 2 - 10;
+        const wb = BABYLON.MeshBuilder.CreateBox('wOutrun', { width: 110, height: 1.6, depth }, scene);
+        wb.position.set(0, valleyFloorY - 0.88, midZ);
+        wb.material = lsMat;
+    }
+    // Upper start plateau (the flat area skiers stand on before the run)
+    {
+        const wb = BABYLON.MeshBuilder.CreateBox('wStartPlat', { width: 110, height: 1.6, depth: 55 }, scene);
+        wb.position.set(0, topPlatY - 0.88, SLOPE_START_Z - 27);
+        wb.material = lsMat;
+    }
+    // Upper mountain slope — continues the inrun angle upward behind the start gate.
+    // This gives the impression the jump is midway down a much bigger mountain.
+    {
+        const extDepth = 90;
+        const midExtZ  = SLOPE_START_Z - 27 - extDepth / 2;
+        // Continue slope upward: at z units behind SLOPE_START_Z, y rises by z*tan(SLOPE_ANGLE)
+        const midExtY  = (-midExtZ) * Math.tan(SLOPE_ANGLE) - FOOT_OFFSET;
+        const depth    = extDepth / Math.cos(SLOPE_ANGLE) + 2;
+        const wb = BABYLON.MeshBuilder.CreateBox('wUpperMtn', { width: 130, height: 1.6, depth }, scene);
+        wb.rotation.x = SLOPE_ANGLE;
+        wb.position.set(0, midExtY - 0.88, midExtZ + 0.12 * Math.sin(SLOPE_ANGLE));
+        wb.material = lsMat;
+    }
+
+    // ── Background mountain peaks — distributed to fill the horizon ────────────
+    // Camera in side view looks from -X toward +X, so peaks at positive X form
+    // the main backdrop. Peaks at large Z and at ±X add depth to the valley.
+    const peaks = [
+        // Main backdrop (behind the kicker — the prime spot from side view)
+        { x:  72, z: KICKER_END_Z,       h: 54, rb: 62 },
+        { x:  58, z: SLOPE_START_Z + 5,  h: 40, rb: 46 },
+        { x:  90, z: OUTRUN_Z + 15,      h: 48, rb: 58 },
+        // Behind the slope start (the mountain above)
+        { x:   8, z: SLOPE_START_Z - 95, h: 72, rb: 85 },
+        { x:  35, z: SLOPE_START_Z - 75, h: 50, rb: 58 },
+        { x: -18, z: SLOPE_START_Z - 65, h: 44, rb: 52 },
+        // Valley sides (left, deeper into fog)
+        { x: -50, z: OUTRUN_Z - 15,      h: 36, rb: 45 },
+        { x: -55, z: SLOPE_START_Z - 10, h: 42, rb: 50 },
+        // Ahead (visible when soaring)
+        { x:  55, z: OUTRUN_Z + 110,     h: 62, rb: 72 },
+        { x:  80, z: OUTRUN_Z + 90,      h: 44, rb: 54 },
+        { x: -28, z: OUTRUN_Z + 140,     h: 38, rb: 48 },
+    ];
+    peaks.forEach(function(m, i) {
+        const bodyH = m.h * 0.80;
+        const body = BABYLON.MeshBuilder.CreateCylinder('pk_body_' + i, {
+            height: bodyH, diameterTop: m.rb * 0.12, diameterBottom: m.rb * 2, tessellation: 10
+        }, scene);
+        body.position.set(m.x, valleyFloorY + bodyH / 2 - 1.5, m.z);
+        body.material = rockMat;
+
+        // Snow cap on top third
+        const capH = m.h * 0.32;
+        const capR = m.rb * 0.28;
+        const cap = BABYLON.MeshBuilder.CreateCylinder('pk_cap_' + i, {
+            height: capH, diameterTop: 0, diameterBottom: capR * 2, tessellation: 10
+        }, scene);
+        cap.position.set(m.x, valleyFloorY + bodyH - capH / 2 - 1.5, m.z);
+        cap.material = snowMat;
+    });
+
+    } // end mountain environment
+
     } // end !_trampolineMode terrain
+
+    let poolDiveFaceBack   = false;
+    let poolDiveFlipDirPref = 1;
+    const _diveStanceHUD = document.getElementById('diveStanceHUD');
+    function _updateDiveStanceHUD() {
+        if (!_poolDiveMode || !_diveStanceHUD) return;
+        const faceLbl = poolDiveFaceBack ? '◀ Backward' : '▶ Forward';
+        const flipLbl = poolDiveFlipDirPref === 1 ? 'Back flip' : 'Front flip';
+        _diveStanceHUD.textContent = `${faceLbl}  ·  ${flipLbl}`;
+    }
 
     // ── Pool dive environment ────────────────────────────────────────────────
     if (_poolDiveMode) {
@@ -1582,14 +1762,21 @@ function _startGame() {
         _wMat.backFaceCulling = false;
         waterMesh.material = _wMat;
 
-        // Splash particle texture
-        _splashTex = new BABYLON.DynamicTexture('splashTex', { width:64, height:64 }, scene, false);
+        // Splash particle texture — droplet with bright core + specular highlight
+        _splashTex = new BABYLON.DynamicTexture('splashTex', { width:128, height:128 }, scene, false);
         { const _c = _splashTex.getContext();
-          const _g = _c.createRadialGradient(32,32,0,32,32,32);
-          _g.addColorStop(0,   'rgba(255,255,255,1)');
-          _g.addColorStop(0.4, 'rgba(160,220,255,0.9)');
-          _g.addColorStop(1,   'rgba(80,160,255,0)');
-          _c.fillStyle = _g; _c.arc(32,32,32,0,Math.PI*2); _c.fill();
+          const _g = _c.createRadialGradient(64,64,0,64,64,64);
+          _g.addColorStop(0,    'rgba(255,255,255,1.0)');
+          _g.addColorStop(0.12, 'rgba(220,240,255,1.0)');
+          _g.addColorStop(0.35, 'rgba(140,210,255,0.85)');
+          _g.addColorStop(0.65, 'rgba(80,170,255,0.45)');
+          _g.addColorStop(1.0,  'rgba(40,120,220,0.0)');
+          _c.fillStyle = _g; _c.beginPath(); _c.arc(64,64,64,0,Math.PI*2); _c.fill();
+          // Small specular glint offset from center
+          const _sg = _c.createRadialGradient(52,50,0,52,50,14);
+          _sg.addColorStop(0,   'rgba(255,255,255,0.8)');
+          _sg.addColorStop(1,   'rgba(255,255,255,0.0)');
+          _c.fillStyle = _sg; _c.beginPath(); _c.arc(52,50,14,0,Math.PI*2); _c.fill();
           _splashTex.update(); }
 
         // ── Outdoor pool deck ────────────────────────────────────────────────
@@ -1660,6 +1847,7 @@ function _startGame() {
         const _platSelWrap = document.getElementById('platformSelectWrap');
         const _platSel     = document.getElementById('platformSelect');
         if (_platSelWrap) _platSelWrap.style.display = 'block';
+        if (_diveStanceHUD) { _diveStanceHUD.style.display = 'block'; _updateDiveStanceHUD(); }
         if (_platSel) {
             _platSel.value = String(activePlatIdx);
             _platSel.addEventListener('change', () => {
@@ -1910,6 +2098,8 @@ function _startGame() {
         armRaise:        0.0,  // 0-1: blend arms straight up
         armRaiseTarget:  0,
         airTime:         0.0,  // seconds in air on current jump
+        landingLean:    0.0,  // post-landing body lean (rad, signed: + forward, − backward)
+        landingLeanVel: 0.0,  // angular velocity of landing lean
     };
 
     let leftDown        = false;
@@ -1949,7 +2139,7 @@ function _startGame() {
             armRaise:   state.armRaise,
             grounded:   state.grounded,
             crashed:    state.crashed,
-            readyYaw:   0,
+            readyYaw:   (readyState && !_poolDiveMode) ? (1.0 - readyTurnT) * (Math.PI / 2) : 0.0,
         });
     }
     if (replayBtn) {
@@ -1963,7 +2153,7 @@ function _startGame() {
             });
         }
         replayBtn.addEventListener('click', () => {
-            const frames = lastRunFrames.length ? lastRunFrames : replayFrames;
+            const frames = replayFrames.length ? replayFrames : lastRunFrames;
             if (!frames.length) return;
             replayActive = true;
             replayIndex  = 0;
@@ -1987,39 +2177,139 @@ function _startGame() {
     function switchPlatform(idx) {
         activePlatIdx        = idx;
         const cfg            = PLATFORM_CONFIGS[idx];
-        POOL_DIVE_PLATFORM_Z = POOL_DIVE_SHORE_Z;
+        POOL_DIVE_PLATFORM_Z = POOL_DIVE_TIP_Z;
         POOL_DIVE_PLATFORM_X = cfg.x;
         POOL_DIVE_PLATFORM_Y = poolSurfaceY + cfg.height;
-        POOL_DIVE_ROOT_Y     = POOL_DIVE_PLATFORM_Y + FOOT_OFFSET + 0.10;
+        POOL_DIVE_ROOT_Y     = POOL_DIVE_PLATFORM_Y + FOOT_OFFSET;
     }   // drag coefficient while in water (computed from entry quality)
     let poolWaveT      = 0;
     let poolSplashAmp  = 0;
     let poolSplashImpX = 0;
     let poolSplashImpZ = poolCenterZ;
 
-    function _spawnSplash(impX, impZ) {
+    function _spawnSplash(impX, impZ, entrySpeed, entryQuality) {
         if (!_splashTex) return;
-        const ps = new BABYLON.ParticleSystem('splash', 400, scene);
-        ps.particleTexture = _splashTex;
-        ps.emitter         = new BABYLON.Vector3(impX, poolSurfaceY, impZ);
-        ps.minEmitBox      = new BABYLON.Vector3(-0.4, 0, -0.4);
-        ps.maxEmitBox      = new BABYLON.Vector3( 0.4, 0,  0.4);
-        ps.color1          = new BABYLON.Color4(0.6, 0.85, 1.0, 1.0);
-        ps.color2          = new BABYLON.Color4(0.9, 0.97, 1.0, 0.7);
-        ps.colorDead       = new BABYLON.Color4(0.3, 0.6, 0.9, 0.0);
-        ps.minSize         = 0.06;  ps.maxSize      = 0.32;
-        ps.minLifeTime     = 0.35;  ps.maxLifeTime  = 1.5;
-        ps.emitRate        = 0;
-        ps.manualEmitCount = 400;
-        ps.direction1      = new BABYLON.Vector3(-2.5,  5.0, -2.5);
-        ps.direction2      = new BABYLON.Vector3( 2.5, 14.0,  2.5);
-        ps.minAngularSpeed = 0;    ps.maxAngularSpeed = Math.PI;
-        ps.minEmitPower    = 0.5;  ps.maxEmitPower    = 7.5;
-        ps.updateSpeed     = 0.02;
-        ps.gravity         = new BABYLON.Vector3(0, -12, 0);
-        ps.blendMode       = BABYLON.ParticleSystem.BLENDMODE_ONEONE;
+        // qual 1 = clean vertical entry, 0 = belly/back flop
+        const spd   = Math.min(entrySpeed || 8, 20);
+        const qual  = entryQuality !== undefined ? entryQuality : 0.5;
+        const splat = 1 - qual;          // 0 = clean, 1 = full flop
+        const speedScale = 0.6 + spd / 20;
+
+        const origin = new BABYLON.Vector3(impX, poolSurfaceY + 0.02, impZ);
+        const BM = BABYLON.ParticleSystem.BLENDMODE_ONEONE;
+
+        // ── 1. Ripple — always present; tiny on clean entries ─────────────────
+        {
+            const rippleCount = Math.round(20 + 30 * splat);  // 20 clean → 50 flop
+            const pRipple = new BABYLON.ParticleSystem('splash_ripple', rippleCount, scene);
+            pRipple.particleTexture = _splashTex;
+            pRipple.emitter    = origin.clone();
+            pRipple.minEmitBox = new BABYLON.Vector3(-0.05, 0, -0.05);
+            pRipple.maxEmitBox = new BABYLON.Vector3( 0.05, 0,  0.05);
+            pRipple.color1     = new BABYLON.Color4(0.75, 0.92, 1.00, 0.65);
+            pRipple.color2     = new BABYLON.Color4(0.90, 0.98, 1.00, 0.45);
+            pRipple.colorDead  = new BABYLON.Color4(0.50, 0.80, 1.00, 0.00);
+            pRipple.minSize    = 0.03;  pRipple.maxSize     = 0.10 + 0.08 * splat;
+            pRipple.minLifeTime= 0.5;   pRipple.maxLifeTime = 1.6;
+            pRipple.emitRate   = 0;     pRipple.manualEmitCount = rippleCount;
+            pRipple.direction1 = new BABYLON.Vector3(-2.5, 0.4, -2.5);
+            pRipple.direction2 = new BABYLON.Vector3( 2.5, 1.2,  2.5);
+            pRipple.minAngularSpeed = 0;  pRipple.maxAngularSpeed = 0.5;
+            pRipple.minEmitPower= 0.15;  pRipple.maxEmitPower = 0.9 + 0.6 * splat;
+            pRipple.updateSpeed = 0.016;
+            pRipple.gravity     = new BABYLON.Vector3(0, -2.5, 0);
+            pRipple.blendMode   = BM;
+            pRipple.start();
+            setTimeout(() => { try { pRipple.dispose(); } catch(_){} }, 2500);
+        }
+
+        // ── 2. Crown spray — only on bad/flopped entries ──────────────────────
+        if (splat > 0.15) {
+            const crownCount = Math.round(200 * splat * speedScale);
+            const pCrown = new BABYLON.ParticleSystem('splash_crown', crownCount, scene);
+            pCrown.particleTexture = _splashTex;
+            pCrown.emitter    = origin.clone();
+            pCrown.minEmitBox = new BABYLON.Vector3(-0.20, 0, -0.20);
+            pCrown.maxEmitBox = new BABYLON.Vector3( 0.20, 0,  0.20);
+            pCrown.color1     = new BABYLON.Color4(0.70, 0.90, 1.00, 0.95);
+            pCrown.color2     = new BABYLON.Color4(0.88, 0.97, 1.00, 0.75);
+            pCrown.colorDead  = new BABYLON.Color4(0.35, 0.65, 0.95, 0.00);
+            pCrown.minSize    = 0.06;   pCrown.maxSize     = 0.26 * speedScale;
+            pCrown.minLifeTime= 0.5;    pCrown.maxLifeTime = 1.8;
+            pCrown.emitRate   = 0;      pCrown.manualEmitCount = crownCount;
+            const cSpread = 4.0 + 5.0 * splat;
+            pCrown.direction1 = new BABYLON.Vector3(-cSpread, 2.0 * splat, -cSpread);
+            pCrown.direction2 = new BABYLON.Vector3( cSpread, 7.0 * splat,  cSpread);
+            pCrown.minAngularSpeed = 0;  pCrown.maxAngularSpeed = Math.PI;
+            pCrown.minEmitPower= 1.0;   pCrown.maxEmitPower = 5.0 * speedScale * splat;
+            pCrown.updateSpeed = 0.016;
+            pCrown.gravity     = new BABYLON.Vector3(0, -11, 0);
+            pCrown.blendMode   = BM;
+            pCrown.start();
+            setTimeout(() => { try { pCrown.dispose(); } catch(_){} }, 3500);
+        }
+
+        // ── 3. Mist — only on bad/flopped entries ────────────────────────────
+        if (splat > 0.15) {
+            const mistCount = Math.round(80 * splat * speedScale);
+            const pMist = new BABYLON.ParticleSystem('splash_mist', mistCount, scene);
+            pMist.particleTexture = _splashTex;
+            pMist.emitter    = origin.clone();
+            pMist.minEmitBox = new BABYLON.Vector3(-0.30, 0, -0.30);
+            pMist.maxEmitBox = new BABYLON.Vector3( 0.30, 0,  0.30);
+            pMist.color1     = new BABYLON.Color4(0.85, 0.95, 1.00, 0.50);
+            pMist.color2     = new BABYLON.Color4(1.00, 1.00, 1.00, 0.40);
+            pMist.colorDead  = new BABYLON.Color4(0.60, 0.85, 1.00, 0.00);
+            pMist.minSize    = 0.06;   pMist.maxSize     = 0.20;
+            pMist.minLifeTime= 0.8;    pMist.maxLifeTime = 2.5;
+            pMist.emitRate   = 0;      pMist.manualEmitCount = mistCount;
+            pMist.direction1 = new BABYLON.Vector3(-6.0 * splat, 0.3, -6.0 * splat);
+            pMist.direction2 = new BABYLON.Vector3( 6.0 * splat, 1.8,  6.0 * splat);
+            pMist.minAngularSpeed = 0;  pMist.maxAngularSpeed = 0.7;
+            pMist.minEmitPower= 0.2;   pMist.maxEmitPower = 2.0 * speedScale * splat;
+            pMist.updateSpeed = 0.016;
+            pMist.gravity     = new BABYLON.Vector3(0, -2.5, 0);
+            pMist.blendMode   = BM;
+            pMist.start();
+            setTimeout(() => { try { pMist.dispose(); } catch(_){} }, 4500);
+        }
+    }
+
+    // ── Snow particle helpers for ski jump (kicker spray + landing burst) ───────
+    function _spawnSnowBurst(posX, posY, posZ, count, speedScale) {
+        if (_trampolineMode || _poolDiveMode) return;
+        const BM  = BABYLON.ParticleSystem.BLENDMODE_STANDARD;
+        if (!_spawnSnowBurst._tex) {
+            const _c = document.createElement('canvas'); _c.width = _c.height = 32;
+            const _cx = _c.getContext('2d');
+            const _g = _cx.createRadialGradient(16, 16, 0, 16, 16, 16);
+            _g.addColorStop(0, 'rgba(255,255,255,1)'); _g.addColorStop(1, 'rgba(255,255,255,0)');
+            _cx.fillStyle = _g; _cx.fillRect(0, 0, 32, 32);
+            _spawnSnowBurst._tex = new BABYLON.Texture(_c.toDataURL(), scene);
+        }
+        const tex = _spawnSnowBurst._tex;
+        const origin = new BABYLON.Vector3(posX, posY, posZ);
+        const ps = new BABYLON.ParticleSystem('snowBurst', count, scene);
+        ps.particleTexture = tex;
+        ps.emitter    = origin;
+        ps.minEmitBox = new BABYLON.Vector3(-0.30, 0, -0.20);
+        ps.maxEmitBox = new BABYLON.Vector3( 0.30, 0,  0.20);
+        ps.color1     = new BABYLON.Color4(0.95, 0.98, 1.00, 0.90);
+        ps.color2     = new BABYLON.Color4(0.80, 0.90, 1.00, 0.60);
+        ps.colorDead  = new BABYLON.Color4(0.70, 0.85, 1.00, 0.00);
+        ps.minSize    = 0.06;   ps.maxSize     = 0.22;
+        ps.minLifeTime= 0.4;    ps.maxLifeTime = 1.2;
+        ps.emitRate   = 0;      ps.manualEmitCount = count;
+        ps.direction1 = new BABYLON.Vector3(-3.5 * speedScale, 2.0 * speedScale, -2.5 * speedScale);
+        ps.direction2 = new BABYLON.Vector3( 3.5 * speedScale, 5.5 * speedScale,  2.5 * speedScale);
+        ps.minAngularSpeed = 0;  ps.maxAngularSpeed = 1.5;
+        ps.minEmitPower    = 0.3 * speedScale;
+        ps.maxEmitPower    = 1.8 * speedScale;
+        ps.updateSpeed     = 0.016;
+        ps.gravity         = new BABYLON.Vector3(0, -6, 0);
+        ps.blendMode       = BM;
         ps.start();
-        setTimeout(() => { try { ps.dispose(); } catch(_){} }, 3000);
+        setTimeout(() => { try { ps.dispose(); } catch(_){} }, 2000);
     }
 
     let leftArmHoldTime = 0;    // seconds right arrow held alone on inrun (left arm up)
@@ -2028,7 +2318,8 @@ function _startGame() {
     let downHalfTwistFired = false; // true after down fires a half-twist mid-air
     const RIGHT_HALF_TWIST_HOLD = 0.05; // hold right alone this long mid-air → half twist left
     let paused          = false;
-    let cameraMode      = 0;     // 0=side  1=front  2=back  (C cycles)
+    let cameraMode      = 2;     // 0=side  1=front  2=back  (C cycles)
+    let firstPersonMode = false; // true = FP camera from skier's eyes (V toggles)
     let powerWrapDown   = false; // down arrow held → 1.3× spin rate
     let arrowUpDown     = false; // up arrow held mid-air → gradually slow flip
     let targetL_flip    = 0.0;   // target L_flip to recover toward when arrow released
@@ -2050,12 +2341,37 @@ function _startGame() {
     // Initialise rotationQuaternion so Babylon doesn't mix with euler rotation.
     character.root.rotationQuaternion = BABYLON.Quaternion.Identity();
 
-    // Apply default behind-character camera immediately
-    camera.alpha = -Math.PI / 2;
-    camera.beta  = Math.PI / 3.2 - 2 * Math.PI / 180;
+    // Per-mode default betas — side keeps the original angle, back is raised
+    const CAM_BETA_SIDE   = Math.PI / 3.2 - 2 * Math.PI / 180; // original side-view angle
+    const CAM_BETA_BACK   = Math.PI / 3.8;                      // raised back view (approved)
+    const CAM_BETA_FRONT  = Math.PI / 2.5;
+    const CAM_BETA_LAND   = Math.PI / 4.5;                      // slight raise on landing
+    function _modeBeta(mode) {
+        if (mode === 1) return CAM_BETA_FRONT;
+        if (mode === 2) return CAM_BETA_BACK;
+        return CAM_BETA_SIDE;
+    }
+    let _camTargetAlpha = null;
+    function _snapCamera(mode) {
+        if (mode === 0)      { _camTargetAlpha = Math.PI;         }
+        else if (mode === 1) { _camTargetAlpha = Math.PI / 2;     }
+        else                 { _camTargetAlpha = Math.PI * 1.5;   }
+    }
     camera.mode  = BABYLON.Camera.PERSPECTIVE_CAMERA;
     camera.fov   = 0.9;
+    camera.alpha = Math.PI * 1.5;   // start behind
+    camera.beta  = CAM_BETA_BACK;
     if (dofPipeline) dofPipeline.depthOfFieldEnabled = true;
+
+    // ── First-person camera (V key toggles) ─────────────────────────────────
+    // Positioned at the skier's eyes; orientation tracks the full body rotation
+    // (including backflips and twists) so the world tumbles realistically.
+    const fpCamera = new BABYLON.FreeCamera('fpCam', BABYLON.Vector3.Zero(), scene);
+    fpCamera.minZ = 0.02;
+    fpCamera.maxZ = 2000;
+    fpCamera.fov  = 1.40;  // ~80° — wide enough for a sense of speed
+    // Persistent lerped state for smooth landing transition
+    let _fpPos = null, _fpFwd = null, _fpUp = null;
 
 
     // ── Input ─────────────────────────────────────────────────────────────────
@@ -2147,7 +2463,7 @@ function _startGame() {
             state.pikeAmount  = 0.0;
             state.pikeTarget  = 0.0;
             state.pikeReleaseOmega = 0;
-            state.flipDir     = 1;
+            state.flipDir     = _poolDiveMode ? poolDiveFlipDirPref : 1;
             state.spinAngle   = 0.0;
             state.spinTarget  = 0.0;
             state.spinMult    = 1.0;
@@ -2215,6 +2531,17 @@ function _startGame() {
         }
         if (e.code === 'KeyC') {
             cameraMode = (cameraMode + 1) % 3;
+            _snapCamera(cameraMode);
+            return;
+        }
+        if (e.code === 'KeyV') {
+            firstPersonMode = !firstPersonMode;
+            _fpPos = null; // reset lerp state so next entry snaps in cleanly
+            scene.activeCamera = firstPersonMode ? fpCamera : camera;
+            // Disable the head (+ children: visor, nose) to avoid clipping into the lens
+            character.meshes['head'].setEnabled(!firstPersonMode);
+            const _fpNeck = scene.getMeshByName('neck');
+            if (_fpNeck) _fpNeck.setEnabled(!firstPersonMode);
             return;
         }
         if (paused) return;
@@ -2299,7 +2626,17 @@ function _startGame() {
             }
         }
         if (_kcode === 'KeyD' && !state.crashed) {
-            singleFlipQueued = !singleFlipQueued; // toggle; takes effect on next jump
+            if (_poolDiveMode) {
+                poolDiveFaceBack = !poolDiveFaceBack;
+                _updateDiveStanceHUD();
+            } else {
+                singleFlipQueued = !singleFlipQueued;
+            }
+        }
+        if (_kcode === 'KeyF' && !state.crashed && _poolDiveMode) {
+            poolDiveFlipDirPref = poolDiveFlipDirPref === 1 ? -1 : 1;
+            if (state.grounded) state.flipDir = poolDiveFlipDirPref;
+            _updateDiveStanceHUD();
         }
         if (_kcode === 'ArrowLeft' && !leftDown && !state.crashed) {
             e.preventDefault();
@@ -2685,6 +3022,42 @@ function _startGame() {
         }
     });
 
+    // ── First-person camera helper ────────────────────────────────────────────
+    // Called each frame when firstPersonMode is true.
+    // During flight: instant tracking (no spin lag). On landing: lerps smoothly
+    // from wherever the camera was to the new upright orientation.
+    function _updateFpCamera(dt) {
+        character.root.computeWorldMatrix(true);
+        character.meshes['head'].computeWorldMatrix(true);
+        const _hMat = character.meshes['head'].getWorldMatrix();
+
+        const _headPos = BABYLON.Vector3.TransformCoordinates(BABYLON.Vector3.Zero(), _hMat);
+        const _fwd = BABYLON.Vector3.TransformNormal(new BABYLON.Vector3(0, 0, -1), _hMat).normalize();
+        const _up  = BABYLON.Vector3.TransformNormal(BABYLON.Vector3.Up(), _hMat).normalize();
+        const _eye = _headPos.add(_fwd.scale(0.08));
+
+        if (!_fpPos) {
+            // First frame in FP mode — snap instantly
+            _fpPos = _eye.clone();
+            _fpFwd = _fwd.clone();
+            _fpUp  = _up.clone();
+        } else {
+            // Position always snaps instantly — prevents body drifting away from head.
+            // Orientation lerps: instant airborne (snappy spins), slow grounded (smooth landing).
+            _fpPos = _eye.clone();
+            const rate = (state.grounded && dt > 0) ? 7.0 : 60.0;
+            const t = Math.min(1, rate * dt);
+            BABYLON.Vector3.LerpToRef(_fpFwd, _fwd, t, _fpFwd);
+            BABYLON.Vector3.LerpToRef(_fpUp,  _up,  t, _fpUp);
+            _fpFwd.normalizeToRef(_fpFwd);
+            _fpUp.normalizeToRef(_fpUp);
+        }
+
+        fpCamera.position.copyFrom(_fpPos);
+        fpCamera.upVector.copyFrom(_fpUp);
+        fpCamera.setTarget(_fpPos.add(_fpFwd));
+    }
+
     // ── Physics / render loop ─────────────────────────────────────────────────
     // Tuck transitions over 1/TUCK_RATE seconds (0.17 s)
     scene.registerBeforeRender(() => { try {
@@ -2712,9 +3085,18 @@ function _startGame() {
             character.root.position.y = f.rootY;
             character.root.position.z = f.posZ;
             applyPose(character.meshes, f.tuckAmount, f.armDropL, f.armDropR, f.armSnap, f.layArmT, f.armRaise, f.grounded, f.pikeAmount || 0, f.pikeArmDrop || 0);
-            const qFaceR = BABYLON.Quaternion.RotationAxis(BABYLON.Axis.Y, Math.PI);
+            const _faceBaseR = (_poolDiveMode && poolDiveFaceBack) ? 0.0 : Math.PI;
+            const qFaceR = BABYLON.Quaternion.RotationAxis(BABYLON.Axis.Y, _faceBaseR + (f.readyYaw || 0));
             if (f.grounded) {
-                character.root.rotationQuaternion = qFaceR;
+                let tilt = 0;
+                if (f.posZ >= SLOPE_START_Z && f.posZ <= OUTRUN_Z) {
+                    const _eps  = 0.05;
+                    const _dydz = (terrainRootY(f.posZ + _eps) - terrainRootY(f.posZ - _eps)) / (2 * _eps);
+                    tilt = Math.atan(_dydz);
+                }
+                const qTilt = BABYLON.Quaternion.RotationAxis(BABYLON.Axis.X, tilt);
+                const qSpinR = BABYLON.Quaternion.RotationAxis(BABYLON.Axis.Y, f.spinAngle);
+                character.root.rotationQuaternion = qFaceR.multiply(qTilt).multiply(qSpinR);
             } else {
                 const qFlipR = BABYLON.Quaternion.RotationAxis(BABYLON.Axis.X, f.flipAngle);
                 const qSpinR = BABYLON.Quaternion.RotationAxis(BABYLON.Axis.Y, f.spinAngle);
@@ -2722,6 +3104,7 @@ function _startGame() {
             }
             camera.target.y = f.rootY;
             camera.target.z = f.posZ;
+            if (firstPersonMode) _updateFpCamera(dt);
             return;
         }
 
@@ -2793,8 +3176,8 @@ function _startGame() {
                         state.grounded  = false;
                         const _cp = Math.max(0.25, _poolDiveLaunchPwr);
                         state.vy = 1.5 + (POOL_DIVE_LAUNCH_VY - 1.5) * _cp;
-                        state.vz = PLATFORM_CONFIGS[activePlatIdx].launchVZ * Math.max(0.3, _cp);
-                        state.flipDir   = 1;
+                        state.vz = PLATFORM_CONFIGS[activePlatIdx].launchVZ;
+                        state.flipDir   = poolDiveFlipDirPref;
                         state.L_flip    = I0 * TARGET_OMEGA_UNTUCKED * (Math.max(0.05, _poolDiveLaunchPwr) / 0.75);
                         state.perFlipTwists = []; state.lastFlipInt = 0;
                         state.spinAtFlipStart = state.spinAngle;
@@ -2889,10 +3272,14 @@ function _startGame() {
             // Only launch when actually crossing the kicker tip (not after landing past it)
             const crossingJ1 = !_poolDiveMode && prevZ <= KICKER_END_Z && state.posZ > KICKER_END_Z;
             if (crossingJ1) {
+                // Kicker launch snow spray — scaled to approach speed
+                _spawnSnowBurst(0, terrainRootY(KICKER_END_Z), KICKER_END_Z, 55, state.vz / 10);
                 state.vy       = state.vz * Math.sin(KICKER_ANGLE);
                 state.vz       = state.vz * Math.cos(KICKER_ANGLE);
                 state.rootY    = terrainRootY(KICKER_END_Z) + 0.10;
-                state.grounded = false;
+                state.grounded       = false;
+                state.landingLean    = 0;
+                state.landingLeanVel = 0;
                 state.flipAngle = KICKER_ANGLE; // start from kicker lip tilt — no snap to upright on takeoff
                 // Reset per-flip twist tracking
                 state.perFlipTwists   = [];
@@ -2946,7 +3333,10 @@ function _startGame() {
                     state.rootY = POOL_DIVE_ROOT_Y - state.tuckAmount * 0.45; // sink into crouch
                 } else if (!_poolDiveMode) {
                     if (!(_trampolineMatMode && matLanded)) {
-                        state.rootY = terrainRootY(state.posZ) + 0.10;
+                        // Extra lift on the landing slope so the rear ski tip clears
+                        // the terrain surface (ski extends back into rising terrain on steep slopes)
+                        const _onLanding = state.posZ > LANDING_START_Z && state.posZ < OUTRUN_Z;
+                        state.rootY = terrainRootY(state.posZ) + (_onLanding ? 0.22 : 0.10);
                     }
                     // When upright (readyState, tilt=0) the full FOOT_OFFSET goes straight
                     // down so the skis sit on the surface. As tilt increases, compensate so
@@ -2958,6 +3348,17 @@ function _startGame() {
                     }
                     // Inrun crouch: sink root down so body comes toward skis
                     state.rootY -= state.tuckAmount * 0.35;
+                }
+            }
+            // Landing lean spring-damper — decays residual lean from landing rotation
+            if (state.landingLean !== 0 || state.landingLeanVel !== 0) {
+                const _LS = 9.0; // spring constant (rad/s² per rad)
+                const _LD = 6.0; // damping coefficient
+                state.landingLeanVel += (-_LS * state.landingLean - _LD * state.landingLeanVel) * dt;
+                state.landingLean    += state.landingLeanVel * dt;
+                if (Math.abs(state.landingLean) < 0.005 && Math.abs(state.landingLeanVel) < 0.01) {
+                    state.landingLean    = 0;
+                    state.landingLeanVel = 0;
                 }
             }
         } else {
@@ -3128,13 +3529,10 @@ function _startGame() {
                 const TWO_PI  = Math.PI * 2;
                 const norm    = ((state.flipAngle % TWO_PI) + TWO_PI) % TWO_PI;
                 const LAND_TOL = Math.PI / 4; // 45° — clean landing window
-                const spinNorm = ((state.spinAngle % TWO_PI) + TWO_PI) % TWO_PI;
-                const SPIN_TOL = Math.PI / 4; // 45° tolerance
-                const facingForward  = spinNorm < SPIN_TOL || spinNorm > TWO_PI - SPIN_TOL;
-                const facingBackward = Math.abs(spinNorm - Math.PI) < SPIN_TOL;
-                const goodLanding = (norm < LAND_TOL || norm > TWO_PI - LAND_TOL) && (facingForward || facingBackward);
+                const feetDown = (norm < LAND_TOL || norm > TWO_PI - LAND_TOL);
 
-                state.rootY      = surY + 0.10;
+                const _onLandSlope = state.posZ > LANDING_START_Z && state.posZ < OUTRUN_Z;
+                state.rootY      = surY + (_onLandSlope ? 0.22 : 0.10);
                 state.vy         = 0;
                 state.grounded   = true;
                 const capturedSpin = state.spinAngle;
@@ -3142,6 +3540,20 @@ function _startGame() {
                 const snapSpin   = Math.round(capturedSpin / Math.PI) * Math.PI;
                 state.spinAngle  = snapSpin;
                 state.spinTarget = snapSpin;
+                // Odd number of half-turns means facing backward — that's a crash
+                const facingBackwards = Math.abs(Math.round(snapSpin / Math.PI)) % 2 === 1;
+                const goodLanding = feetDown && !facingBackwards;
+                // Landing snow burst — speed-scaled, heavier on crash
+                {
+                    const impactSpeed = Math.abs(state.vz);
+                    const _cnt = goodLanding ? 45 : 90;
+                    _spawnSnowBurst(0, surY + 0.05, state.posZ, _cnt, impactSpeed / 12);
+                    // Camera shake — brief impulse proportional to impact
+                    const _shakeAmp = Math.min(0.25, impactSpeed * 0.018);
+                    camera.target.y += _shakeAmp;
+                    setTimeout(() => { camera.target.y -= _shakeAmp * 2; }, 60);
+                    setTimeout(() => { camera.target.y += _shakeAmp;     }, 120);
+                }
                 state.tuckTarget = 0;
                 state.tuckAmount = 0;
                 state.pikeTarget = 0;
@@ -3229,6 +3641,11 @@ function _startGame() {
                     state.execution = Math.max(0, Math.round(execRaw * 10) / 10);
                     state.crashed   = false;
                     if (typeof window._onQualifyLanded === 'function') window._onQualifyLanded(state.perFlipTwists, tuckedPerFlip.slice(), state.execution);
+                    // Seed landing lean from captured rotation + residual angular momentum
+                    const _signedLean = norm < Math.PI ? norm : norm - TWO_PI;
+                    const _omegaLand  = state.L_flip / I0;
+                    state.landingLean    = _signedLean;
+                    state.landingLeanVel = _omegaLand * state.flipDir * 0.3;
                     state.flipAngle = 0;
                     state.flipDir   = 1;
                     // preserve vz so skier glides away down the landing slope
@@ -3262,7 +3679,7 @@ function _startGame() {
                 state.rootY <= poolSurfaceY) {
                 poolEntered    = true;
                 poolSplashAmp  = Math.min(0.55, Math.abs(state.vy) * 0.055);
-                poolSplashImpX = 0;
+                poolSplashImpX = _poolDiveMode ? POOL_DIVE_PLATFORM_X : 0;
                 poolSplashImpZ = state.posZ;
                 // Build trick + score (mirrors normal landing logic)
                 const _pPI2  = Math.PI * 2;
@@ -3292,6 +3709,7 @@ function _startGame() {
                 }
                 // Entry quality: vertical (feet/head first) = 1, belly/back flop = 0
                 const _eq = Math.abs(Math.cos(state.flipAngle));
+                const _impactVY = Math.abs(state.vy);   // capture before velocity reduction
                 // Good entry preserves more velocity; flop absorbs most of it
                 const _keep = 0.30 + 0.20 * _eq;  // flop=0.30, perfect=0.50
                 state.vy *= _keep;
@@ -3315,7 +3733,12 @@ function _startGame() {
                     bbSub.isVisible = true;  bbScore.isVisible = true;
                     billboard.isVisible = true;
                 }
-                _spawnSplash(0, state.posZ);
+                _spawnSplash(_poolDiveMode ? POOL_DIVE_PLATFORM_X : 0, state.posZ, _impactVY, _eq);
+                if (_poolDiveMode) {
+                    state.crashed  = true;
+                    state.grounded = true;
+                    state.vy = 0; state.vz = 0;
+                }
             }
         }
         character.root.position.y = state.rootY;
@@ -3500,9 +3923,11 @@ function _startGame() {
         if (state.crashed && !crashActive) {
             crashActive = true;
             crashTimer  = 0;
-            const floorY = (_trampolineMode || _trampolineMatMode)
-                ? (TRAMPOLINE_Y - FOOT_OFFSET)
-                : terrainRootY(state.posZ) - FOOT_OFFSET;
+            const floorY = _poolDiveMode
+                ? poolSurfaceY
+                : (_trampolineMode || _trampolineMatMode)
+                    ? (TRAMPOLINE_Y - FOOT_OFFSET)
+                    : terrainRootY(state.posZ) - FOOT_OFFSET;
 
             // Pass 1: compute every mesh's world position BEFORE any detachment.
             // Must walk the full parent chain, so use getAbsolutePosition() not rootMatrix.
@@ -3529,11 +3954,17 @@ function _startGame() {
                     (Math.random() - 0.5) * 1.0
                 );
                 const angle   = Math.random() * Math.PI * 2;
-                const outward = 2.0 + Math.random() * 5.0;
+                // Pool entry: pieces burst outward from water surface with a splash pop
+                const outward = _poolDiveMode
+                    ? (1.5 + Math.random() * 3.5)
+                    : (2.0 + Math.random() * 5.0);
+                const upVy = _poolDiveMode
+                    ? (3.0 + Math.random() * 5.0)
+                    : (2.0 + Math.random() * 7.0);
                 crashPieces.push({
                     mesh, origPos, origQuat, origRot,
                     vx: Math.cos(angle) * outward,
-                    vy: 2.0 + Math.random() * 7.0,
+                    vy: upVy,
                     vz: Math.sin(angle) * outward * 0.7 + (state.vz || 0) * 0.35,
                     rotVx: (Math.random() - 0.5) * 24,
                     rotVy: (Math.random() - 0.5) * 24,
@@ -3677,7 +4108,8 @@ function _startGame() {
             // In readyState the character starts facing sideways (+π/2) and smoothly
             // rotates to face downhill (0) as readyTurnT goes 0→1.
             const readyYaw = (readyState && !_poolDiveMode) ? (1.0 - readyTurnT) * (Math.PI / 2) : 0.0;
-            const qFace = BABYLON.Quaternion.RotationAxis(BABYLON.Axis.Y, Math.PI + readyYaw);
+            const _faceBase = (_poolDiveMode && poolDiveFaceBack) ? 0.0 : Math.PI;
+            const qFace = BABYLON.Quaternion.RotationAxis(BABYLON.Axis.Y, _faceBase + readyYaw);
             if (state.grounded) {
                 let tilt = 0;
                 if (state.posZ < SLOPE_START_Z) {
@@ -3693,7 +4125,7 @@ function _startGame() {
                 }
                 // During ready-state turn, blend tilt from 0 (upright) to full slope tilt
                 if (readyState) tilt = tilt * readyTurnT;
-                const qTilt = BABYLON.Quaternion.RotationAxis(BABYLON.Axis.X, tilt);
+                const qTilt = BABYLON.Quaternion.RotationAxis(BABYLON.Axis.X, tilt + state.landingLean);
                 const qSpin = BABYLON.Quaternion.RotationAxis(BABYLON.Axis.Y, state.spinAngle);
                 character.root.rotationQuaternion = qFace.multiply(qTilt).multiply(qSpin);
             } else {
@@ -3704,30 +4136,30 @@ function _startGame() {
             }
         }
 
-        // ── Camera follow ──────────────────────────────────────────────────────────────
+        // ── First-person camera update ────────────────────────────────────────
+        if (firstPersonMode) _updateFpCamera(dt);
+
+        // ── Camera follow — track character position; free mouse; C lerps smoothly ──
         camera.target.y = state.rootY;
         camera.target.z = state.posZ;
         if (_poolDiveMode) camera.target.x = POOL_DIVE_PLATFORM_X;
-        {
-            // Target alpha/beta per mode
-            const BASE_BETA = Math.PI / 3.2 - 2 * Math.PI / 180;
-            let tAlpha, tBeta;
-            if (cameraMode === 0) {       // side
-                tAlpha = Math.PI;
-                tBeta  = state.grounded ? BASE_BETA : BASE_BETA - 4 * Math.PI / 180;
-            } else if (cameraMode === 1) { // front — camera at +Z, diver comes toward lens
-                tAlpha = Math.PI / 2;
-                tBeta  = Math.PI / 2.5;
-            } else {                       // back — camera at -Z, looks over diver's shoulder
-                tAlpha = Math.PI * 1.5;
-                tBeta  = BASE_BETA;
+        // Smooth C-key alpha lerp (finishes in ~0.5s then stops fighting mouse)
+        if (_camTargetAlpha !== null) {
+            let _da = _camTargetAlpha - camera.alpha;
+            if (_da >  Math.PI) _da -= Math.PI * 2;
+            if (_da < -Math.PI) _da += Math.PI * 2;
+            camera.alpha += _da * Math.min(1, 5 * dt);
+            if (Math.abs(_da) < 0.005) { camera.alpha = _camTargetAlpha; _camTargetAlpha = null; }
+        }
+        // Camera height management — never fight mouse input; only nudge when airborne/landing
+        if (!_poolDiveMode) {
+            if (!state.grounded && cameraMode !== 1) {
+                // Very slow raise throughout the flip — 0.022 rad/s, capped at CAM_BETA_LAND
+                camera.beta = Math.max(CAM_BETA_LAND, camera.beta - 0.022 * dt);
+            } else if (state.grounded && state.airTime > 0.15 && cameraMode !== 1) {
+                // Slight raise on landing
+                camera.beta += (CAM_BETA_LAND - camera.beta) * Math.min(1, 2.5 * dt);
             }
-            // Shortest-path alpha lerp
-            let da = tAlpha - camera.alpha;
-            if (da >  Math.PI) da -= Math.PI * 2;
-            if (da < -Math.PI) da += Math.PI * 2;
-            camera.alpha += da   * Math.min(1, 4 * dt);
-            camera.beta  += (tBeta - camera.beta) * Math.min(1, 4 * dt);
         }
 
         // ── Pool water wave animation ──────────────────────────────────────
@@ -3759,16 +4191,26 @@ function _startGame() {
 
         // ── HUD ───────────────────────────────────────────────────────────
         hud.text = '';
+        const _fpHint = firstPersonMode ? '\nV: third person' : '\nV: first person';
         if (_poolDiveMode) {
             hint.text = readyState
-                ? '↓: charge power\n↑: dive\ndrag: orbit'
-                : 'SPACE: tuck\n← then →: left twist\n→ then ←: right twist\ndrag: orbit';
+                ? '↓: charge power\n↑: dive\ndrag: orbit' + _fpHint
+                : 'SPACE: tuck\n← then →: left twist\n→ then ←: right twist\ndrag: orbit' + _fpHint;
         } else {
             hint.text = readyState && readyTurnT === 0.0
-                ? '↑: Start run\ndrag: orbit'
-                : 'SPACE: tuck\n← then →: left twist\n→ then ←: right twist\n↓: half twist\ndrag: orbit';
+                ? '↑: Start run\ndrag: orbit' + _fpHint
+                : 'SPACE: tuck\n← then →: left twist\n→ then ←: right twist\n↓: half twist\ndrag: orbit' + _fpHint;
         }
     } catch(e) { hud.text = 'ERR: ' + e.message; console.error(e); } });
+
+    // ── Shadow casters/receivers — register all scene meshes after full build ──
+    if (shadowGen) {
+        scene.meshes.forEach(m => {
+            if (m.name === '__root__' || m.getTotalVertices() === 0) return;
+            shadowGen.addShadowCaster(m);
+            m.receiveShadows = true;
+        });
+    }
 
     // ── Run ───────────────────────────────────────────────────────────────────
     engine.runRenderLoop(() => scene.render());

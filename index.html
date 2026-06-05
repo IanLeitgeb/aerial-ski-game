@@ -49,6 +49,7 @@
         #platformSelectWrap { display: none; position: absolute; top: 10px; left: 50%; transform: translateX(-50%); z-index: 10; }
         #platformSelect { background: #0a1a2a; color: #88ccff; border: 1px solid #335566; padding: 6px 18px; font-size: 15px; border-radius: 6px; cursor: pointer; outline: none; font-family: sans-serif; }
         #platformSelect:hover { background: #142234; }
+        #diveStanceHUD { display: none; position: absolute; top: 52px; left: 50%; transform: translateX(-50%); z-index: 10; background: rgba(0,0,0,0.55); border: 1px solid #335566; border-radius: 6px; padding: 4px 14px; font-family: sans-serif; font-size: 13px; color: #88ccff; letter-spacing: 0.04em; white-space: nowrap; pointer-events: none; }
         #settingsModal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.78); z-index: 200; align-items: center; justify-content: center; }
         #settingsModal.open { display: flex; }
         #settingsModalBox { background: #0f1e2e; border: 1px solid #445566; border-radius: 12px; padding: 28px 36px; min-width: 300px; color: #b8d8ff; font-family: sans-serif; }
@@ -358,6 +359,7 @@
             <option value="2">10m Platform</option>
         </select>
     </div>
+    <div id="diveStanceHUD"></div>
     <div id="settingsModal">
         <div id="settingsModalBox">
             <h2>⚙️ Settings</h2>
@@ -588,6 +590,8 @@
             <h3>Camera</h3>
             <table>
                 <tr><td>Drag</td><td>Orbit camera around skier</td></tr>
+                <tr><td>C</td><td>Cycle camera angle (side / front / back)</td></tr>
+                <tr><td>V</td><td>Toggle first-person view from skier's eyes</td></tr>
             </table>
             <button id="helpCloseBtn">Close</button>
         </div>
@@ -2633,35 +2637,48 @@
     </div>
     <script>
     (function() {
-        // Sequential async loader with retry — fixes intermittent CDN failures in Edge.
+        // Load local copies first; CDN URLs are fallbacks only.
         // game.js is loaded last; it handles the case where DOMContentLoaded already fired.
         var SRCS = [
-            'https://cdn.babylonjs.com/babylon.js',
-            'https://cdn.babylonjs.com/gui/babylon.gui.min.js',
-            'game.js?v=2'
+            { local: 'lib/babylon.js',         cdn: 'https://cdn.babylonjs.com/babylon.js' },
+            { local: 'lib/babylon.gui.min.js',  cdn: 'https://cdn.babylonjs.com/gui/babylon.gui.min.js' },
+            { local: 'game.js?v=3',             cdn: null }
         ];
         var ERR_HTML = '<div style="text-align:center;padding:20px"><div style="font-size:48px;margin-bottom:16px">⛷</div>'
             + '<h2 style="color:#fff;margin-bottom:10px">Could not load game engine</h2>'
-            + '<p style="color:#778899;max-width:380px;line-height:1.6;margin:0 auto 20px">Make sure you are connected to the internet, then click Retry.<br>If it keeps failing, try Chrome or Firefox.</p>'
+            + '<p style="color:#778899;max-width:380px;line-height:1.6;margin:0 auto 20px">Click Retry, or try refreshing the page.</p>'
             + '<button onclick="location.reload()" style="background:#1a2a3a;color:#b8d8ff;border:1px solid #445566;padding:9px 24px;font-size:14px;border-radius:5px;cursor:pointer;pointer-events:all">Retry</button></div>';
 
-        function loadSeq(i, tries, onDone) {
-            if (i >= SRCS.length) { onDone(); return; }
+        function loadScript(src, onOk, onFail) {
             var s = document.createElement('script');
-            s.src = SRCS[i];
-            s.onload  = function() { loadSeq(i + 1, 0, onDone); };
-            s.onerror = function() {
-                if (tries < 3) {
-                    setTimeout(function() { loadSeq(i, tries + 1, onDone); }, 400 * (tries + 1));
+            s.src = src;
+            s.onload  = onOk;
+            s.onerror = onFail;
+            document.head.appendChild(s);
+        }
+
+        function loadEntry(i, onDone) {
+            if (i >= SRCS.length) { onDone(); return; }
+            var entry = SRCS[i];
+            loadScript(entry.local, function() {
+                loadEntry(i + 1, onDone);
+            }, function() {
+                // Local file failed — try CDN fallback if available
+                if (entry.cdn) {
+                    loadScript(entry.cdn, function() {
+                        loadEntry(i + 1, onDone);
+                    }, function() {
+                        var ls = document.getElementById('_loadScreen');
+                        if (ls) { ls.style.pointerEvents = 'all'; ls.innerHTML = ERR_HTML; }
+                    });
                 } else {
                     var ls = document.getElementById('_loadScreen');
                     if (ls) { ls.style.pointerEvents = 'all'; ls.innerHTML = ERR_HTML; }
                 }
-            };
-            document.head.appendChild(s);
+            });
         }
 
-        loadSeq(0, 0, function() {
+        loadEntry(0, function() {
             var ls = document.getElementById('_loadScreen');
             if (ls) ls.style.display = 'none';
         });
