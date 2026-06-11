@@ -2151,14 +2151,16 @@ function _startGame() {
         airTime:         0.0,  // seconds in air on current jump
         landingLean:    0.0,  // post-landing body lean (rad, signed: + forward, − backward)
         landingLeanVel: 0.0,  // angular velocity of landing lean
+        offAxis:        0.0,  // current off-axis lean angle (rad): + = right, − = left
     };
 
+    let offAxisTarget   = 0.0;
     let leftDown        = false;
     let rightDown       = false;
     let autoSpinActive  = false;
-    let _gpArmLX = 0, _gpArmLY = 1, _gpArmRX = 0, _gpArmRY = 1;
+    let _gpArmLX = 0, _gpArmLY = 0, _gpArmRX = 0, _gpArmRY = 0;
     let _armVelL = 0, _armVelR = 0; // physical arm spring velocities (units/s)
-    let _armPosL = 1, _armPosR = 1; // physical arm positions from spring sim (0=up, 1=down)
+    let _armPosL = 0, _armPosR = 0; // physical arm positions from spring sim (0=up, 1=down)
     let gpSpinL = 0; // gamepad spin angular momentum (conserved in air)
     let _gpXPrev = false, _gpCirclePrev = false, _gpLTPrev = false;
     let armSwapPhase    = false; // true during quick arm swap at takeoff
@@ -2479,12 +2481,13 @@ function _startGame() {
         const ry = applyDead(pad.axes[3] || 0);
         const rt = pad.buttons[7] ? pad.buttons[7].value : 0;
 
-        // Default arm position is DOWN (at sides). Pull stick back (negative Y) raises arm.
+        // Neutral = arms up (0). Push stick forward (positive Y) drops arm toward 1.
+        // Lateral X controls arm sweep; tuck inward (X→0) reduces I and speeds spin.
         // axes[0/1] = right stick, axes[2/3] = left stick on PS5 DualSense
         _gpArmLX = rx;
-        _gpArmLY = 1.0 + Math.min(0, ry);   // neutral=1(down), full-back=-1→0(up)
+        _gpArmLY = Math.max(0, ry);
         _gpArmRX = lx;
-        _gpArmRY = 1.0 + Math.min(0, ly);
+        _gpArmRY = Math.max(0, ly);
 
         const lt = pad.buttons[6] ? pad.buttons[6].value : 0;
         const xBtn     = !!(pad.buttons[0] && pad.buttons[0].pressed);
@@ -2525,7 +2528,7 @@ function _startGame() {
 
     window.addEventListener('keydown', e => {
         if (e.code === 'KeyP') { paused = !paused; return; }
-        if (e.code === 'KeyS') {
+        if (e.code === 'KeyZ') {
             window._tutorialTimeScale = (window._tutorialTimeScale === 0.5) ? 1.0 : 0.5;
             return;
         }
@@ -2613,6 +2616,7 @@ function _startGame() {
             state.armSnap     = 0.0;
             state.layArmT     = 0.0;
             state.armSnapTarget = 0;
+            state.offAxis     = 0.0; offAxisTarget = 0.0;
             state.airTime     = 0.0;
             poolEntered   = false;
             poolSplashAmp = 0;
@@ -2676,8 +2680,11 @@ function _startGame() {
             e.preventDefault();
             if (!state.crashed) state.tuckTarget = 1.0;
         }
-        if (_kcode === 'KeyA') {
+        if (e.code === 'ShiftLeft') {
             if (!state.crashed && !state.grounded) state.pikeTarget = 1.0;
+        }
+        if (_kcode === 'KeyA') {
+            if (!state.crashed && !state.grounded) offAxisTarget = 0.28;
         }
         if (_kcode === 'ArrowUp' || _kcode === 'ArrowDown') {
             e.preventDefault();
@@ -2748,7 +2755,9 @@ function _startGame() {
             }
         }
         if (_kcode === 'KeyD' && !state.crashed) {
-            if (_poolDiveMode) {
+            if (!state.grounded) {
+                offAxisTarget = -0.28;
+            } else if (_poolDiveMode) {
                 poolDiveFaceBack = !poolDiveFaceBack;
                 _updateDiveStanceHUD();
             } else {
@@ -2796,7 +2805,9 @@ function _startGame() {
                      : (_mirrorKeys && e.code === 'ArrowRight') ? 'ArrowLeft'
                      : e.code;
         if (_kcode === 'Space') state.tuckTarget = 0.0;
-        if (e.code  === 'KeyA') state.pikeTarget = 0.0;
+        if (e.code  === 'ShiftLeft') state.pikeTarget = 0.0;
+        if (e.code  === 'KeyA') { if (offAxisTarget > 0) offAxisTarget = 0.0; }
+        if (_kcode  === 'KeyD') { if (offAxisTarget < 0) offAxisTarget = 0.0; }
         if (_kcode === 'ArrowDown') { powerWrapDown = false; downHalfTwistFired = false; }
         if (_kcode === 'ArrowUp') { arrowUpDown = false; frontFlipQueued = false; }
         if (_kcode === 'ArrowLeft' && leftDown) {
@@ -4147,24 +4158,22 @@ function _startGame() {
         // Each arm is a damped spring mass: stick sets target, arm follows with inertia.
         // Arm motion drives spin angular momentum L via two mechanisms:
         //   1. Position asymmetry → sustained torque (left arm down = spin one way)
-        //   2. Velocity coupling  → impulsive torque on each throw/drop (sin peak at horizontal)
-        // Moment of inertia I peaks when arms are horizontal, is minimum when arms are
-        // vertical (up or down), so ω = L/I rises as arms tuck — classic ice-skater effect.
+        //   2. Velocity coupling  → impulsive torque on each throw/drop (sin peak at mid-arc)
+        // Moment of inertia I from lateral extension only; tuck inward = faster spin.
         if (_lsGet('setting_gamepad') === '1') {
             if (state.grounded) {
                 _armPosL = _gpArmLY; _armPosR = _gpArmRY;
                 _armVelL = 0;        _armVelR = 0;
                 gpSpinL  = 0;
             } else if (!state.crashed) {
-                // Damped spring: springK=14 ≈ 0.3 s response; dampK=6 gives slight underdamp
-                // so the arm has a natural "weight and swing" feel on drops/raises.
-                const springK = 14, dampK = 6;
-                _armVelL += (_gpArmLY - _armPosL) * springK * dt;
-                _armVelR += (_gpArmRY - _armPosR) * springK * dt;
-                _armVelL -= dampK * _armVelL * dt;
-                _armVelR -= dampK * _armVelR * dt;
-                _armPosL = Math.max(0, Math.min(1, _armPosL + _armVelL * dt));
-                _armPosR = Math.max(0, Math.min(1, _armPosR + _armVelR * dt));
+                // Exponential tracking: 95% of target reached in ~0.19 s; numerically stable.
+                // Velocity is derived from position change for the torque coupling below.
+                const prevPosL = _armPosL, prevPosR = _armPosR;
+                const alpha = 1 - Math.exp(-16 * dt);
+                _armPosL = _armPosL + (_gpArmLY - _armPosL) * alpha;
+                _armPosR = _armPosR + (_gpArmRY - _armPosR) * alpha;
+                _armVelL = (_armPosL - prevPosL) / dt;
+                _armVelR = (_armPosR - prevPosR) / dt;
 
                 const armAsym = _armPosL - _armPosR;
                 const armAvg  = (_armPosL + _armPosR) * 0.5;
@@ -4173,7 +4182,7 @@ function _startGame() {
                 //    Counter-spin uses a slower rate so the right arm slows a left spin
                 //    without stopping it — the left arm (both now up, high decay) finishes it.
                 if (Math.abs(armAsym) > 0.04) {
-                    const targetL   = armAsym * SPIN_SPEED * 2.5;
+                    const targetL   = armAsym * SPIN_SPEED * 3.0;
                     const isCounter = Math.sign(gpSpinL) !== 0 && Math.sign(targetL) !== Math.sign(gpSpinL);
                     gpSpinL += (targetL - gpSpinL) * Math.min(1, Math.abs(armAsym) * (isCounter ? 0.8 : 4.0) * dt);
                 }
@@ -4182,19 +4191,17 @@ function _startGame() {
                 //    Coupling peaks at horizontal (sin(π·pos)=1), is zero when arm is vertical.
                 const coupL = Math.sin(Math.PI * _armPosL);
                 const coupR = Math.sin(Math.PI * _armPosR);
-                gpSpinL += (_armVelL * coupL - _armVelR * coupR) * SPIN_SPEED * 0.15 * dt;
+                gpSpinL += (_armVelL * coupL - _armVelR * coupR) * SPIN_SPEED * 0.3 * dt;
 
                 // Passive drag: arms down (avg=1) ≈ 23 s to halve — spin carries.
                 //               arms up (avg=0) ≈ 0.14 s to halve — spin dies quickly.
                 gpSpinL *= Math.exp(-lerp(5.0, 0.03, armAvg) * dt);
 
-                // Moment of inertia: sin²(π·pos) peaks at horizontal (armPos=0.5),
-                // zero at vertical (pos=0 or 1). Lateral extension adds directly.
-                const sinL = Math.sin(Math.PI * _armPosL);
-                const sinR = Math.sin(Math.PI * _armPosR);
+                // Moment of inertia: lateral extension only.
+                // Arms tucked inward (X→0) = low I = fast spin. Spread out = slow spin.
                 const latL = Math.abs(_gpArmLX);
                 const latR = Math.abs(_gpArmRX);
-                const I = 1.0 + sinL * sinL + sinR * sinR + latL * latL + latR * latR;
+                const I = 1.0 + latL * latL + latR * latR;
 
                 state.spinAngle += (gpSpinL / I) * dt;
                 state.spinTarget = state.spinAngle;
@@ -4276,6 +4283,14 @@ function _startGame() {
             }
         }
 
+        // ── Off-axis lean animation ────────────────────────────────────────
+        {
+            const offAxisStep = 3.5 * dt;
+            const dOA = offAxisTarget - state.offAxis;
+            state.offAxis += Math.abs(dOA) <= offAxisStep ? dOA : Math.sign(dOA) * offAxisStep;
+            if (state.grounded || state.crashed) { state.offAxis = 0; offAxisTarget = 0; }
+        }
+
         // ── Character rotation ─────────────────────────────────────────────
         if (!crashActive) {
             // qFace turns the character to face +Z (downhill direction).
@@ -4303,10 +4318,11 @@ function _startGame() {
                 const qSpin = BABYLON.Quaternion.RotationAxis(BABYLON.Axis.Y, state.spinAngle);
                 character.root.rotationQuaternion = qFace.multiply(qTilt).multiply(qSpin);
             } else {
-                // qFlip * qSpin — spin in body-local space (head-to-feet axis)
+                // qOffAxis tilts the flip axis laterally (A = right, D = left)
+                const qOffAxis = BABYLON.Quaternion.RotationAxis(BABYLON.Axis.Z, state.offAxis);
                 const qFlip = BABYLON.Quaternion.RotationAxis(BABYLON.Axis.X, state.flipAngle);
                 const qSpin = BABYLON.Quaternion.RotationAxis(BABYLON.Axis.Y, state.spinAngle);
-                character.root.rotationQuaternion = qFace.multiply(qFlip).multiply(qSpin);
+                character.root.rotationQuaternion = qFace.multiply(qOffAxis).multiply(qFlip).multiply(qSpin);
             }
         }
 
