@@ -605,6 +605,57 @@ function applyPose(meshes, tuck, armDropL, armDropR, armSnap, layArmT, armRaise,
     }
 }
 
+// ── Gamepad lateral arm correction ─────────────────────────────────────────
+// Repositions arm segments so both upper and lower arm pivot around the
+// shoulder joint rather than rotating in place.
+//
+// BabylonJS applies Euler rotations in YXZ intrinsic order, so for ry=0 the
+// combined matrix is M = M_x(rx) * M_z(rz).  The arm's local +Y direction in
+// parent space is therefore:
+//   M * (0,1,0) = M_x(-phi) * M_z(rzOff) * (0,1,0)
+//              = M_x(-phi) * (-sin(rzOff), cos(rzOff), 0)
+//              = (-sin(rzOff),  cos(rzOff)*cos(phi),  -cos(rzOff)*sin(phi))
+//
+// Both segments use the same dir so elbow = shoulder_pivot + 0.300*dir for both,
+// guaranteeing a gap-free joint at every arm angle and lateral position.
+function applyGamepadLateral(meshes, lx, rx, armDropL, armDropR) {
+    const MAX_LAT = Math.PI / 2;
+    const Y_PIVOT = 0.150;
+    const sides = [
+        { upper: 'upperArmL', lower: 'lowerArmL', xPivot: -0.205, stickX: lx, drop: armDropL },
+        { upper: 'upperArmR', lower: 'lowerArmR', xPivot:  0.205, stickX: rx, drop: armDropR },
+    ];
+    for (const s of sides) {
+        const phi    = Math.PI * s.drop;
+        const rzOff  = s.stickX * MAX_LAT;
+        const uMesh  = meshes[s.upper];
+        const lMesh  = meshes[s.lower];
+        if (!uMesh || !lMesh) continue;
+
+        const sinR   = Math.sin(rzOff), cosR   = Math.cos(rzOff);
+        const cosPhi = Math.cos(phi),   sinPhi = Math.sin(phi);
+
+        // M_x(-phi) * M_z(rzOff) * (0,1,0)
+        const dirX = -sinR;
+        const dirY =  cosR * cosPhi;
+        const dirZ = -cosR * sinPhi;
+
+        const zBase = BASE_Z[s.upper] || 0;
+
+        uMesh.position.x = s.xPivot + dirX * 0.150;
+        uMesh.position.y = Y_PIVOT  + dirY * 0.150;
+        uMesh.position.z = zBase    + dirZ * 0.150;
+        uMesh.rotation.x = -phi;
+        uMesh.rotation.z = rzOff;
+
+        lMesh.position.x = s.xPivot + dirX * 0.425;
+        lMesh.position.y = Y_PIVOT  + dirY * 0.425;
+        lMesh.position.z = zBase    + dirZ * 0.425;
+        lMesh.rotation.x = -phi;
+        lMesh.rotation.z = rzOff;
+    }
+}
+
 // ── HUD builder ────────────────────────────────────────────────────────────
 function buildHUD(scene) {
     const ui = BABYLON.GUI.AdvancedDynamicTexture.CreateFullscreenUI('UI', true, scene);
@@ -2051,7 +2102,7 @@ function _startGame() {
     //        Stub only in Phase 1 — tracked in state, shown in HUD, not animated.
     //
     const TARGET_OMEGA_UNTUCKED = 4.5 * 0.9925 * (_worldParam === 'custom' ? _customFlipSpeed : _worldParam === 'trampoline' ? 1.407 : _worldParam === 'quint' ? 1.96 : _worldParam === 'quad' ? 1.63 : _worldParam === 'triple' ? 1.45 : _worldParam === 'single' ? 0.65 : 1.10); // rad/s at full extension
-    const MAX_OMEGA = 9.75;            // rad/s cap — limits tucked flip speed
+    const MAX_OMEGA = 12.0;            // rad/s cap — limits tucked flip speed
     const I0 = computeI(0);            // I at tuck = 0 (fully extended)
 
     const SPIN_SPEED    = Math.PI * 2.0 * (_worldParam === 'custom' ? _customFlipSpeed : _worldParam === 'trampoline' ? 1.3 : _worldParam === 'quint' ? 1.55 : _worldParam === 'quad' ? 1.62 : _worldParam === 'triple' ? 1.6 : _worldParam === 'single' ? 0.68 : 1.08); // rad/s ~= 1.0 full twist/second
@@ -2105,6 +2156,11 @@ function _startGame() {
     let leftDown        = false;
     let rightDown       = false;
     let autoSpinActive  = false;
+    let _gpArmLX = 0, _gpArmLY = 1, _gpArmRX = 0, _gpArmRY = 1;
+    let _armVelL = 0, _armVelR = 0; // physical arm spring velocities (units/s)
+    let _armPosL = 1, _armPosR = 1; // physical arm positions from spring sim (0=up, 1=down)
+    let gpSpinL = 0; // gamepad spin angular momentum (conserved in air)
+    let _gpXPrev = false, _gpCirclePrev = false, _gpLTPrev = false;
     let armSwapPhase    = false; // true during quick arm swap at takeoff
     let armSwapDir      = 0;    // +1 = left twists (left arm was up), -1 = right twists // true while arm-up takeoff twists are running
 
@@ -2399,6 +2455,72 @@ function _startGame() {
             ? Math.ceil(halves - 0.1)
             : Math.floor(halves + 0.1);
         state.spinTarget = n * halfTwist;
+    }
+
+    // ── Gamepad polling ────────────────────────────────────────────────────
+    // Left stick Y → left arm drop (0=up, 1=down), X → lateral rz offset
+    // Right stick Y → right arm drop, X → lateral rz offset
+    // Right trigger → tuck
+    // Stick Y threshold crossings simulate the same spin-trigger logic as keyboard
+    function pollGamepad() {
+        const pads = navigator.getGamepads ? navigator.getGamepads() : [];
+        let pad = null;
+        for (let i = 0; i < pads.length; i++) {
+            if (pads[i] && pads[i].connected) { pad = pads[i]; break; }
+        }
+        if (!pad) return;
+
+        const DEAD = 0.12;
+        const applyDead = v => Math.abs(v) < DEAD ? 0 : Math.sign(v) * (Math.abs(v) - DEAD) / (1 - DEAD);
+
+        const lx = applyDead(pad.axes[0] || 0);
+        const ly = applyDead(pad.axes[1] || 0);
+        const rx = applyDead(pad.axes[2] || 0);
+        const ry = applyDead(pad.axes[3] || 0);
+        const rt = pad.buttons[7] ? pad.buttons[7].value : 0;
+
+        // Default arm position is DOWN (at sides). Pull stick back (negative Y) raises arm.
+        // axes[0/1] = right stick, axes[2/3] = left stick on PS5 DualSense
+        _gpArmLX = rx;
+        _gpArmLY = 1.0 + Math.min(0, ry);   // neutral=1(down), full-back=-1→0(up)
+        _gpArmRX = lx;
+        _gpArmRY = 1.0 + Math.min(0, ly);
+
+        const lt = pad.buttons[6] ? pad.buttons[6].value : 0;
+        const xBtn     = !!(pad.buttons[0] && pad.buttons[0].pressed);
+        const circleBtn = !!(pad.buttons[1] && pad.buttons[1].pressed);
+        const ltDown   = lt > 0.1;
+
+        if (!state.crashed) {
+            state.tuckTarget = rt > 0.1 ? rt : 0;
+        }
+
+        // X → go down hill (ArrowUp)
+        if (xBtn && !_gpXPrev) {
+            window.dispatchEvent(new KeyboardEvent('keydown', { code: 'ArrowUp', bubbles: true }));
+        }
+        if (!xBtn && _gpXPrev) {
+            window.dispatchEvent(new KeyboardEvent('keyup', { code: 'ArrowUp', bubbles: true }));
+        }
+        _gpXPrev = xBtn;
+
+        // Circle → reset to top (KeyR)
+        if (circleBtn && !_gpCirclePrev) {
+            window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyR', bubbles: true }));
+        }
+        _gpCirclePrev = circleBtn;
+
+        // Left trigger → charge flip power (ArrowDown hold)
+        if (ltDown && !_gpLTPrev && state.grounded && !state.crashed) {
+            pmDownHeld = true;
+        }
+        if (!ltDown && _gpLTPrev) {
+            pmDownHeld = false;
+            if (_poolDiveMode && pmActive && flipPower > 0 && readyState && !poolEntered)
+                poolAutoLaunch = true;
+        }
+        _gpLTPrev = ltDown;
+
     }
 
     window.addEventListener('keydown', e => {
@@ -2981,7 +3103,7 @@ function _startGame() {
         }
     };
     const { hud, hint } = buildHUD(scene);
-    const TUCK_RATE = 3.0;
+    const TUCK_RATE = 5.0;
     const PIKE_RATE = 2.0;
     const PIKE_RELEASE_RATE = 5.0;
 
@@ -3107,6 +3229,8 @@ function _startGame() {
             if (firstPersonMode) _updateFpCamera(dt);
             return;
         }
+
+        if (_lsGet('setting_gamepad') === '1') pollGamepad();
 
         // ── Smooth tuck / pike transitions ─────────────────────────────────
         if (!state.crashed) {
@@ -3734,14 +3858,20 @@ function _startGame() {
                     billboard.isVisible = true;
                 }
                 _spawnSplash(_poolDiveMode ? POOL_DIVE_PLATFORM_X : 0, state.posZ, _impactVY, _eq);
-                if (_poolDiveMode) {
-                    state.crashed  = true;
-                    state.grounded = true;
-                    state.vy = 0; state.vz = 0;
-                }
             }
         }
-        character.root.position.y = state.rootY;
+        // Tilt visual lift: when the body is tilted on a slope the vertical distance
+        // root→ski-bottom shrinks to FOOT_OFFSET*cos(θ). Raising the rendered root by
+        // FOOT_OFFSET*(1-cos(θ)) keeps the skis visually on the snow without touching
+        // physics state (so launch and landing detection are unchanged).
+        let _visRootY = state.rootY;
+        if (state.grounded && !readyState && !_poolDiveMode && !state.crashed) {
+            const _vEps  = 0.05;
+            const _vDydz = (terrainRootY(state.posZ + _vEps) - terrainRootY(state.posZ - _vEps)) / (2 * _vEps);
+            const _vTilt = Math.atan(Math.abs(_vDydz));
+            if (_vTilt > 0.01) _visRootY += FOOT_OFFSET * (1.0 - Math.cos(_vTilt));
+        }
+        character.root.position.y = _visRootY;
         character.root.position.z = state.posZ;
         if (_poolDiveMode) character.root.position.x = POOL_DIVE_PLATFORM_X;
 
@@ -3878,39 +4008,18 @@ function _startGame() {
             }
         }
 
-        // ── Kick-out: drain angular momentum as tuck/pike releases ──────────
-        // Pike drains more aggressively so post-release is noticeably slower
-        if (!state.grounded && !tramBouncing && !matTramBouncing) {
-            const _tDrain = state.tuckTarget === 0 ? state.tuckAmount * 0.40 : 0;
-            const _pDrain = state.pikeTarget === 0 ? state.pikeAmount * 1.10 : 0;
-            const _drain  = _tDrain + _pDrain;
-            if (_drain > 0.02) {
-                state.L_flip *= Math.max(0, 1 - _drain * dt);
-            }
-        }
-
-        // ── Angular momentum conservation: ω = L / I ──────────────────────
-        const I_base = computeI(state.tuckAmount);
-        const I_pike = computeI(state.pikeAmount); // pike spins fast (same curve as tuck)
-        const I     = state.pikeAmount > 0 ? I_pike : I_base;
-        const tuckBoost = _trampolineMode ? (1.0 + 0.3 * state.tuckAmount) : 1.0;
-        const maxOmega = _trampolineMode ? 13.0 : MAX_OMEGA;
-        let omega = Math.min((state.L_flip / I) * tuckBoost, maxOmega);
+        // ── Angular momentum conservation: ω = L / I (ice-skater effect) ──
+        // L_flip is strictly conserved in free flight — no artificial drains.
+        // Tucking reduces I, so ω = L/I naturally speeds up (pulling limbs in).
+        // Opening up increases I, so ω naturally slows back to the launch value.
+        const I = state.pikeAmount > 0 ? computeI(state.pikeAmount) : computeI(state.tuckAmount);
+        // Trampoline caps at 13 rad/s; ski lets physics run free — full ice-skater effect on every hill
+        let omega = state.L_flip / I;
+        if (_trampolineMode) omega = Math.min(omega, 13.0);
         // D key (trampoline): single flip — untucked = ~1 flip; full tuck/pike = 3×
         if (singleLayoutMode) {
             const boost = Math.max(state.tuckAmount, state.pikeAmount) * 2.0;
             omega = Math.min(omega, Math.PI * (1.0 + boost));
-        }
-        // During pike release: lerp omega linearly from the captured release omega to base speed
-        // so the deceleration rate is constant regardless of how far the pike was held.
-        if (state.pikeAmount > 0 && state.pikeTarget === 0) {
-            if (!state.pikeReleaseOmega) {
-                state.pikeReleaseOmega = omega; // capture at moment of release
-            }
-            const omegaBase = Math.min(state.L_flip / I0, maxOmega);
-            omega = omegaBase + (state.pikeReleaseOmega - omegaBase) * state.pikeAmount;
-        } else if (state.pikeTarget > 0 || state.pikeAmount === 0) {
-            state.pikeReleaseOmega = 0;
         }
         if (!state.grounded && !tramBouncing && !matTramBouncing) {
             const flipDirBoost = (state.flipDir === -1) ? 1.11 : 1.0; // frontflip ~11% faster
@@ -4034,6 +4143,64 @@ function _startGame() {
             }
         }
 
+        // ── Gamepad arm + spin physics ────────────────────────────────────────────
+        // Each arm is a damped spring mass: stick sets target, arm follows with inertia.
+        // Arm motion drives spin angular momentum L via two mechanisms:
+        //   1. Position asymmetry → sustained torque (left arm down = spin one way)
+        //   2. Velocity coupling  → impulsive torque on each throw/drop (sin peak at horizontal)
+        // Moment of inertia I peaks when arms are horizontal, is minimum when arms are
+        // vertical (up or down), so ω = L/I rises as arms tuck — classic ice-skater effect.
+        if (_lsGet('setting_gamepad') === '1') {
+            if (state.grounded) {
+                _armPosL = _gpArmLY; _armPosR = _gpArmRY;
+                _armVelL = 0;        _armVelR = 0;
+                gpSpinL  = 0;
+            } else if (!state.crashed) {
+                // Damped spring: springK=14 ≈ 0.3 s response; dampK=6 gives slight underdamp
+                // so the arm has a natural "weight and swing" feel on drops/raises.
+                const springK = 14, dampK = 6;
+                _armVelL += (_gpArmLY - _armPosL) * springK * dt;
+                _armVelR += (_gpArmRY - _armPosR) * springK * dt;
+                _armVelL -= dampK * _armVelL * dt;
+                _armVelR -= dampK * _armVelR * dt;
+                _armPosL = Math.max(0, Math.min(1, _armPosL + _armVelL * dt));
+                _armPosR = Math.max(0, Math.min(1, _armPosR + _armVelR * dt));
+
+                const armAsym = _armPosL - _armPosR;
+                const armAvg  = (_armPosL + _armPosR) * 0.5;
+
+                // 1. Position asymmetry: sustained spin drive.
+                //    Counter-spin uses a slower rate so the right arm slows a left spin
+                //    without stopping it — the left arm (both now up, high decay) finishes it.
+                if (Math.abs(armAsym) > 0.04) {
+                    const targetL   = armAsym * SPIN_SPEED * 2.5;
+                    const isCounter = Math.sign(gpSpinL) !== 0 && Math.sign(targetL) !== Math.sign(gpSpinL);
+                    gpSpinL += (targetL - gpSpinL) * Math.min(1, Math.abs(armAsym) * (isCounter ? 0.8 : 4.0) * dt);
+                }
+
+                // 2. Velocity coupling: arm motion creates an impulsive torque.
+                //    Coupling peaks at horizontal (sin(π·pos)=1), is zero when arm is vertical.
+                const coupL = Math.sin(Math.PI * _armPosL);
+                const coupR = Math.sin(Math.PI * _armPosR);
+                gpSpinL += (_armVelL * coupL - _armVelR * coupR) * SPIN_SPEED * 0.15 * dt;
+
+                // Passive drag: arms down (avg=1) ≈ 23 s to halve — spin carries.
+                //               arms up (avg=0) ≈ 0.14 s to halve — spin dies quickly.
+                gpSpinL *= Math.exp(-lerp(5.0, 0.03, armAvg) * dt);
+
+                // Moment of inertia: sin²(π·pos) peaks at horizontal (armPos=0.5),
+                // zero at vertical (pos=0 or 1). Lateral extension adds directly.
+                const sinL = Math.sin(Math.PI * _armPosL);
+                const sinR = Math.sin(Math.PI * _armPosR);
+                const latL = Math.abs(_gpArmLX);
+                const latR = Math.abs(_gpArmRX);
+                const I = 1.0 + sinL * sinL + sinR * sinR + latL * latL + latR * latR;
+
+                state.spinAngle += (gpSpinL / I) * dt;
+                state.spinTarget = state.spinAngle;
+            }
+        }
+
         // ── Per-flip twist boundary detector (after spin update) ────────────────
         if (!state.grounded) {
             if (state.tuckAmount > 0.3) state.currentFlipTucked = true;
@@ -4074,6 +4241,10 @@ function _startGame() {
             if (!bothArmsActive && state.spinAngle <= bothArmsSpinTarget) bothArmsSpinTarget = Infinity;
             armLTarget = onInrun || state.crashed || (leftDown && !rightDown) || doubleMode || bothArmsActive || (spinDrivesArm && spinRemaining >  0.05) ? 1.0 : 0.0;
             armRTarget = onInrun || state.crashed || (rightDown && !leftDown) || doubleMode || bothArmsActive || (spinDrivesArm && spinRemaining < -0.05) ? 1.0 : 0.0;
+            if (_lsGet('setting_gamepad') === '1' && !onInrun && !state.crashed && !doubleMode && !bothArmsActive) {
+                if (!(spinDrivesArm && spinRemaining >  0.05)) { armLTarget = _armPosL; state.armDropL = _armPosL; }
+                if (!(spinDrivesArm && spinRemaining < -0.05)) { armRTarget = _armPosR; state.armDropR = _armPosR; }
+            }
         }
         const armStep = ARM_DROP_RATE * dt;
         const dL = armLTarget - state.armDropL;
@@ -4092,7 +4263,7 @@ function _startGame() {
         // ── Lay T-pose: arms drift out to sides when no inputs on first flip ──
         const inFirstFlip = !state.grounded && !state.crashed && Math.abs(state.flipAngle) < Math.PI * 2 && !_trampolineMode && !_poolDiveMode;
         const noInputs    = !leftDown && !rightDown && state.tuckTarget === 0 && !doubleMode;
-        const layTTarget  = inFirstFlip && noInputs ? 1.0 : 0.0;
+        const layTTarget  = inFirstFlip && noInputs && _lsGet('setting_gamepad') !== '1' ? 1.0 : 0.0;
         const layTStep    = 1.8 * dt; // ~0.55 s to fully extend
         const dLayT       = layTTarget - state.layArmT;
         state.layArmT    += Math.abs(dLayT) <= layTStep ? dLayT : Math.sign(dLayT) * layTStep;
@@ -4100,6 +4271,9 @@ function _startGame() {
         // ── Apply body pose ────────────────────────────────────────────────
         if (!crashActive) {
             applyPose(character.meshes, state.tuckAmount, state.armDropL, state.armDropR, state.armSnap, state.layArmT, state.armRaise, state.grounded, state.pikeAmount, state.pikeArmDrop);
+            if (_lsGet('setting_gamepad') === '1' && state.armSnap < 0.01 && state.armRaise < 0.01) {
+                applyGamepadLateral(character.meshes, _gpArmLX, _gpArmRX, state.armDropL, state.armDropR);
+            }
         }
 
         // ── Character rotation ─────────────────────────────────────────────
@@ -4140,7 +4314,7 @@ function _startGame() {
         if (firstPersonMode) _updateFpCamera(dt);
 
         // ── Camera follow — track character position; free mouse; C lerps smoothly ──
-        camera.target.y = state.rootY;
+        camera.target.y = _visRootY;
         camera.target.z = state.posZ;
         if (_poolDiveMode) camera.target.x = POOL_DIVE_PLATFORM_X;
         // Smooth C-key alpha lerp (finishes in ~0.5s then stops fighting mouse)
