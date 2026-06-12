@@ -4190,14 +4190,13 @@ function _startGame() {
                 if (Math.abs(armAsym) > 0.04) {
                     const targetL   = armAsym * SPIN_SPEED * 3.0;
                     const isCounter = Math.sign(gpSpinL) !== 0 && Math.sign(targetL) !== Math.sign(gpSpinL);
-                    gpSpinL += (targetL - gpSpinL) * Math.min(1, Math.abs(armAsym) * (isCounter ? 0.8 : 4.0) * dt);
+                    gpSpinL += (targetL - gpSpinL) * Math.min(1, Math.abs(armAsym) * (isCounter ? 1.5 : 8.0) * dt);
                 }
 
                 // 2. Velocity coupling: arm motion creates an impulsive torque.
-                //    Coupling peaks at horizontal (sin(π·pos)=1), is zero when arm is vertical.
-                const coupL = Math.sin(Math.PI * _armPosL);
-                const coupR = Math.sin(Math.PI * _armPosR);
-                gpSpinL += (_armVelL * coupL - _armVelR * coupR) * SPIN_SPEED * 0.3 * dt;
+                //    Constant coupling so torque fires immediately when the arm starts moving,
+                //    not delayed until it reaches the horizontal (sin model peaked too late).
+                gpSpinL += (_armVelL - _armVelR) * SPIN_SPEED * 1.0 * dt;
 
                 // Passive drag: arms down (avg=1) ≈ 23 s to halve — spin carries.
                 //               arms up (avg=0) ≈ 0.14 s to halve — spin dies quickly.
