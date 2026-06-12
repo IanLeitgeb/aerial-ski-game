@@ -2764,6 +2764,9 @@ function _startGame() {
                 singleFlipQueued = !singleFlipQueued;
             }
         }
+        if (_kcode === 'KeyX' && !state.crashed && _trampolineMode) {
+            singleFlipQueued = !singleFlipQueued;
+        }
         if (_kcode === 'KeyF' && !state.crashed && _poolDiveMode) {
             poolDiveFlipDirPref = poolDiveFlipDirPref === 1 ? -1 : 1;
             if (state.grounded) state.flipDir = poolDiveFlipDirPref;
@@ -3445,8 +3448,11 @@ function _startGame() {
                     }
                 }
                 // Apply flip power: 3rd dash (75%) = world-normal flip speed.
-                // Less charge = less flip; no charge = barely any rotation.
-                targetL_flip = I0 * TARGET_OMEGA_UNTUCKED * (Math.max(0.05, flipPower) / 0.75);
+                // Gamepad: minimum 75% so a normal take-off always produces a full flip;
+                // holding L2 on approach charges up to 133% for extra speed.
+                const _gpMode = _lsGet('setting_gamepad') === '1';
+                const _minPwr = _gpMode ? 0.75 : 0.05;
+                targetL_flip = I0 * TARGET_OMEGA_UNTUCKED * (Math.max(_minPwr, flipPower) / 0.75);
                 state.L_flip = targetL_flip;
                 // Reset meter for next jump
                 flipPower = 0;
@@ -4277,7 +4283,8 @@ function _startGame() {
 
         // ── Apply body pose ────────────────────────────────────────────────
         if (!crashActive) {
-            applyPose(character.meshes, state.tuckAmount, state.armDropL, state.armDropR, state.armSnap, state.layArmT, state.armRaise, state.grounded, state.pikeAmount, state.pikeArmDrop);
+            const offAxisVisualTuck = Math.abs(state.offAxis) * (0.25 / 0.28);
+            applyPose(character.meshes, Math.max(state.tuckAmount, offAxisVisualTuck), state.armDropL, state.armDropR, state.armSnap, state.layArmT, state.armRaise, state.grounded, state.pikeAmount, state.pikeArmDrop);
             if (_lsGet('setting_gamepad') === '1' && state.armSnap < 0.01 && state.armRaise < 0.01) {
                 applyGamepadLateral(character.meshes, _gpArmLX, _gpArmRX, state.armDropL, state.armDropR);
             }
