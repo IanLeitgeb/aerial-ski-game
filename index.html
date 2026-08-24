@@ -2661,7 +2661,10 @@
         var SRCS = [
             { local: 'lib/babylon.js',         cdn: 'https://cdn.babylonjs.com/babylon.js' },
             { local: 'lib/babylon.gui.min.js',  cdn: 'https://cdn.babylonjs.com/gui/babylon.gui.min.js' },
-            { local: 'game.js?v=3',             cdn: null }
+            // Shared engine core — must load BEFORE game.js, which reads
+            // AerialEngine.math at parse time.
+            { local: 'engine/core/math.js?v=4', cdn: null },
+            { local: 'game.js?v=4',             cdn: null }
         ];
         var ERR_HTML = '<div style="text-align:center;padding:20px"><div style="font-size:48px;margin-bottom:16px">⛷</div>'
             + '<h2 style="color:#fff;margin-bottom:10px">Could not load game engine</h2>'

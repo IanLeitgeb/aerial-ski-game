@@ -51,6 +51,8 @@
 
 <!-- ── Scripts ─────────────────────────────────────────────────────────── -->
 <script src="babylon-stub.js"></script>
+<!-- Shared engine core — must precede game.js, which reads AerialEngine.math. -->
+<script src="../engine/core/math.js"></script>
 <script src="../game.js"></script>
 <script>
 'use strict';
@@ -419,7 +421,7 @@ window.addEventListener('DOMContentLoaded', () => {
     // stops updating (e.g., wrong L_flip value, zero omega, clamped state).
     // Note: the simulation never fills the power meter, so the flip is slow
     // (~6.7% of normal speed) — but it must still be non-zero.
-    test('flipAngle advances while skier is airborne', () => {
+test('flipAngle advances while skier is airborne', () => {
         // At this point we should already be airborne from D3.
         let s = window._getGameState();
         if (s.grounded) {
@@ -430,14 +432,36 @@ window.addEventListener('DOMContentLoaded', () => {
         if (s.grounded) {
             throw new Error('Could not reach airborne state — depends on D3 passing first');
         }
-        const flipBefore = s.flipAngle;
+        const node = BABYLON._nodes.get('skierRoot');
+        if (!node) {
+            throw new Error("BABYLON._nodes has no entry named 'skierRoot' — cannot observe flip rotation through the scene graph");
+        }
+        const getQuat = () => {
+            const q = node.rotationQuaternion;
+            if (!q || typeof q.x !== 'number' || typeof q.y !== 'number' ||
+                typeof q.z !== 'number' || typeof q.w !== 'number') {
+                throw new Error('skierRoot.rotationQuaternion is null or malformed — expected a {x,y,z,w} quaternion to measure orientation change');
+            }
+            return { x: q.x, y: q.y, z: q.z, w: q.w };
+        };
+        const fmt = (v) => (typeof v === 'number' && Number.isFinite(v) ? v.toFixed(4) : String(v));
+        const quat = getQuat();
+        const before = { x: quat.x, y: quat.y, z: quat.z, w: quat.w };
         BABYLON._engine._tick(60);
-        const flipAfter  = window._getGameState().flipAngle;
-        const delta      = Math.abs(flipAfter - flipBefore);
+        const after = getQuat();
+        const dot = Math.abs(
+            before.x * after.x +
+            before.y * after.y +
+            before.z * after.z +
+            before.w * after.w
+        );
+        const delta = 2 * Math.acos(Math.min(1, dot));
         // Even at minimum power (6.7% speed), flip must still advance.
         // At ~0.3 rad/s minimum over 1 s we expect at least 0.02 rad.
         assert(delta > 0.01,
-            `flipAngle barely changed in 60 frames of airtime: ${flipBefore.toFixed(4)} → ${flipAfter.toFixed(4)} (Δ${delta.toFixed(4)} rad). ` +
+            `flip rotation barely changed in 60 frames of airtime: Δ${fmt(delta)} rad ` +
+            `(orientation ${fmt(before.x)},${fmt(before.y)},${fmt(before.z)},${fmt(before.w)} → ` +
+            `${fmt(after.x)},${fmt(after.y)},${fmt(after.z)},${fmt(after.w)}). ` +
             `This may indicate L_flip is zero or the physics loop is broken.`);
     });
 
