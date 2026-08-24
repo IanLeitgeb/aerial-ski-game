@@ -15,7 +15,7 @@
 const FRONTFLIP_BOOST = 1.11;
 
 // Angular velocity ω from angular momentum L_flip over moment of inertia I.
-// opts.maxOmega    — hard ceiling on ω (trampoline passes 13.0; ski omits it)
+// opts.maxOmega     — hard ceiling on ω (trampoline passes 13.0; ski omits it)
 // opts.singleLayout — additionally cap at π·(1 + boost), untucked = ~1 flip,
 //                     full tuck/pike = 3×
 // opts.tuckAmount / opts.pikeAmount — feed that boost (default 0)

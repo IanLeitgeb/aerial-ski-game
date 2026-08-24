@@ -4012,19 +4012,22 @@ function _startGame() {
         // Opening up increases I, so ω naturally slows back to the launch value.
         const I = state.pikeAmount > 0 ? computeI(state.pikeAmount) : computeI(state.tuckAmount);
         // Trampoline caps at 13 rad/s; ski lets physics run free — full ice-skater effect on every hill
-        let omega = state.L_flip / I;
-        if (_trampolineMode) omega = Math.min(omega, 13.0);
-        // D key (trampoline): single flip — untucked = ~1 flip; full tuck/pike = 3×
-        if (singleLayoutMode) {
-            const boost = Math.max(state.tuckAmount, state.pikeAmount) * 2.0;
-            omega = Math.min(omega, Math.PI * (1.0 + boost));
-        }
+        // Rotation integration now lives in the shared engine core
+        // (engine/core/rotation.js), used by ski, trampoline and diving alike.
+        // The discipline-specific caps are passed as CONFIG rather than being
+        // branches inside the physics (ADR-0003).
+        const omega = AerialEngine.rotation.angularVelocity(state.L_flip, I, {
+            // Trampoline caps at 13 rad/s; ski lets physics run free.
+            maxOmega:     _trampolineMode ? 13.0 : undefined,
+            // D key (trampoline): single flip — untucked = ~1 flip; full tuck/pike = 3×
+            singleLayout: singleLayoutMode,
+            tuckAmount:   state.tuckAmount,
+            pikeAmount:   state.pikeAmount,
+        });
         if (!state.grounded && !tramBouncing && !matTramBouncing) {
-            const flipDirBoost = (state.flipDir === -1) ? 1.11 : 1.0; // frontflip ~11% faster
-            state.flipAngle += omega * state.flipDir * flipDirBoost * dt;
-            if (singleLayoutMode && !_trampolineMode) {
-                state.flipAngle = Math.max(-Math.PI * 2, Math.min(Math.PI * 2, state.flipAngle));
-            }
+            state.flipAngle = AerialEngine.rotation.integrateFlip(
+                state.flipAngle, omega, state.flipDir, dt,
+                { clampToFullRotation: singleLayoutMode && !_trampolineMode });
         }
         // ── Crash: ragdoll ────────────────────────────────────────────────
         if (state.crashed && !crashActive) {
