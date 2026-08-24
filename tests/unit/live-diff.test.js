@@ -31,9 +31,19 @@ function mulberry32(seed) {
 const sim = createSim({ search: '' });
 const live = sim.ctx;
 
-test('live game.js exposes the functions still under differential test', () => {
-    assert.strictEqual(typeof live.computeI, 'function', 'computeI not reachable');
-    assert.strictEqual(typeof live.armSweep, 'function', 'armSweep not reachable');
+test('the running game exposes the wired engine namespaces', () => {
+    // Every extracted function is now WIRED, so game.js holds no duplicates to
+    // differentially test. What must hold instead is that the game actually
+    // loaded the engine and reaches it.
+    assert.ok(live.AerialEngine, 'AerialEngine missing — engine modules did not load');
+    for (const ns of ['math', 'pose', 'inertia', 'bodyModel']) {
+        assert.ok(live.AerialEngine[ns], `AerialEngine.${ns} not registered`);
+    }
+    // And game.js must NOT still expose its own globals for the wired functions.
+    for (const dup of ['lerp', 'armSweep', 'computeI']) {
+        assert.strictEqual(typeof live[dup], 'undefined',
+            `game.js still exposes a global ${dup} — the duplicate was not removed`);
+    }
 });
 
 test('lerp: the running game uses the engine module, not a copy of it', () => {
@@ -71,24 +81,23 @@ test('lerp: the running game uses the engine module, not a copy of it', () => {
     assert.strictEqual(live.AerialEngine.math.lerp(0, 10, 0.5), 5);
 });
 
-test('armSweep: extracted module is bit-identical to live game.js', () => {
-    const { armSweep } = require('../../engine/core/pose.js');
+test('armSweep: dual-mode wrapper behaves identically in both realms', () => {
+    const mod = require('../../engine/core/pose.js');
     const NAMES = ['upperArmL', 'upperArmR', 'lowerArmL', 'lowerArmR'];
     const rand = mulberry32(0xB0A7);
     for (let i = 0; i < 5000; i++) {
         const name = NAMES[Math.floor(rand() * NAMES.length)];
         const t = rand();
-        const got = armSweep(name, undefined, t);
-        const exp = live.armSweep(name, undefined, t);
+        const got = live.AerialEngine.pose.armSweep(name, undefined, t);
+        const exp = mod.armSweep(name, undefined, t);
         for (const k of ['x', 'y', 'rx', 'rz', 'dz']) {
             assert.strictEqual(got[k], exp[k], `armSweep(${name}, _, ${t}).${k}`);
         }
     }
-    // Boundaries exactly.
     for (const name of NAMES) {
         for (const t of [0, 0.5, 1]) {
-            const got = armSweep(name, undefined, t);
-            const exp = live.armSweep(name, undefined, t);
+            const got = live.AerialEngine.pose.armSweep(name, undefined, t);
+            const exp = mod.armSweep(name, undefined, t);
             for (const k of ['x', 'y', 'rx', 'rz', 'dz']) {
                 assert.strictEqual(got[k], exp[k], `armSweep(${name}, _, ${t}).${k}`);
             }
@@ -96,20 +105,17 @@ test('armSweep: extracted module is bit-identical to live game.js', () => {
     }
 });
 
-test('computeI: extracted module is bit-identical to live game.js', (t) => {
-    let mod;
-    try {
-        mod = require('../../engine/core/inertia.js');
-    } catch {
-        return t.skip('engine/core/inertia.js not extracted yet');
-    }
+test('computeI: dual-mode wrapper behaves identically in both realms', () => {
+    const mod = require('../../engine/core/inertia.js');
     const rand = mulberry32(0x1234);
     for (let i = 0; i < 5000; i++) {
         const tuck = rand();
-        assert.strictEqual(mod.computeI(tuck), live.computeI(tuck), `computeI(${tuck})`);
+        assert.strictEqual(live.AerialEngine.inertia.computeI(tuck), mod.computeI(tuck),
+            `dual-mode wrapper diverges: computeI(${tuck})`);
     }
     for (const v of [0, 0.25, 0.5, 0.75, 1]) {
-        assert.strictEqual(mod.computeI(v), live.computeI(v), `computeI(${v})`);
+        assert.strictEqual(live.AerialEngine.inertia.computeI(v), mod.computeI(v),
+            `computeI(${v})`);
     }
 });
 
@@ -143,25 +149,55 @@ test('computeI: injected-model path matches the default path', () => {
     assert.strictEqual(computeI(0.5, null), computeI(0.5));
 });
 
-test('body-model: extracted constants match live game.js exactly', () => {
+test('body-model: extracted constants match the ones game.js still holds', () => {
+    // game.js STILL defines SEGMENTS / BASE_Z / POSE_UNTUCKED / POSE_TUCKED,
+    // because buildCharacter and applyPose consume them and are not yet
+    // extracted. So a real duplicate exists right now and can drift.
+    //
+    // This compares the extracted data against those live constants directly —
+    // stronger than the previous indirect check via computeI, which became
+    // circular once computeI itself came from the module.
+    const vm = require('node:vm');
     const bm = require('../../engine/core/body-model.js');
-    // SEGMENTS is not a context global in every build, so verify indirectly:
-    // reproducing computeI from the extracted data must match the live result.
-    // Any drift in mass/h/d/pose values changes I and fails here.
-    const { lerp } = require('../../engine/core/math.js');
-    for (const tuck of [0, 0.3, 0.7, 1]) {
-        let I = 0;
-        for (const seg of bm.SEGMENTS) {
-            const up = bm.POSE_UNTUCKED[seg.name];
-            const tk = bm.POSE_TUCKED[seg.name];
-            const y  = lerp(up.y,  tk.y,  tuck);
-            const dz = lerp(up.dz, tk.dz, tuck);
-            const z  = (bm.BASE_Z[seg.name] || 0) + dz;
-            I += seg.mass * (y * y + z * z);
-            I += seg.mass * (seg.h * seg.h + seg.d * seg.d) / 12;
+    const read = (name) => vm.runInContext(name, live);
+
+    const liveSegs = read('SEGMENTS');
+    assert.strictEqual(bm.SEGMENTS.length, liveSegs.length, 'SEGMENTS length differs');
+
+    for (let i = 0; i < liveSegs.length; i++) {
+        const a = bm.SEGMENTS[i], b = liveSegs[i];
+        assert.strictEqual(a.name, b.name, `SEGMENTS[${i}].name`);
+        for (const k of ['w', 'h', 'd', 'mass']) {
+            assert.strictEqual(a[k], b[k], `SEGMENTS[${i}] (${b.name}).${k} drifted`);
         }
-        I = Math.max(I, 0.5);
-        assert.strictEqual(I, live.computeI(tuck),
-            `body-model data reproduces computeI(${tuck})`);
+        // colour is deliberately absent from the engine copy (renderer data).
+        assert.strictEqual(a.color, undefined,
+            `SEGMENTS[${i}] carries colour into engine/ — renderer data (ADR-0002)`);
+    }
+
+    for (const table of ['BASE_Z', 'POSE_UNTUCKED', 'POSE_TUCKED']) {
+        const liveT = read(table);
+        const modT  = bm[table];
+        assert.deepStrictEqual(Object.keys(modT).sort(), Object.keys(liveT).sort(),
+            `${table} keys differ`);
+        for (const key of Object.keys(liveT)) {
+            // NOT deepStrictEqual: the live value comes from the vm's realm, so
+            // its prototype is that realm's Object.prototype and a strict deep
+            // compare fails on prototype identity even when every value matches.
+            // Compare own key/value pairs instead.
+            const lv = liveT[key], mv = modT[key];
+            if (lv !== null && typeof lv === 'object') {
+                assert.deepStrictEqual(Object.keys(mv).sort(), Object.keys(lv).sort(),
+                    `${table}.${key} field set differs`);
+                for (const f of Object.keys(lv)) {
+                    assert.strictEqual(mv[f], lv[f],
+                        `${table}.${key}.${f} drifted between game.js and ` +
+                        `engine/core/body-model.js`);
+                }
+            } else {
+                assert.strictEqual(mv, lv,
+                    `${table}.${key} drifted between game.js and engine/core/body-model.js`);
+            }
+        }
     }
 });

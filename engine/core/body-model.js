@@ -1,3 +1,4 @@
+(function (global) {
 'use strict';
 // ── Body model ───────────────────────────────────────────────────────────────
 // Physics-relevant segment data, extracted MECHANICALLY from game.js by
@@ -66,4 +67,14 @@ const POSE_TUCKED = {
     skiR:      { x:  0.075, y: -0.410, rx: -0.55, rz:  0.00, dz:  0.00 },
 };
 
-module.exports = { SEGMENTS, BASE_Z, POSE_UNTUCKED, POSE_TUCKED };
+const api = { SEGMENTS, BASE_Z, POSE_UNTUCKED, POSE_TUCKED };
+
+// Dual-mode: require() in node --test, <script> in the browser, and
+// vm.runInContext in the headless harness. The project has no bundler.
+if (typeof module !== 'undefined' && module.exports) {
+    module.exports = api;
+} else {
+    (global.AerialEngine = global.AerialEngine || {}).bodyModel = api;
+}
+
+})(typeof globalThis !== 'undefined' ? globalThis : this);

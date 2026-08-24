@@ -1,3 +1,4 @@
+(function (global) {
 'use strict';
 
 function armSweep(name, _up, t) {
@@ -16,4 +17,12 @@ function armSweep(name, _up, t) {
     };
 }
 
-module.exports = { armSweep };
+const api = { armSweep };
+
+if (typeof module !== 'undefined' && module.exports) {
+    module.exports = api;
+} else {
+    (global.AerialEngine = global.AerialEngine || {}).pose = api;
+}
+
+})(typeof globalThis !== 'undefined' ? globalThis : this);

@@ -48,7 +48,8 @@ const BASE_Z        = grabConst('BASE_Z');
 const POSE_UNTUCKED = grabConst('POSE_UNTUCKED');
 const POSE_TUCKED   = grabConst('POSE_TUCKED');
 
-const out = `'use strict';
+const out = `(function (global) {
+'use strict';
 // ── Body model ───────────────────────────────────────────────────────────────
 // Physics-relevant segment data, extracted MECHANICALLY from game.js by
 // .delegate/extract-body-model.js — not hand-copied and not model-generated,
@@ -65,7 +66,17 @@ const POSE_UNTUCKED = ${POSE_UNTUCKED};
 
 const POSE_TUCKED = ${POSE_TUCKED};
 
-module.exports = { SEGMENTS, BASE_Z, POSE_UNTUCKED, POSE_TUCKED };
+const api = { SEGMENTS, BASE_Z, POSE_UNTUCKED, POSE_TUCKED };
+
+// Dual-mode: require() in node --test, <script> in the browser, and
+// vm.runInContext in the headless harness. The project has no bundler.
+if (typeof module !== 'undefined' && module.exports) {
+    module.exports = api;
+} else {
+    (global.AerialEngine = global.AerialEngine || {}).bodyModel = api;
+}
+
+})(typeof globalThis !== 'undefined' ? globalThis : this);
 `;
 
 const target = path.join(ROOT, 'engine', 'core', 'body-model.js');

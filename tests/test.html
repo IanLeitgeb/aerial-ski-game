@@ -51,8 +51,12 @@
 
 <!-- ── Scripts ─────────────────────────────────────────────────────────── -->
 <script src="babylon-stub.js"></script>
-<!-- Shared engine core — must precede game.js, which reads AerialEngine.math. -->
+<!-- Shared engine core — must precede game.js, which reads AerialEngine.*.
+     Dependency order: inertia needs math and bodyModel. -->
 <script src="../engine/core/math.js"></script>
+<script src="../engine/core/body-model.js"></script>
+<script src="../engine/core/pose.js"></script>
+<script src="../engine/core/inertia.js"></script>
 <script src="../game.js"></script>
 <script>
 'use strict';

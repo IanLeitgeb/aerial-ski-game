@@ -24,7 +24,11 @@ const GAME_PATH  = path.join(ROOT, 'game.js');
  * drift, the browser and the headless harness run different code.
  */
 const ENGINE_MODULES = [
+    // Dependency order: inertia needs math and bodyModel, so they precede it.
     'engine/core/math.js',
+    'engine/core/body-model.js',
+    'engine/core/pose.js',
+    'engine/core/inertia.js',
 ];
 
 /** Nodes folded into the per-frame digest — the athlete and its limbs. */

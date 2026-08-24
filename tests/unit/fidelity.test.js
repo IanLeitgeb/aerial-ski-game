@@ -44,7 +44,10 @@ function normalise(code) {
 // only one copy, and this guard is retired for it — replaced by the
 // "consumes the engine core" test below, which proves the deduplication.
 const CASES = [
-    { name: 'armSweep', module: 'engine/core/pose.js' },
+    // Empty: every extracted function is now WIRED, so game.js holds no
+    // duplicate to compare against. Add an entry here only for a function that
+    // has been extracted but not yet wired — that is the window in which two
+    // copies exist and can drift.
 ];
 
 for (const c of CASES) {
@@ -65,7 +68,9 @@ test('game.js consumes the engine core rather than duplicating it', () => {
     // each wired function, game.js must NOT define its own copy any more, and
     // must read it from the shared namespace.
     const WIRED = [
-        { name: 'lerp', namespace: 'AerialEngine.math' },
+        { name: 'lerp',     namespace: 'AerialEngine.math' },
+        { name: 'armSweep', namespace: 'AerialEngine.pose' },
+        { name: 'computeI', namespace: 'AerialEngine.inertia' },
     ];
 
     for (const w of WIRED) {
@@ -106,21 +111,38 @@ test('every browser-loaded engine module is browser-safe', () => {
     //
     // This asserts the actual property that matters: anything the browser loads
     // must not depend on a CommonJS environment at load time.
+    // Behavioural, not a regex. A source scan cannot distinguish a fatal bare
+    // `require(...)` from the legitimate guarded one inside the dual-mode
+    // wrapper, and it flagged both. So actually EVALUATE each module in a
+    // context that has no `require` and no `module` — exactly what a browser
+    // provides — and assert it loads and registers itself.
+    const vm = require('node:vm');
     const { ENGINE_MODULES } = require('../golden/harness');
+
+    const browserish = { console };
+    browserish.globalThis = browserish;
+    browserish.window = browserish;
+    vm.createContext(browserish);
+
     for (const mod of ENGINE_MODULES) {
-        const raw = fs.readFileSync(path.join(ROOT, mod), 'utf8');
-        // Strip comments first — math.js documents its own dual-mode contract
-        // and mentions require() in prose, which a naive scan reads as a call.
-        const src = normalise(raw);
-        const bareRequire = /(^|[^.\w])require\s*\(/.test(src);
-        assert.ok(!bareRequire,
-            `${mod} is listed in ENGINE_MODULES but calls require() — it would ` +
-            `throw "require is not defined" in a browser. Give it the dual-mode ` +
-            `wrapper that engine/core/math.js uses.`);
-        assert.ok(/AerialEngine/.test(raw),
-            `${mod} is browser-loaded but never attaches to the AerialEngine ` +
-            `namespace, so game.js cannot reach it`);
+        const src = fs.readFileSync(path.join(ROOT, mod), 'utf8');
+        try {
+            vm.runInContext(src, browserish, { filename: mod });
+        } catch (e) {
+            assert.fail(`${mod} throws when loaded as a browser <script>: ${e.message}\n` +
+                `Give it the dual-mode wrapper that engine/core/math.js uses.`);
+        }
     }
+
+    assert.ok(browserish.AerialEngine,
+        'no engine module registered an AerialEngine namespace in a browser context');
+
+    // Every module must actually register something reachable.
+    const registered = Object.keys(browserish.AerialEngine);
+    assert.ok(registered.length >= ENGINE_MODULES.length,
+        `${ENGINE_MODULES.length} modules loaded but only ${registered.length} ` +
+        `namespaces registered (${registered.join(', ')}) — one is browser-loaded ` +
+        `but unreachable from game.js`);
 });
 
 test('engine/ contains no renderer or DOM references (ADR-0002)', () => {
