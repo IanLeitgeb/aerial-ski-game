@@ -3432,8 +3432,8 @@ function _startGame() {
                 // Gamepad: minimum 75% so a normal take-off always produces a full flip;
                 // holding L2 on approach charges up to 133% for extra speed.
                 const _gpMode = _lsGet('setting_gamepad') === '1';
-                const _minPwr = _gpMode ? 0.75 : 0.05;
-                targetL_flip = I0 * TARGET_OMEGA_UNTUCKED * (Math.max(_minPwr, flipPower) / 0.75);
+                targetL_flip = I0 * TARGET_OMEGA_UNTUCKED
+                             * AerialEngine.power.flipSpeedMultiplier(flipPower, _gpMode);
                 state.L_flip = targetL_flip;
                 // Reset meter for next jump
                 flipPower = 0;

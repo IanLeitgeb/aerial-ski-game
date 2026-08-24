@@ -29,6 +29,7 @@ const ENGINE_MODULES = [
     'engine/core/body-model.js',
     'engine/core/pose.js',
     'engine/core/inertia.js',
+    'engine/core/power.js',
 ];
 
 /** Nodes folded into the per-frame digest — the athlete and its limbs. */
