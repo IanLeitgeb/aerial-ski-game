@@ -249,38 +249,55 @@ section('B — Regression Formula Checks');
 
 test('Power meter: unfilled gives near-zero flip speed (~6.7%)', () => {
     // INTENDED: not charging the bar = barely any rotation
-    const speed = Math.max(0.05, 0) / 0.75;
+    // Guard against load-order mistakes: engine/core/power.js must be loaded
+    // before game.js so AerialEngine.power exists by the time these run.
+    if (typeof AerialEngine === 'undefined' || !AerialEngine.power) {
+        throw new Error(
+            'AerialEngine.power is missing — engine/core/power.js must be loaded before game.js/tests');
+    }
+    const P = AerialEngine.power;
+    const speed = P.flipSpeedMultiplier(0, false);
+    const pct = (typeof speed === 'number') ? (speed * 100).toFixed(1) : String(speed);
     assert(speed < 0.1,
-        `Unfilled meter should give < 10% flip speed, got ${(speed*100).toFixed(1)}%`);
+        `Unfilled meter should give < 10% flip speed, got ${pct}%`);
 });
 test('Power meter: 3rd dash (75%) gives exactly 100% flip speed', () => {
-    // INTENDED: 3rd dash = perfect flip for the hill
-    const speed = Math.max(0.05, 0.75) / 0.75;
+    // INTENDED: 3rd dash = perfect flip for the hill, i.e. the calibration power
+    const P = AerialEngine.power;
+    const speed = P.flipSpeedMultiplier(P.CALIBRATION_POWER, false);
     assertClose(speed, 1.0, 1e-9,
-        `3rd dash (75%) should give exactly 1.0× speed, got ${speed.toFixed(4)}`);
+        `3rd-dash charge (${P.CALIBRATION_POWER}) should give exactly 1.0× speed`);
 });
 test('Power meter: full charge gives more than 100% flip speed', () => {
     // INTENDED: full bar = extra-fast flip beyond the perfect amount
-    const speed = Math.max(0.05, 1.0) / 0.75;
+    const P = AerialEngine.power;
+    const speed = P.flipSpeedMultiplier(1.0, false);
     assertGreater(speed, 1.0,
-        `Full charge (${speed.toFixed(3)}×) should exceed normal flip speed`);
+        `Full charge (${speed}×) should exceed normal flip speed`);
 });
 test('Power meter: speed scales linearly above the minimum floor', () => {
-    // Speed at 50% charge should be between the minimum and 3rd-dash speed
-    const speedHalf = Math.max(0.05, 0.5) / 0.75;
-    const speedFull = Math.max(0.05, 1.0) / 0.75;
-    assert(speedHalf > 0.05 / 0.75 && speedHalf < speedFull,
-        `Half-charge speed (${speedHalf.toFixed(3)}) should be between floor and full`);
+    // Speed at 50% charge should sit between the minimum-floor speed and the
+    // full-charge speed, with every value coming from AerialEngine.power.
+    const P = AerialEngine.power;
+    const speedFloor = P.flipSpeedMultiplier(0, false);
+    const speedHalf = P.flipSpeedMultiplier(0.5, false);
+    const speedFull = P.flipSpeedMultiplier(1.0, false);
+    assert(speedFloor < speedHalf && speedHalf < speedFull,
+        `Half-charge speed (${speedHalf}) should be between floor (${speedFloor}) and full (${speedFull})`);
 });
 test('REGRESSION: formula is NOT the clamped version (unfilled ≠ 100%)', () => {
-    // Guards against re-introducing the April 2026 "fix" that clamped the floor
-    // to 0.75 so unfilled meters always gave 100% speed (breaking the mechanic).
-    const speedIfBroken = Math.max(0.75, 0) / 0.75; // the erroneous formula
-    const speedCorrect  = Math.max(0.05, 0) / 0.75; // the intended formula
-    assertClose(speedIfBroken, 1.0, 1e-9,
-        `Sanity: the broken formula gives 1.0 at 0 charge`);
+    // Guards against re-introducing the April 2026 "fix" that set the keyboard
+    // minimum power to CALIBRATION_POWER, so an unfilled meter always gave 100%
+    // flip speed and broke the mechanic. The keyboard floor must stay well below
+    // calibration power; gamepad mode keeps its own floor via MIN_POWER_GAMEPAD.
+    const P = AerialEngine.power;
+    const keyboardFloor = P.minPower(false);
+    assertLess(keyboardFloor, P.CALIBRATION_POWER,
+        `Keyboard min power (${keyboardFloor}) must be below calibration power (${P.CALIBRATION_POWER})`);
+    const speedCorrect = P.flipSpeedMultiplier(0, false);
+    const pct = (typeof speedCorrect === 'number') ? (speedCorrect * 100).toFixed(1) : String(speedCorrect);
     assert(speedCorrect < 0.1,
-        `The correct formula must give < 10% at 0 charge, not ${(speedCorrect*100).toFixed(1)}%`);
+        `The correct formula must give < 10% at 0 charge, not ${pct}%`);
 });
 
 // ─────────────────────────────────────────────────────────────────────────
