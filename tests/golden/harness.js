@@ -31,6 +31,10 @@ const ENGINE_MODULES = [
     'engine/core/inertia.js',
     'engine/core/power.js',
     'engine/core/rotation.js',
+    'engine/core/tricks.js',
+    'engine/core/landing.js',
+    // Discipline modules load after the shared core they depend on.
+    'engine/disciplines/aerial-ski.js',
 ];
 
 /** Nodes folded into the per-frame digest — the athlete and its limbs. */

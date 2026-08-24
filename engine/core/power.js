@@ -11,6 +11,9 @@ const CALIBRATION_POWER = 0.75;
 const MIN_POWER_KEYBOARD = 0.05;
 const MIN_POWER_GAMEPAD = 0.75;
 
+// Seconds for the meter to fill from 0 to 1.
+const FILL_SECONDS = 1.7;
+
 function minPower(gamepadMode) {
     return gamepadMode ? MIN_POWER_GAMEPAD : MIN_POWER_KEYBOARD;
 }
@@ -19,7 +22,7 @@ function flipSpeedMultiplier(flipPower, gamepadMode) {
     return Math.max(minPower(gamepadMode), flipPower) / CALIBRATION_POWER;
 }
 
-const api = { CALIBRATION_POWER, MIN_POWER_KEYBOARD, MIN_POWER_GAMEPAD, minPower, flipSpeedMultiplier };
+const api = { FILL_SECONDS, CALIBRATION_POWER, MIN_POWER_KEYBOARD, MIN_POWER_GAMEPAD, minPower, flipSpeedMultiplier };
 
 if (typeof module !== 'undefined' && module.exports) {
     module.exports = api;
