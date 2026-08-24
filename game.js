@@ -178,7 +178,12 @@ const POSE_ARMS_UP = {
 };
 
 // ── Physics helpers ────────────────────────────────────────────────────────
-function lerp(a, b, t) { return a + (b - a) * t; }
+// lerp now comes from the shared engine core (engine/core/math.js), loaded
+// before this file. Same implementation, single source of truth across the ski,
+// trampoline and diving disciplines. See ADR-0002 / ADR-0003.
+// Safe as a const: the first call site is inside a function body (computeI),
+// so nothing evaluates it before this line runs.
+const { lerp } = AerialEngine.math;
 
 // Moment of inertia about the flip axis (X, shoulder-to-shoulder).
 // Distance from X axis = sqrt(y² + z²), so I = Σ [ m_i·(y_i²+z_i²) + m_i·(h_i²+d_i²)/12 ]
@@ -4055,19 +4060,30 @@ function _startGame() {
                     ? (TRAMPOLINE_Y - FOOT_OFFSET)
                     : terrainRootY(state.posZ) - FOOT_OFFSET;
 
+            // BUG-001 fix: gloveL/gloveR are stored as { mesh, halfH } wrappers
+            // (see buildCharacter) rather than bare meshes, so calling mesh APIs
+            // on every character.meshes value threw TypeError here. The throw was
+            // swallowed by the frame-level try/catch, and because crashActive was
+            // already set the ragdoll never retried — no crash animation ever ran.
+            // Resolve the part list once so both passes agree on it.
+            const ragdollParts = Object.keys(character.meshes)
+                .map(name => {
+                    const entry = character.meshes[name];
+                    return { name, mesh: (entry && entry.mesh) ? entry.mesh : entry };
+                })
+                .filter(p => p.mesh && typeof p.mesh.computeWorldMatrix === 'function');
+
             // Pass 1: compute every mesh's world position BEFORE any detachment.
             // Must walk the full parent chain, so use getAbsolutePosition() not rootMatrix.
             const worldPositions = {};
             character.root.computeWorldMatrix(true);
-            for (const name of Object.keys(character.meshes)) {
-                const mesh = character.meshes[name];
+            for (const { name, mesh } of ragdollParts) {
                 mesh.computeWorldMatrix(true);
                 worldPositions[name] = mesh.getAbsolutePosition().clone();
             }
 
             // Pass 2: detach and launch each piece independently.
-            for (const name of Object.keys(character.meshes)) {
-                const mesh    = character.meshes[name];
+            for (const { name, mesh } of ragdollParts) {
                 const origPos  = mesh.position.clone();
                 const origQuat = mesh.rotationQuaternion ? mesh.rotationQuaternion.clone() : null;
                 const origRot  = mesh.rotation ? mesh.rotation.clone() : new BABYLON.Vector3();
