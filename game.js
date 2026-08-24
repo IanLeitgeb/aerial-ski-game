@@ -39,6 +39,10 @@ const SEGMENTS = [
 ];
 
 // ── Poses ─────────────────────────────────────────────────────────────────
+// Pose tables now live in the shared engine core
+// (engine/core/body-model.js), consumed via AerialEngine.pose.computePose().
+// They were duplicated here until the pose solver was extracted.
+
 // Local transform of each segment relative to the CoM root TransformNode.
 // x, y  = local position (root is ~center of torso / whole-body CoM)
 // rz    = local rotation around Z (radians, positive = counterclockwise in body frame)
@@ -68,114 +72,24 @@ const BASE_Z = {
 // x offset arms = ±0.205, legs = ±0.075. dz = forward/back delta from BASE_Z.
 // Backflip tuck folds in the YZ plane: knees come forward (+dz) up toward chest.
 
-const POSE_UNTUCKED = {
-    // All rx=0, dz=0 — segments hang straight down, arms at sides
-    torso:     { x:  0.000, y:  0.000, rx:  0.00, rz:  0.00, dz:  0.00 },
-    head:      { x:  0.000, y:  0.400, rx:  0.00, rz:  0.00, dz:  0.00 },
-    upperArmL: { x: -0.205, y:  0.300, rx:  0.00, rz:  0.00, dz:  0.00 },
-    upperArmR: { x:  0.205, y:  0.300, rx:  0.00, rz:  0.00, dz:  0.00 },
-    lowerArmL: { x: -0.205, y:  0.575, rx:  0.00, rz:  0.00, dz:  0.00 },
-    lowerArmR: { x:  0.205, y:  0.575, rx:  0.00, rz:  0.00, dz:  0.00 },
-    upperLegL: { x: -0.075, y: -0.455, rx:  0.00, rz:  0.00, dz:  0.00 },
-    upperLegR: { x:  0.075, y: -0.455, rx:  0.00, rz:  0.00, dz:  0.00 },
-    lowerLegL: { x: -0.075, y: -0.815, rx:  0.00, rz:  0.00, dz:  0.00 },
-    lowerLegR: { x:  0.075, y: -0.815, rx:  0.00, rz:  0.00, dz:  0.00 },
-    // Skis centered under feet: foot bottom = -0.995, ski center = -0.995 - h/2 = -1.010
-    skiL:      { x: -0.075, y: -1.010, rx:  0.00, rz:  0.00, dz:  0.00 },
-    skiR:      { x:  0.075, y: -1.010, rx:  0.00, rz:  0.00, dz:  0.00 },
-};
 
 // Inrun crouch: egg/tuck position — torso leans forward over knees.  Root is lowered
 // 0.35 units when fully tucked, so ski y is set to -0.675 (= -1.010 + 0.35).
-const POSE_INRUN_TUCK = {
-    torso:     { x:  0.000, y:  0.000, rx: -1.10, rz:  0.00, dz: -0.10 },  // torso tips forward
-    head:      { x:  0.000, y:  0.160, rx: -1.00, rz:  0.00, dz: -0.45 },  // head drives forward/down
-    upperArmL: { x: -0.205, y:  0.000, rx:  0.00, rz:  0.00, dz:  0.00 },
-    upperArmR: { x:  0.205, y:  0.000, rx:  0.00, rz:  0.00, dz:  0.00 },
-    lowerArmL: { x: -0.205, y: -0.275, rx:  0.00, rz:  0.00, dz:  0.00 },
-    lowerArmR: { x:  0.205, y: -0.275, rx:  0.00, rz:  0.00, dz:  0.00 },
-    upperLegL: { x: -0.075, y: -0.240, rx:  0.85, rz:  0.00, dz:  0.15 },  // thighs push back
-    upperLegR: { x:  0.075, y: -0.240, rx:  0.85, rz:  0.00, dz:  0.15 },
-    lowerLegL: { x: -0.075, y: -0.490, rx: -0.40, rz:  0.00, dz:  0.05 },  // shins tilt forward
-    lowerLegR: { x:  0.075, y: -0.490, rx: -0.40, rz:  0.00, dz:  0.05 },
-    skiL:      { x: -0.075, y: -0.660, rx:  0.00, rz:  0.00, dz:  0.00 },
-    skiR:      { x:  0.075, y: -0.660, rx:  0.00, rz:  0.00, dz:  0.00 },
-};
 
-const POSE_TUCKED = {
-    // Knees lift forward (-dz) and up toward chest — tuck in the YZ plane
-    torso:     { x:  0.000, y:  0.000, rx:  0.35, rz:  0.00, dz:  0.00 },  // torso curls forward
-    head:      { x:  0.000, y:  0.340, rx:  0.45, rz:  0.00, dz: -0.06 },  // chin toward knees
-    upperArmL: { x: -0.160, y: -0.180, rx: -1.00, rz:  0.20, dz: -0.18 },  // arms reach forward to grab shins
-    upperArmR: { x:  0.160, y: -0.180, rx: -1.00, rz: -0.20, dz: -0.18 },
-    lowerArmL: { x: -0.100, y: -0.280, rx: -1.00, rz:  0.20, dz: -0.26 },
-    lowerArmR: { x:  0.100, y: -0.280, rx: -1.00, rz: -0.20, dz: -0.26 },
-    upperLegL: { x: -0.075, y: -0.140, rx: -1.20, rz:  0.00, dz: -0.20 },  // thighs up and forward
-    upperLegR: { x:  0.075, y: -0.140, rx: -1.20, rz:  0.00, dz: -0.20 },
-    lowerLegL: { x: -0.075, y: -0.230, rx: -0.55, rz:  0.00, dz: -0.10 },  // shins fold in
-    lowerLegR: { x:  0.075, y: -0.230, rx: -0.55, rz:  0.00, dz: -0.10 },
-    // Skis track feet: foot moves to ~y=-0.396 at same rx as lower leg
-    skiL:      { x: -0.075, y: -0.410, rx: -0.55, rz:  0.00, dz:  0.00 },
-    skiR:      { x:  0.075, y: -0.410, rx: -0.55, rz:  0.00, dz:  0.00 },
-};
 
 // Pike: hips flexed 145° forward from hanging, legs perfectly straight (no knee bend).
 // rx=+2.53 rad (≈145°) for all leg/ski segments: kinematically verified so the hip
 // joint (+Y top of upperLeg) sits exactly at y=-0.275, the bottom of the torso.
-const POSE_PIKED = {
-    torso:     { x:  0.000, y:  0.000, rx:  0.00, rz:  0.00, dz:  0.00 },  // upper body stays untucked
-    head:      { x:  0.000, y:  0.400, rx:  0.00, rz:  0.00, dz:  0.00 },
-    upperArmL: { x: -0.205, y:  0.150, rx: -1.57, rz:  0.00, dz: -0.15 },  // arms straight out in front
-    upperArmR: { x:  0.205, y:  0.150, rx: -1.57, rz:  0.00, dz: -0.15 },
-    lowerArmL: { x: -0.205, y:  0.150, rx: -1.57, rz:  0.00, dz: -0.40 },
-    lowerArmR: { x:  0.205, y:  0.150, rx: -1.57, rz:  0.00, dz: -0.40 },
-    upperLegL: { x: -0.075, y: -0.128, rx:  2.53, rz:  0.00, dz: -0.103 },
-    upperLegR: { x:  0.075, y: -0.128, rx:  2.53, rz:  0.00, dz: -0.103 },
-    lowerLegL: { x: -0.075, y:  0.167, rx:  2.53, rz:  0.00, dz: -0.309 },  // straight (no knee bend)
-    lowerLegR: { x:  0.075, y:  0.167, rx:  2.53, rz:  0.00, dz: -0.309 },
-    skiL:      { x: -0.075, y:  0.310, rx:  2.53, rz:  0.00, dz: -0.410 },
-    skiR:      { x:  0.075, y:  0.310, rx:  2.53, rz:  0.00, dz: -0.410 },
-};
 
 // Arm sweep: two-phase animation.
 // Phase 1 (armDrop 0→0.5): raised → swung out in front (horizontal forward)
 // Phase 2 (armDrop 0.5→1): in front → hanging at side
 // Character faces -Z, so dz negative = in front of body.
-const POSE_ARMS_FORWARD = {
-    upperArmL: { x: -0.205, y:  0.150, rx: -1.57, rz:  0.00, dz: -0.15 },
-    upperArmR: { x:  0.205, y:  0.150, rx: -1.57, rz:  0.00, dz: -0.15 },
-    lowerArmL: { x: -0.205, y:  0.150, rx: -1.57, rz:  0.00, dz: -0.40 },
-    lowerArmR: { x:  0.205, y:  0.150, rx: -1.57, rz:  0.00, dz: -0.40 },
-};
-const POSE_ARMS_DROPPED = {
-    upperArmL: { x: -0.205, y:  0.000, rx:  0.00, rz:  0.00, dz:  0.00 },
-    upperArmR: { x:  0.205, y:  0.000, rx:  0.00, rz:  0.00, dz:  0.00 },
-    lowerArmL: { x: -0.205, y: -0.275, rx:  0.00, rz:  0.00, dz:  0.00 },
-    lowerArmR: { x:  0.205, y: -0.275, rx:  0.00, rz:  0.00, dz:  0.00 },
-};
 // Arms angled 50° forward from vertical, straight (no elbow bend).
 // rx = -50° = -0.873 rad. Shoulder at y=0.15, arm points forward-down.
-const POSE_ARMS_50DEG = {
-    upperArmL: { x: -0.205, y:  0.054, rx: -0.873, rz:  0.00, dz: -0.115 },
-    upperArmR: { x:  0.205, y:  0.054, rx: -0.873, rz:  0.00, dz: -0.115 },
-    lowerArmL: { x: -0.205, y: -0.123, rx: -0.873, rz:  0.00, dz: -0.326 },
-    lowerArmR: { x:  0.205, y: -0.123, rx: -0.873, rz:  0.00, dz: -0.326 },
-};
 // T-pose: arms straight out to the sides.
 // rz = +π/2 (left arm), rz = -π/2 (right arm).
-const POSE_ARMS_T = {
-    upperArmL: { x: -0.355, y:  0.150, rx: 0.00, rz:  1.57, dz:  0.00 },
-    upperArmR: { x:  0.355, y:  0.150, rx: 0.00, rz: -1.57, dz:  0.00 },
-    lowerArmL: { x: -0.580, y:  0.150, rx: 0.00, rz:  1.57, dz:  0.00 },
-    lowerArmR: { x:  0.580, y:  0.150, rx: 0.00, rz: -1.57, dz:  0.00 },
-};
 // Arms raised straight up overhead.
-const POSE_ARMS_UP = {
-    upperArmL: { x: -0.205, y:  0.450, rx:  0.00, rz:  0.00, dz:  0.00 },
-    upperArmR: { x:  0.205, y:  0.450, rx:  0.00, rz:  0.00, dz:  0.00 },
-    lowerArmL: { x: -0.205, y:  0.725, rx:  0.00, rz:  0.00, dz:  0.00 },
-    lowerArmR: { x:  0.205, y:  0.725, rx:  0.00, rz:  0.00, dz:  0.00 },
-};
 
 // ── Physics helpers ────────────────────────────────────────────────────────
 // lerp now comes from the shared engine core (engine/core/math.js), loaded
@@ -467,84 +381,27 @@ const { armSweep } = AerialEngine.pose;
 function applyPose(meshes, tuck, armDropL, armDropR, armSnap, layArmT, armRaise, grounded, pikeAmount, pikeArmDrop) {
     pikeAmount  = pikeAmount  || 0;
     pikeArmDrop = pikeArmDrop || 0;
+
+    // ── Solve, then apply ──────────────────────────────────────────────────
+    // The pose maths lives in the shared engine core (engine/core/pose.js) and
+    // is pure: it returns transforms and touches nothing. This function keeps
+    // only the RENDERING half — writing those transforms onto meshes, plus the
+    // IK fix-up and glove placement below, which are display concerns that read
+    // mesh state. See ADR-0002.
+    const solved = AerialEngine.pose.computePose({
+        tuck, armDropL, armDropR, armSnap, layArmT, armRaise,
+        grounded, pikeAmount, pikeArmDrop,
+    });
+
     for (const seg of SEGMENTS) {
         const mesh = meshes[seg.name];
-        const up   = POSE_UNTUCKED[seg.name];
-        // Choose target pose and blend factor
-        let tk, effectiveBlend;
-        if (grounded) {
-            tk = POSE_INRUN_TUCK[seg.name];
-            effectiveBlend = tuck;
-        } else if (pikeAmount > 0) {
-            tk = POSE_PIKED[seg.name];
-            // For arm segments: blend target from piked-forward toward dropped during release
-            if (pikeArmDrop > 0 && (seg.name === 'upperArmL' || seg.name === 'upperArmR' ||
-                                     seg.name === 'lowerArmL' || seg.name === 'lowerArmR')) {
-                const dropped = armSweep(seg.name, up, 1.0);
-                tk = {
-                    x:  lerp(tk.x,  dropped.x,  pikeArmDrop),
-                    y:  lerp(tk.y,  dropped.y,  pikeArmDrop),
-                    rx: lerp(tk.rx, dropped.rx, pikeArmDrop),
-                    rz: lerp(tk.rz, dropped.rz, pikeArmDrop),
-                    dz: lerp(tk.dz, dropped.dz, pikeArmDrop),
-                };
-            }
-            effectiveBlend = pikeAmount;
-        } else {
-            tk = POSE_TUCKED[seg.name];
-            effectiveBlend = tuck;
-        }
-        let ex = up;
-
-        if (seg.name === 'upperArmL' || seg.name === 'lowerArmL') {
-            ex = armSweep(seg.name, up, armDropL);
-            if (armSnap > 0) {
-                const sn = POSE_ARMS_50DEG[seg.name];
-                ex = { x: lerp(ex.x, sn.x, armSnap), y: lerp(ex.y, sn.y, armSnap),
-                       rx: lerp(ex.rx, sn.rx, armSnap), rz: lerp(ex.rz, sn.rz, armSnap),
-                       dz: lerp(ex.dz, sn.dz, armSnap) };
-            }
-            if (layArmT > 0) {
-                const tp = POSE_ARMS_T[seg.name];
-                ex = { x: lerp(ex.x, tp.x, layArmT), y: lerp(ex.y, tp.y, layArmT),
-                       rx: lerp(ex.rx, tp.rx, layArmT), rz: lerp(ex.rz, tp.rz, layArmT),
-                       dz: lerp(ex.dz, tp.dz, layArmT) };
-            }
-            if (armRaise > 0) {
-                const up2 = POSE_ARMS_UP[seg.name];
-                const raiseT = armRaise * (1 - armDropL);
-                ex = { x: lerp(ex.x, up2.x, raiseT), y: lerp(ex.y, up2.y, raiseT),
-                       rx: lerp(ex.rx, up2.rx, raiseT), rz: lerp(ex.rz, up2.rz, raiseT),
-                       dz: lerp(ex.dz, up2.dz, raiseT) };
-            }
-        } else if (seg.name === 'upperArmR' || seg.name === 'lowerArmR') {
-            ex = armSweep(seg.name, up, armDropR);
-            if (armSnap > 0) {
-                const sn = POSE_ARMS_50DEG[seg.name];
-                ex = { x: lerp(ex.x, sn.x, armSnap), y: lerp(ex.y, sn.y, armSnap),
-                       rx: lerp(ex.rx, sn.rx, armSnap), rz: lerp(ex.rz, sn.rz, armSnap),
-                       dz: lerp(ex.dz, sn.dz, armSnap) };
-            }
-            if (layArmT > 0) {
-                const tp = POSE_ARMS_T[seg.name];
-                ex = { x: lerp(ex.x, tp.x, layArmT), y: lerp(ex.y, tp.y, layArmT),
-                       rx: lerp(ex.rx, tp.rx, layArmT), rz: lerp(ex.rz, tp.rz, layArmT),
-                       dz: lerp(ex.dz, tp.dz, layArmT) };
-            }
-            if (armRaise > 0) {
-                const up2 = POSE_ARMS_UP[seg.name];
-                const raiseT = armRaise * (1 - armDropR);
-                ex = { x: lerp(ex.x, up2.x, raiseT), y: lerp(ex.y, up2.y, raiseT),
-                       rx: lerp(ex.rx, up2.rx, raiseT), rz: lerp(ex.rz, up2.rz, raiseT),
-                       dz: lerp(ex.dz, up2.dz, raiseT) };
-            }
-        }
-
-        mesh.position.x = lerp(ex.x,  tk.x,  effectiveBlend);
-        mesh.position.y = lerp(ex.y,  tk.y,  effectiveBlend);
-        mesh.position.z = (BASE_Z[seg.name] || 0) + lerp(ex.dz, tk.dz, effectiveBlend);
-        mesh.rotation.x = lerp(ex.rx, tk.rx, effectiveBlend);
-        mesh.rotation.z = lerp(ex.rz, tk.rz, effectiveBlend);
+        const p    = solved[seg.name];
+        if (!mesh || !p) continue;
+        mesh.position.x = p.x;
+        mesh.position.y = p.y;
+        mesh.position.z = p.z;
+        mesh.rotation.x = p.rx;
+        mesh.rotation.z = p.rz;
     }
 
     // ── Kinematic knee fix for pike ────────────────────────────────────────

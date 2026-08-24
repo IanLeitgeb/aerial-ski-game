@@ -175,13 +175,10 @@ test('body-model: extracted constants match the ones game.js still holds', () =>
             `SEGMENTS[${i}] carries colour into engine/ — renderer data (ADR-0002)`);
     }
 
-    // All nine tables, not just the two computeI needs — applyPose blends
-    // between the rest, so every one of them is a live duplicate right now.
-    const TABLES = [
-        'BASE_Z', 'POSE_UNTUCKED', 'POSE_INRUN_TUCK', 'POSE_TUCKED', 'POSE_PIKED',
-        'POSE_ARMS_FORWARD', 'POSE_ARMS_DROPPED', 'POSE_ARMS_50DEG',
-        'POSE_ARMS_T', 'POSE_ARMS_UP',
-    ];
+    // Only what game.js STILL holds. The nine POSE_* tables were removed once
+    // the pose solver was wired, so there is nothing left to compare for them —
+    // that is the point. Their absence is asserted separately below.
+    const TABLES = ['BASE_Z'];
     for (const table of TABLES) {
         const liveT = read(table);
         const modT  = bm[table];
@@ -206,5 +203,32 @@ test('body-model: extracted constants match the ones game.js still holds', () =>
                     `${table}.${key} drifted between game.js and engine/core/body-model.js`);
             }
         }
+    }
+});
+
+test('the pose tables are GONE from game.js, not merely duplicated', () => {
+    // Deduplication is the goal, not co-existence. Once computePose was wired,
+    // all nine tables became dead code in game.js and were deleted. If one
+    // reappears, two sources of truth exist again and can silently diverge.
+    const fs   = require('node:fs');
+    const path = require('node:path');
+    const GAME = fs.readFileSync(
+        path.resolve(__dirname, '..', '..', 'game.js'), 'utf8');
+
+    const TABLES = [
+        'POSE_UNTUCKED', 'POSE_INRUN_TUCK', 'POSE_TUCKED', 'POSE_PIKED',
+        'POSE_ARMS_FORWARD', 'POSE_ARMS_DROPPED', 'POSE_ARMS_50DEG',
+        'POSE_ARMS_T', 'POSE_ARMS_UP',
+    ];
+    for (const t of TABLES) {
+        const def = new RegExp(`^\\s*const\\s+${t}\\s*=`, 'm');
+        assert.ok(!def.test(GAME),
+            `game.js redefines ${t} — it lives in engine/core/body-model.js now, ` +
+            `and two copies can drift apart`);
+    }
+    // And the engine must still export every one of them.
+    const bm = require('../../engine/core/body-model.js');
+    for (const t of TABLES) {
+        assert.ok(bm[t], `engine/core/body-model.js no longer exports ${t}`);
     }
 });
