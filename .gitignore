@@ -1,0 +1,15 @@
+# Delegated-agent raw output. The TASK prompts are committed (they are the
+# reproducible input); the model's raw responses and stderr are not.
+.delegate/out/
+
+# Node
+node_modules/
+npm-debug.log*
+
+# Editor / OS
+.DS_Store
+*.swp
+*~
+
+# Local scratch
+*.bak
