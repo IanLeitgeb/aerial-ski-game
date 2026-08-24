@@ -175,7 +175,14 @@ test('body-model: extracted constants match the ones game.js still holds', () =>
             `SEGMENTS[${i}] carries colour into engine/ — renderer data (ADR-0002)`);
     }
 
-    for (const table of ['BASE_Z', 'POSE_UNTUCKED', 'POSE_TUCKED']) {
+    // All nine tables, not just the two computeI needs — applyPose blends
+    // between the rest, so every one of them is a live duplicate right now.
+    const TABLES = [
+        'BASE_Z', 'POSE_UNTUCKED', 'POSE_INRUN_TUCK', 'POSE_TUCKED', 'POSE_PIKED',
+        'POSE_ARMS_FORWARD', 'POSE_ARMS_DROPPED', 'POSE_ARMS_50DEG',
+        'POSE_ARMS_T', 'POSE_ARMS_UP',
+    ];
+    for (const table of TABLES) {
         const liveT = read(table);
         const modT  = bm[table];
         assert.deepStrictEqual(Object.keys(modT).sort(), Object.keys(liveT).sort(),

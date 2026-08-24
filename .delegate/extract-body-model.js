@@ -43,10 +43,19 @@ function stripColor(code) {
         .replace(/,\s*color:\s*\[[^\]]*\]/g, '');
 }
 
-const SEGMENTS      = stripColor(grabConst('SEGMENTS'));
-const BASE_Z        = grabConst('BASE_Z');
-const POSE_UNTUCKED = grabConst('POSE_UNTUCKED');
-const POSE_TUCKED   = grabConst('POSE_TUCKED');
+const SEGMENTS = stripColor(grabConst('SEGMENTS'));
+const BASE_Z   = grabConst('BASE_Z');
+
+// Every pose table. applyPose blends between these, so extracting the pose
+// solver requires all of them, not just the two computeI needs.
+const POSE_TABLES = [
+    'POSE_UNTUCKED', 'POSE_INRUN_TUCK', 'POSE_TUCKED', 'POSE_PIKED',
+    'POSE_ARMS_FORWARD', 'POSE_ARMS_DROPPED', 'POSE_ARMS_50DEG',
+    'POSE_ARMS_T', 'POSE_ARMS_UP',
+];
+const poses = Object.fromEntries(POSE_TABLES.map(n => [n, grabConst(n)]));
+const POSE_UNTUCKED = poses.POSE_UNTUCKED;
+const POSE_TUCKED   = poses.POSE_TUCKED;
 
 const out = `(function (global) {
 'use strict';
@@ -62,11 +71,9 @@ const SEGMENTS = ${SEGMENTS};
 
 const BASE_Z = ${BASE_Z};
 
-const POSE_UNTUCKED = ${POSE_UNTUCKED};
+${POSE_TABLES.map(n => `const ${n} = ${poses[n]};`).join('\n\n')}
 
-const POSE_TUCKED = ${POSE_TUCKED};
-
-const api = { SEGMENTS, BASE_Z, POSE_UNTUCKED, POSE_TUCKED };
+const api = { SEGMENTS, BASE_Z, ${POSE_TABLES.join(', ')} };
 
 // Dual-mode: require() in node --test, <script> in the browser, and
 // vm.runInContext in the headless harness. The project has no bundler.
