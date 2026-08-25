@@ -2661,6 +2661,10 @@
         var SRCS = [
             { local: 'lib/babylon.js',         cdn: 'https://cdn.babylonjs.com/babylon.js' },
             { local: 'lib/babylon.gui.min.js',  cdn: 'https://cdn.babylonjs.com/gui/babylon.gui.min.js' },
+            // glTF/GLB loader — required for anything authored in Blender. Not
+            // part of babylon.js core, which is why no Blender export could load
+            // before this was added. Version-matched to the bundled 9.10.1.
+            { local: 'lib/babylonjs.loaders.min.js', cdn: 'https://cdn.babylonjs.com/loaders/babylonjs.loaders.min.js' },
             // Shared engine core — must load BEFORE game.js, which reads
             // AerialEngine.math at parse time.
             // Dependency order: inertia needs math and bodyModel.
