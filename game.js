@@ -660,17 +660,39 @@ function _startGame() {
     camera.inertia          = 0;             // no drift after mouse release
     camera.lowerBetaLimit   = 0.05;          // prevent flipping under the scene
     camera.upperBetaLimit   = Math.PI - 0.05;
-    camera.lowerRadiusLimit = 10;            // lock zoom — meaningless in ortho
-    camera.upperRadiusLimit = 10;
-    camera.mode = BABYLON.Camera.ORTHOGRAPHIC_CAMERA;
+    // ── Long lens instead of orthographic ───────────────────────────────────
+    // This camera used to be ORTHOGRAPHIC. That is fine for Blinn-Phong, but it
+    // breaks physically based shading: an orthographic projection has ONE view
+    // direction for the entire frame, so specular response and image-based
+    // reflections cannot vary across the image. Everything renders uniformly
+    // lit and flat — which is exactly why the first-person view (a perspective
+    // FreeCamera) looked better once PBR and IBL went in.
+    //
+    // Rather than switch to a normal wide perspective and lose the flat,
+    // readable ski-game framing, this uses a LONG LENS: a narrow field of view
+    // with the camera pulled back to match. Framing at the athlete's distance is
+    // near-identical to the old orthographic view, but the projection is now a
+    // true perspective, so view-dependent shading works.
+    //
+    // d = halfH / tan(fov/2) keeps the visible height the same as orthoTop 3.0.
+    const CAM_FOV      = 0.3400;     // ~19.5 degrees — a long lens
+    const CAM_DISTANCE = 17.4767;     // derived, do not set independently
+    camera.mode   = BABYLON.Camera.PERSPECTIVE_CAMERA;
+    camera.fov    = CAM_FOV;
+    camera.radius = CAM_DISTANCE;
+    camera.lowerRadiusLimit = CAM_DISTANCE;   // zoom stays locked as before
+    camera.upperRadiusLimit = CAM_DISTANCE;
+    camera.minZ   = 0.5;
+    camera.maxZ   = 400;
 
+    // Kept so the framing stays correct on resize. With a perspective camera the
+    // vertical FOV is fixed and the aspect ratio handles width, so this only
+    // needs to re-derive the distance if the target height ever changes.
     function setOrtho(halfH = 3.0) {
-        const w = engine.getRenderWidth();
-        const h = engine.getRenderHeight();
-        camera.orthoTop    =  halfH;
-        camera.orthoBottom = -halfH;
-        camera.orthoLeft   = -halfH * (w / h);
-        camera.orthoRight  =  halfH * (w / h);
+        const d = halfH / Math.tan(camera.fov / 2);
+        camera.radius = d;
+        camera.lowerRadiusLimit = d;
+        camera.upperRadiusLimit = d;
     }
     setOrtho();
     window.addEventListener('resize', () => { engine.resize(); setOrtho(3.0); });
@@ -716,7 +738,7 @@ function _startGame() {
             'assets/environment.env', scene);
         // Tuned against the existing hemi+sun rig rather than replacing it: the
         // directional sun still casts the shadows, IBL supplies the ambient fill.
-        scene.environmentIntensity = 0.85;
+        scene.environmentIntensity = 0.72;
     } catch (e) {
         scene.environmentTexture = null;   // renderer still works, just flatter
     }
@@ -728,7 +750,13 @@ function _startGame() {
         // value clamped at 1.0 before tonemapping could act on it. Snow is the
         // worst possible subject for that — it clips to flat white and loses all
         // form. Bloom was also computing in LDR as a result.
+        // Attached to BOTH cameras. It was main-camera only, so first-person got no
+        // tonemapping, no bloom and no exposure multiply — which is precisely why
+        // it rendered darker than the third-person view.
         dofPipeline = new BABYLON.DefaultRenderingPipeline('dof', true, scene, [camera]);
+        // fpCamera is attached LATER, where it is created — it is a `const`
+        // declared further down, so referencing it here is a temporal dead
+        // zone error, not merely bad ordering.
         dofPipeline.depthOfFieldEnabled   = false;
         dofPipeline.depthOfFieldBlurLevel = BABYLON.DepthOfFieldEffectBlurLevel.Medium;
         if (dofPipeline.depthOfField) {
@@ -749,7 +777,7 @@ function _startGame() {
             dofPipeline.imageProcessing.toneMappingEnabled = true;
             dofPipeline.imageProcessing.toneMappingType =
                 BABYLON.ImageProcessingConfiguration.TONEMAPPING_ACES;
-            dofPipeline.imageProcessing.exposure = 1.25;
+            dofPipeline.imageProcessing.exposure = 1.18;
             dofPipeline.imageProcessing.contrast = 1.1;
 
             // Dithering breaks up 8-bit banding in large smooth gradients. The
@@ -1202,15 +1230,98 @@ function _startGame() {
 
     // ── Terrain meshes (visual — physics uses terrainRootY()) ────────────────────
     if (!_trampolineMode && !_trampolineMatMode && !_poolDiveMode) {
+    // ── Procedural snow surface detail ──────────────────────────────────────
+    // Generates a tiling normal map at runtime rather than shipping an image.
+    // Flat untextured snow is the most obvious remaining tell — real snow has
+    // wind ripple, groomer corduroy and a fine granular break-up, and a normal
+    // map gets all three without adding a single triangle.
+    //
+    // Height is built from three octaves plus a directional corduroy ripple,
+    // then converted to a normal by finite differences (Sobel-style central
+    // difference on the height field).
+    function _makeSnowNormalMap(scene, size) {
+        const tex = new BABYLON.DynamicTexture('snowNormal',
+            { width: size, height: size }, scene, true);
+        const ctx = tex.getContext();
+        if (!ctx || !ctx.createImageData) return tex;   // headless stub
+
+        // Deterministic value noise — same surface every load, so the look does
+        // not drift between sessions.
+        const hash = (x, y) => {
+            let h = (x * 374761393 + y * 668265263) | 0;
+            h = (h ^ (h >>> 13)) * 1274126177;
+            return ((h ^ (h >>> 16)) >>> 0) / 4294967295;
+        };
+        const smooth = (t) => t * t * (3 - 2 * t);
+        function valueNoise(x, y) {
+            const xi = Math.floor(x), yi = Math.floor(y);
+            const xf = x - xi, yf = y - yi;
+            const u = smooth(xf), v = smooth(yf);
+            const a = hash(xi, yi),     b = hash(xi + 1, yi);
+            const c = hash(xi, yi + 1), d = hash(xi + 1, yi + 1);
+            return (a * (1 - u) + b * u) * (1 - v) + (c * (1 - u) + d * u) * v;
+        }
+
+        // Height field. Wrapping coordinates keep the texture tileable.
+        const H = new Float32Array(size * size);
+        for (let y = 0; y < size; y++) {
+            for (let x = 0; x < size; x++) {
+                const fx = x / size, fy = y / size;
+                let h = 0;
+                h += valueNoise(fx * 8,  fy * 8)  * 0.55;   // drifts
+                h += valueNoise(fx * 24, fy * 24) * 0.28;   // wind ripple
+                h += valueNoise(fx * 96, fy * 96) * 0.17;   // granular break-up
+                // Corduroy: the groomer leaves fine parallel lines down the fall line.
+                h += Math.sin(fy * Math.PI * 2 * 48) * 0.035;
+                H[y * size + x] = h;
+            }
+        }
+
+        const img = ctx.createImageData(size, size);
+        const STRENGTH = 2.6;
+        const at = (x, y) => H[((y + size) % size) * size + ((x + size) % size)];
+        for (let y = 0; y < size; y++) {
+            for (let x = 0; x < size; x++) {
+                const dx = (at(x + 1, y) - at(x - 1, y)) * STRENGTH;
+                const dy = (at(x, y + 1) - at(x, y - 1)) * STRENGTH;
+                // Normalise (-dx, -dy, 1) into tangent space, encoded 0..255.
+                const len = Math.sqrt(dx * dx + dy * dy + 1);
+                const i = (y * size + x) * 4;
+                img.data[i]     = ((-dx / len) * 0.5 + 0.5) * 255;
+                img.data[i + 1] = ((-dy / len) * 0.5 + 0.5) * 255;
+                img.data[i + 2] = ((1 / len)   * 0.5 + 0.5) * 255;
+                img.data[i + 3] = 255;
+            }
+        }
+        ctx.putImageData(img, 0, 0);
+        tex.update(false);
+        return tex;
+    }
+
     // Snow is physically based now. StandardMaterial is Blinn-Phong and cannot
     // express what actually makes snow look like snow: a rough specular response
     // to sky light, plus subsurface scattering that tints shadowed snow BLUE.
     // That blue scatter is the single most recognisable cue and Blinn-Phong has
     // no way to produce it.
     const snowMat = new BABYLON.PBRMaterial('snowMat', scene);
-    snowMat.albedoColor = new BABYLON.Color3(0.78, 0.84, 0.91); // groomed course snow — not pure white
+    snowMat.albedoColor = new BABYLON.Color3(0.70, 0.76, 0.84); // groomed course snow — not pure white
     snowMat.metallic    = 0.0;
-    snowMat.roughness   = 0.38;   // packed piste: 0.25 icy, 0.6 fresh powder
+    snowMat.roughness   = 0.46;   // packed piste, slightly rougher: scatters more, glares less
+
+    // Surface detail. Tiled small so the grain stays fine at the camera's
+    // typical distance rather than reading as large lumps.
+    try {
+        const _snowN = _makeSnowNormalMap(scene, 512);
+        if (_snowN) {
+            _snowN.uScale = 14;
+            _snowN.vScale = 14;
+            snowMat.bumpTexture = _snowN;
+            // Babylon's tangent-space convention differs per axis; inverting Y
+            // keeps lit slopes reading convex rather than hollow.
+            snowMat.invertNormalMapY = true;
+            if (snowMat.bumpTexture) snowMat.bumpTexture.level = 0.85;
+        }
+    } catch (e) { /* renderer still fine without it */ }
 
     // Subsurface: light entering the snow, scattering, and leaving blue-shifted.
     if (snowMat.subSurface) {
@@ -2291,6 +2402,16 @@ function _startGame() {
     // Positioned at the skier's eyes; orientation tracks the full body rotation
     // (including backflips and twists) so the world tumbles realistically.
     const fpCamera = new BABYLON.FreeCamera('fpCam', BABYLON.Vector3.Zero(), scene);
+    // Attach the render pipeline to the first-person camera too. It was
+    // main-camera only, so first-person received no tonemapping, no bloom and no
+    // exposure multiply — which is exactly why it rendered darker than the
+    // third-person view.
+    try {
+        if (dofPipeline && scene.postProcessRenderPipelineManager) {
+            scene.postProcessRenderPipelineManager
+                 .attachCamerasToRenderPipeline('dof', fpCamera);
+        }
+    } catch (e) { /* first-person still renders, just untonemapped */ }
     fpCamera.minZ = 0.02;
     fpCamera.maxZ = 2000;
     fpCamera.fov  = 1.40;  // ~80° — wide enough for a sense of speed
