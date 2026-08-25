@@ -855,6 +855,76 @@ function _startGame() {
     // ── Character ─────────────────────────────────────────────────────────────
     const character = buildCharacter(scene);
 
+    // ── Continuous skinned body ─────────────────────────────────────────────
+    // The athlete was always separate solids, so limbs never connected and
+    // nothing deformed — the single biggest reason the figure did not read as a
+    // person. This loads ONE continuous mesh skinned to a 10-bone armature.
+    //
+    // The trick that makes it drop in without touching the physics: each BONE is
+    // linked to the corresponding driver mesh that applyPose already moves every
+    // frame. Babylon then derives the bone transform from that node, so the
+    // simulation keeps writing to exactly what it wrote to before, and the
+    // skinned body follows. computePose, the pose tables, the ragdoll and the
+    // first-person camera are all untouched.
+    //
+    // The drivers themselves become invisible — they are still the articulation,
+    // just no longer the thing you see.
+    (function loadContinuousBody() {
+        try {
+            if (!BABYLON.SceneLoader || !BABYLON.SceneLoader.ImportMeshAsync) return;
+            BABYLON.SceneLoader.ImportMeshAsync('', 'assets/', 'athlete_body.glb', scene)
+                .then(function (res) {
+                    const skel = res.skeletons && res.skeletons[0];
+                    const bodyMesh = res.meshes.find(m =>
+                        m.name === 'athleteBody' && m.getTotalVertices && m.getTotalVertices() > 0);
+                    if (!skel || !bodyMesh) { window._bodyLinked = 0; return; }
+
+                    let linked = 0;
+                    for (const bone of skel.bones) {
+                        const driver = character.meshes[bone.name];
+                        const node = (driver && driver.mesh) ? driver.mesh : driver;
+                        if (!node) continue;
+                        // linkTransformNode makes the bone FOLLOW the node the
+                        // physics already drives, rather than the other way round.
+                        bone.linkTransformNode(node);
+                        linked++;
+                    }
+
+                    bodyMesh.parent = character.root;
+                    bodyMesh.skeleton = skel;
+                    bodyMesh.alwaysSelectAsActiveMesh = true;   // skinned bounds move a lot
+
+                    const bodyMat = makePBR('athleteBody_mat', scene);
+                    bodyMat.albedoColor = new BABYLON.Color3(0.10, 0.26, 0.72);  // race suit
+                    bodyMat.roughness   = 0.62;
+                    bodyMesh.material = bodyMat;
+
+                    // Hide the solids the body replaces. They keep articulating —
+                    // they are the drivers — they are simply no longer rendered.
+                    for (const nm of Object.keys(character.meshes)) {
+                        if (nm === 'skiL' || nm === 'skiR') continue;   // equipment stays visible
+                        const e = character.meshes[nm];
+                        const m = (e && e.mesh) ? e.mesh : e;
+                        if (m && m !== bodyMesh) m.isVisible = false;
+                    }
+                    // Detail meshes parented to the hidden solids must go too.
+                    for (const m of scene.meshes) {
+                        if (/_shoulder$|_elbow$|_knee$|_hip$|_glove$|_boot|_buckle$|^neck$|^nose$|^visor$/.test(m.name)) {
+                            m.isVisible = false;
+                        }
+                    }
+
+                    for (const m of res.meshes) {
+                        if (m !== bodyMesh && !/^ski[LR]$/.test(m.name)) {
+                            try { m.dispose(); } catch (e) {}
+                        }
+                    }
+                    window._bodyLinked = linked;
+                })
+                .catch(function () { window._bodyLinked = 0; });
+        } catch (e) { window._bodyLinked = 0; }
+    })();
+
     // ── Blender-authored geometry ───────────────────────────────────────────
     // buildCharacter() creates the primitive athlete first, then this
     // TRANSPLANTS the Blender mesh into those same objects — vertex data only,
