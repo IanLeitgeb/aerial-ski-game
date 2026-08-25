@@ -56,11 +56,15 @@ def clear_scene():
 
 
 def seg_origin(name):
-    """Local position of a segment in the untucked (reference) pose."""
-    p = POSE.get(name, {'x': 0, 'y': 0, 'dz': 0})
-    return (p.get('x', 0.0), (BASE_Z.get(name, 0.0) + p.get('dz', 0.0)), p.get('y', 0.0))
-    # NOTE: Babylon is Y-up / Z-forward, Blender is Z-up / Y-forward.
-    # Returned as Blender (x, y, z) = Babylon (x, z, y).
+    """
+    Every part is built at the ORIGIN, not at its posed position.
+
+    game.js already positions each segment every frame via computePose(); the
+    geometry only needs to be centred on its own local origin, exactly as the
+    primitives it replaces were. Baking the pose offset into the vertices would
+    double-apply it the moment the pose solver ran.
+    """
+    return (0.0, 0.0, 0.0)
 
 
 def add_capsule(name, radius, height, location, segments=32, rings=8):

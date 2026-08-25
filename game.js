@@ -775,6 +775,50 @@ function _startGame() {
 
     // ── Character ─────────────────────────────────────────────────────────────
     const character = buildCharacter(scene);
+
+    // ── Blender-authored geometry ───────────────────────────────────────────
+    // buildCharacter() creates the primitive athlete first, then this
+    // TRANSPLANTS the Blender mesh into those same objects — vertex data only,
+    // leaving every mesh reference, parent, material and name untouched.
+    //
+    // Done this way on purpose. The obvious alternative, swapping in the loaded
+    // meshes wholesale, would break everything that holds a reference to the
+    // originals: applyPose writes to them each frame, the crash ragdoll detaches
+    // them by name, the first-person camera reads character.meshes.head, and
+    // applySkierColors sets their materials. Replacing only the geometry means
+    // none of that has to change or even know.
+    //
+    // It also degrades safely: if the .glb fails to load, the primitives stay
+    // and the game is exactly what it was.
+    (function upgradeAthleteGeometry() {
+        try {
+            if (!BABYLON.SceneLoader || !BABYLON.SceneLoader.ImportMeshAsync) return;
+            BABYLON.SceneLoader.ImportMeshAsync('', 'assets/', 'athlete.glb', scene)
+                .then(function (res) {
+                    let swapped = 0;
+                    for (const src of res.meshes) {
+                        const target = character.meshes[src.name];
+                        const dst = (target && target.mesh) ? target.mesh : target;
+                        if (!dst || !src.getTotalVertices || src.getTotalVertices() === 0) continue;
+                        try {
+                            const vd = BABYLON.VertexData.ExtractFromMesh(src);
+                            vd.applyToMesh(dst, true);
+                            swapped++;
+                        } catch (e) { /* leave that segment as a primitive */ }
+                    }
+                    // The loaded originals are only a geometry donor — remove them
+                    // and their skeleton so nothing renders twice or animates.
+                    for (const m of res.meshes) { try { m.dispose(); } catch (e) {} }
+                    for (const sk of (res.skeletons || [])) { try { sk.dispose(); } catch (e) {} }
+                    for (const tn of (res.transformNodes || [])) { try { tn.dispose(); } catch (e) {} }
+                    window._athleteGeometryUpgraded = swapped;
+                })
+                .catch(function () { window._athleteGeometryUpgraded = 0; });
+        } catch (e) {
+            window._athleteGeometryUpgraded = 0;
+        }
+    })();
+
     applyPose(character.meshes, 0, 1, 1); // start fully extended, arms down
     window._characterMeshes = character.meshes;
 
