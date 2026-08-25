@@ -399,3 +399,33 @@ An unexplained duplicate still fails the gate.
 place, as Babylon does), `RotationAxis`, targeting the `Vec3` base prototype,
 delta encoding (reconstruction is inductively complete and absent/present is
 reported both ways), and determinism (seeded PRNG, virtual timers).
+
+---
+
+## NOTE-006 — DD_TABLE: `1,1,1 = 4.425` is the only 3-decimal value (pre-existing)
+
+Scanning the 164 difficulty entries for transcription artefacts:
+
+```
+0 decimal places : 21 entries
+1 decimal place  : 79 entries
+2 decimal places : 63 entries
+3 decimal places :  1 entry   ->  1,1,1 = 4.425
+```
+
+`1,1,1` (a full-full-full) is the sole three-decimal value in the table. Every
+other entry stops at two.
+
+**This is NOT a refactor defect.** All 164 entries were verified equal to
+game.js's original, entry for entry, before that copy was removed — so the value
+came across faithfully. Whatever it is, it was already there.
+
+It may still be worth a look as a game-design question: `4.425` could be a
+deliberate hand-computed value, or a slip for `4.45` / `4.25`. Only the author
+can say. Raised here rather than silently "corrected", because changing a
+difficulty value alters scoring and is not a refactor's business.
+
+The rest of the table scans clean:
+- difficulty is monotonic in twist count at every flip count (1, 2, 3 and 4 flips)
+- 15 groups share flips+twists but differ in difficulty, which is expected —
+  twist PLACEMENT across flips is part of the difficulty, not just the total.
