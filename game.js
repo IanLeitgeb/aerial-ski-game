@@ -98,6 +98,63 @@ const { lerp } = AerialEngine.math;
 const { computeI } = AerialEngine.inertia;
 
 // ── Character builder ──────────────────────────────────────────────────────
+
+// ── StandardMaterial -> PBR compatibility shim ──────────────────────────────
+// The scene had 38 StandardMaterials and one PBR. StandardMaterial is
+// Blinn-Phong: it ignores scene.environmentTexture entirely, so the image-based
+// lighting was doing nothing for 38 of 39 surfaces — the terrain, kicker, sky,
+// trees and the whole athlete were still lit by a 1990s model.
+//
+// Converting all of them by hand would mean rewriting 88 property assignments,
+// which is exactly the kind of mechanical edit that introduces silent mistakes.
+// Instead this returns a PBRMaterial that still ANSWERS to the Blinn-Phong
+// property names, mapping each onto its physical equivalent. Every existing
+// assignment keeps working unchanged.
+//
+// specularPower -> roughness uses the standard Blinn-Phong conversion
+// roughness = sqrt(2 / (power + 2)), so the hand-tuned values carry over with
+// their relative ordering intact rather than being guessed at again.
+function makePBR(name, scene) {
+    const m = new BABYLON.PBRMaterial(name, scene);
+    m.metallic  = 0.0;      // nothing in this scene is bare metal
+    m.roughness = 0.75;     // sane default; overridden by specularPower below
+
+    Object.defineProperty(m, 'diffuseColor', {
+        get() { return m.albedoColor; },
+        set(v) { m.albedoColor = v; },
+        configurable: true,
+    });
+    Object.defineProperty(m, 'diffuseTexture', {
+        get() { return m.albedoTexture; },
+        set(v) { m.albedoTexture = v; },
+        configurable: true,
+    });
+    Object.defineProperty(m, 'specularColor', {
+        get() { return m._compatSpecular || null; },
+        set(v) {
+            m._compatSpecular = v;
+            // A brighter Blinn-Phong specular meant a shinier surface. Map its
+            // luminance onto a modest reflectance rather than onto metallic —
+            // treating bright speculars as metal would turn snow into chrome.
+            if (v) {
+                const lum = (v.r + v.g + v.b) / 3;
+                m.metallicF0Factor = Math.min(1, Math.max(0, lum * 1.6));
+            }
+        },
+        configurable: true,
+    });
+    Object.defineProperty(m, 'specularPower', {
+        get() { return m._compatPower; },
+        set(p) {
+            m._compatPower = p;
+            const power = Math.max(1, p || 1);
+            m.roughness = Math.min(1, Math.max(0.04, Math.sqrt(2 / (power + 2))));
+        },
+        configurable: true,
+    });
+    return m;
+}
+
 function buildCharacter(scene) {
     // Root TransformNode sits at the whole-body center of mass.
     // The flip rotation is applied to root; all segments move with it.
@@ -179,7 +236,7 @@ function buildCharacter(scene) {
 
         mesh.parent = root;
 
-        const mat = new BABYLON.StandardMaterial(n + '_mat', scene);
+        const mat = makePBR(n + '_mat', scene);
         mat.diffuseColor  = new BABYLON.Color3(seg.color[0], seg.color[1], seg.color[2]);
         // Lycra/spandex sheen on suit panels; matte on skis
         const isSki = (n === 'skiL' || n === 'skiR');
@@ -199,7 +256,7 @@ function buildCharacter(scene) {
             }, scene);
             visor.parent = mesh;
             visor.position.set(0, 0.01, -seg.h * 0.44);
-            const vMat = new BABYLON.StandardMaterial('visor_mat', scene);
+            const vMat = makePBR('visor_mat', scene);
             vMat.diffuseColor  = new BABYLON.Color3(0.04, 0.04, 0.04);
             vMat.specularColor = new BABYLON.Color3(0.7, 0.75, 0.9);
             vMat.specularPower = 80;
@@ -213,7 +270,7 @@ function buildCharacter(scene) {
             nose.parent = mesh;
             nose.scaling.set(0.65, 0.55, 1.1);
             nose.position.set(0, -seg.h * 0.12, -seg.h * 0.45);
-            const nMat = new BABYLON.StandardMaterial('nose_mat', scene);
+            const nMat = makePBR('nose_mat', scene);
             nMat.diffuseColor  = new BABYLON.Color3(0.85, 0.72, 0.60);
             nMat.specularColor = new BABYLON.Color3(0.20, 0.15, 0.12);
             nose.material = nMat;
@@ -229,7 +286,7 @@ function buildCharacter(scene) {
             }, scene);
             neck.parent = mesh;
             neck.position.set(0, seg.h * 0.5 + 0.045, 0);
-            const nkMat = new BABYLON.StandardMaterial('neck_mat', scene);
+            const nkMat = makePBR('neck_mat', scene);
             nkMat.diffuseColor  = new BABYLON.Color3(0.85, 0.72, 0.60);
             nkMat.specularColor = new BABYLON.Color3(0.20, 0.15, 0.12);
             nkMat.specularPower = 18;
@@ -244,7 +301,7 @@ function buildCharacter(scene) {
             }, scene);
             shoulder.parent = mesh;
             shoulder.position.set(0, seg.h * 0.5, 0);
-            const sMat = new BABYLON.StandardMaterial(n + '_shoulder_mat', scene);
+            const sMat = makePBR(n + '_shoulder_mat', scene);
             sMat.diffuseColor  = new BABYLON.Color3(_CC.arms[0], _CC.arms[1], _CC.arms[2]);
             sMat.specularColor = new BABYLON.Color3(0.55, 0.20, 0.20);
             sMat.specularPower = 55;
@@ -260,7 +317,7 @@ function buildCharacter(scene) {
             elbow.scaling.set(1.0, 0.70, 1.0); // flatten slightly — elbows aren't round balls
             elbow.parent = mesh;
             elbow.position.set(0, seg.h * 0.5, 0);
-            const eMat = new BABYLON.StandardMaterial(n + '_elbow_mat', scene);
+            const eMat = makePBR(n + '_elbow_mat', scene);
             eMat.diffuseColor  = new BABYLON.Color3(_CC.arms[0], _CC.arms[1], _CC.arms[2]);
             eMat.specularColor = new BABYLON.Color3(0.55, 0.20, 0.20);
             eMat.specularPower = 55;
@@ -273,7 +330,7 @@ function buildCharacter(scene) {
             }, scene);
             hand.parent = mesh;
             hand.position.set(0, -seg.h * 0.5, 0); // default: wrist at bottom (hanging)
-            const hMat = new BABYLON.StandardMaterial(n + '_glove_mat', scene);
+            const hMat = makePBR(n + '_glove_mat', scene);
             hMat.diffuseColor  = new BABYLON.Color3(0.06, 0.06, 0.06);
             hMat.specularColor = new BABYLON.Color3(0.25, 0.25, 0.25);
             hand.material = hMat;
@@ -289,7 +346,7 @@ function buildCharacter(scene) {
             }, scene);
             hip.parent = mesh;
             hip.position.set(0, seg.h * 0.5, 0);
-            const hipMat = new BABYLON.StandardMaterial(n + '_hip_mat', scene);
+            const hipMat = makePBR(n + '_hip_mat', scene);
             hipMat.diffuseColor  = new BABYLON.Color3(0.10, 0.10, 0.10);
             hipMat.specularColor = new BABYLON.Color3(0.25, 0.25, 0.25);
             hipMat.specularPower = 35;
@@ -304,7 +361,7 @@ function buildCharacter(scene) {
             }, scene);
             knee.parent = mesh;
             knee.position.set(0, seg.h * 0.5, 0);
-            const knMat = new BABYLON.StandardMaterial(n + '_knee_mat', scene);
+            const knMat = makePBR(n + '_knee_mat', scene);
             knMat.diffuseColor  = new BABYLON.Color3(0.10, 0.10, 0.10);
             knMat.specularColor = new BABYLON.Color3(0.25, 0.25, 0.25);
             knMat.specularPower = 35;
@@ -319,7 +376,7 @@ function buildCharacter(scene) {
             }, scene);
             bootLower.parent = mesh;
             bootLower.position.set(0, -seg.h * 0.42, seg.d * 0.12);
-            const blMat = new BABYLON.StandardMaterial(n + '_bootLower_mat', scene);
+            const blMat = makePBR(n + '_bootLower_mat', scene);
             blMat.diffuseColor  = new BABYLON.Color3(0.12, 0.10, 0.09);
             blMat.specularColor = new BABYLON.Color3(0.55, 0.50, 0.45);
             blMat.specularPower = 60;
@@ -334,7 +391,7 @@ function buildCharacter(scene) {
             }, scene);
             bootCuff.parent = mesh;
             bootCuff.position.set(0, -seg.h * 0.22, 0);
-            const bcMat = new BABYLON.StandardMaterial(n + '_bootCuff_mat', scene);
+            const bcMat = makePBR(n + '_bootCuff_mat', scene);
             bcMat.diffuseColor  = new BABYLON.Color3(0.58, 0.08, 0.06);
             bcMat.specularColor = new BABYLON.Color3(0.55, 0.30, 0.28);
             bcMat.specularPower = 45;
@@ -348,7 +405,7 @@ function buildCharacter(scene) {
             }, scene);
             buckle.parent = mesh;
             buckle.position.set(0, -seg.h * 0.16, -seg.d * 0.70);
-            const buMat = new BABYLON.StandardMaterial(n + '_buckle_mat', scene);
+            const buMat = makePBR(n + '_buckle_mat', scene);
             buMat.diffuseColor  = new BABYLON.Color3(0.80, 0.78, 0.72);
             buMat.specularColor = new BABYLON.Color3(0.90, 0.88, 0.82);
             buMat.specularPower = 90;
@@ -690,7 +747,7 @@ function _startGame() {
     // Shadow generator — 1024 map, Poisson soft shadows, performance-friendly
     let shadowGen = null;
     try {
-        shadowGen = new BABYLON.ShadowGenerator(1024, sunLight);
+        shadowGen = new BABYLON.ShadowGenerator(2048, sunLight);   // was 1024 — mushy over a whole hill
         shadowGen.usePoissonSampling = true;
         shadowGen.bias = 0.0002;
     } catch(e) { shadowGen = null; }
@@ -720,6 +777,21 @@ function _startGame() {
     } catch (e) {
         scene.environmentTexture = null;   // renderer still works, just flatter
     }
+
+    // ── Ambient occlusion ───────────────────────────────────────────────────
+    // Contact darkening is the strongest cue that objects are actually TOUCHING
+    // rather than floating near each other — where the skis meet snow, where the
+    // kicker meets the table. The scene had none, which is a large part of why
+    // everything read as pasted on top of everything else.
+    try {
+        const ssao = new BABYLON.SSAO2RenderingPipeline('ssao', scene,
+            { ssaoRatio: 1.0, blurRatio: 1.0 }, [camera]);
+        ssao.samples       = 16;
+        ssao.radius        = 1.2;
+        ssao.totalStrength = 0.9;
+        ssao.expensiveBlur = true;
+        ssao.base          = 0.15;   // keep some ambient in the occluded areas
+    } catch (e) { /* SSAO is a bonus, not a requirement */ }
 
     // ── Depth of field + bloom pipeline ──────────────────────────────────────
     let dofPipeline = null;
@@ -834,20 +906,20 @@ function _startGame() {
         });
 
         // ── Gym environment ───────────────────────────────────────────────
-        const _gymFloorMat = new BABYLON.StandardMaterial('gymFloor', scene);
+        const _gymFloorMat = makePBR('gymFloor', scene);
         _gymFloorMat.diffuseColor  = new BABYLON.Color3(0.62, 0.45, 0.28); // warm wood
         _gymFloorMat.specularColor = new BABYLON.Color3(0.3, 0.25, 0.15);
         _gymFloorMat.specularPower = 40;
 
-        const _gymWallMat = new BABYLON.StandardMaterial('gymWall', scene);
+        const _gymWallMat = makePBR('gymWall', scene);
         _gymWallMat.diffuseColor  = new BABYLON.Color3(0.82, 0.80, 0.76); // off-white plaster
         _gymWallMat.specularColor = new BABYLON.Color3(0.05, 0.05, 0.05);
 
-        const _gymCeilMat = new BABYLON.StandardMaterial('gymCeil', scene);
+        const _gymCeilMat = makePBR('gymCeil', scene);
         _gymCeilMat.diffuseColor  = new BABYLON.Color3(0.88, 0.88, 0.86);
         _gymCeilMat.specularColor = new BABYLON.Color3(0.0, 0.0, 0.0);
 
-        const _gymPadMat = new BABYLON.StandardMaterial('gymPad', scene);
+        const _gymPadMat = makePBR('gymPad', scene);
         _gymPadMat.diffuseColor  = new BABYLON.Color3(0.15, 0.38, 0.72); // blue crash pad
         _gymPadMat.specularColor = new BABYLON.Color3(0.02, 0.02, 0.02);
 
@@ -917,7 +989,7 @@ function _startGame() {
         });
 
         // Overhead fluorescent light strips (emissive boxes)
-        const _lightMat = new BABYLON.StandardMaterial('gymLight', scene);
+        const _lightMat = makePBR('gymLight', scene);
         _lightMat.diffuseColor  = new BABYLON.Color3(1, 1, 0.95);
         _lightMat.emissiveColor = new BABYLON.Color3(1, 1, 0.90);
         [-6, 0, 6].forEach((lz, i) => {
@@ -1014,7 +1086,7 @@ function _startGame() {
         const SCENE_W = 20;
 
         // Ground material (short grass)
-        const groundMat = new BABYLON.StandardMaterial('matGround', scene);
+        const groundMat = makePBR('matGround', scene);
         groundMat.diffuseColor  = new BABYLON.Color3(0.42, 0.56, 0.32);
         groundMat.specularColor = new BABYLON.Color3(0.02, 0.02, 0.02);
 
@@ -1044,7 +1116,7 @@ function _startGame() {
         });
 
         // Pit walls and floor (dark concrete) — also sunk by GND_SINK so tops match ground
-        const pitMat = new BABYLON.StandardMaterial('pitMat', scene);
+        const pitMat = makePBR('pitMat', scene);
         pitMat.diffuseColor  = new BABYLON.Color3(0.28, 0.28, 0.28);
         pitMat.specularColor = new BABYLON.Color3(0.05, 0.05, 0.05);
         const pitCY = SURF_Y - GND_SINK - PIT_D / 2;
@@ -1070,7 +1142,7 @@ function _startGame() {
         pFloor.material = pitMat;
 
         // Trampoline frame rails
-        const frameMat2 = new BABYLON.StandardMaterial('matTramFrame', scene);
+        const frameMat2 = makePBR('matTramFrame', scene);
         frameMat2.diffuseColor  = new BABYLON.Color3(0.55, 0.55, 0.55);
         frameMat2.specularColor = new BABYLON.Color3(0.80, 0.80, 0.80);
         frameMat2.specularPower = 60;
@@ -1111,7 +1183,7 @@ function _startGame() {
             matTramGridMesh.position.set(0, SURF_Y, MAT_TRAM_CENTER_Z);
             matTramGridPosArr = gP.slice();
             matTramGridIdxArr = gI.slice();
-            const tSurfMat = new BABYLON.StandardMaterial('matTramSurf', scene);
+            const tSurfMat = makePBR('matTramSurf', scene);
             tSurfMat.diffuseColor    = new BABYLON.Color3(0.07, 0.07, 0.09);
             tSurfMat.backFaceCulling = false;
             matTramGridMesh.material = tSurfMat;
@@ -1123,7 +1195,7 @@ function _startGame() {
         }
 
         // Landing crash mat body
-        const matBodyMat = new BABYLON.StandardMaterial('matBody', scene);
+        const matBodyMat = makePBR('matBody', scene);
         matBodyMat.diffuseColor  = new BABYLON.Color3(0.10, 0.18, 0.65);
         matBodyMat.specularColor = new BABYLON.Color3(0.02, 0.02, 0.08);
         const matBody = BABYLON.MeshBuilder.CreateBox('matBody',
@@ -1154,7 +1226,7 @@ function _startGame() {
             matLandGridMesh.position.set(0, SURF_Y + MAT_H, MAT_LAND_CENTER_Z);
             matLandGridPosArr = gP.slice();
             matLandGridIdxArr = gI.slice();
-            const lSurfMat = new BABYLON.StandardMaterial('matLandSurf', scene);
+            const lSurfMat = makePBR('matLandSurf', scene);
             lSurfMat.diffuseColor  = new BABYLON.Color3(0.14, 0.26, 0.85);
             lSurfMat.specularColor = new BABYLON.Color3(0.05, 0.05, 0.20);
             lSurfMat.specularPower = 30;
@@ -1471,7 +1543,7 @@ function _startGame() {
     }
 
     // Kicker edge lines — top 0.8 units down each side, 1 unit inward at bottom, 0.8 inward on top-back edge
-    const cornerMat = new BABYLON.StandardMaterial('cornerMat', scene);
+    const cornerMat = makePBR('cornerMat', scene);
     cornerMat.diffuseColor  = new BABYLON.Color3(1, 0, 0);
     cornerMat.emissiveColor = new BABYLON.Color3(0.8, 0, 0);
     {
@@ -1575,9 +1647,9 @@ function _startGame() {
 
     // ── Alpine forest — grid-based placement across full mountain terrain ───────
     {
-    const tkMat = new BABYLON.StandardMaterial('trunkMat', scene);
+    const tkMat = makePBR('trunkMat', scene);
     tkMat.diffuseColor = new BABYLON.Color3(0.36, 0.22, 0.12);
-    const flMat = new BABYLON.StandardMaterial('foliageMat', scene);
+    const flMat = makePBR('foliageMat', scene);
     flMat.diffuseColor = new BABYLON.Color3(0.11, 0.31, 0.14);
 
     // Deterministic hash → float in [0, 1) from two integers
@@ -1638,13 +1710,13 @@ function _startGame() {
     // ── Mountain environment — makes the jump feel embedded in a real ski resort ──
     {
     // Natural ungroomed snow — slightly darker and less specular than the prepared course
-    const lsMat = new BABYLON.StandardMaterial('lsMat', scene);
+    const lsMat = makePBR('lsMat', scene);
     lsMat.diffuseColor  = new BABYLON.Color3(0.71, 0.78, 0.87);
     lsMat.specularColor = new BABYLON.Color3(0.09, 0.12, 0.18);
     lsMat.specularPower = 7;
 
     // Rock face — for mountain bodies below the snow line
-    const rockMat = new BABYLON.StandardMaterial('rockMat', scene);
+    const rockMat = makePBR('rockMat', scene);
     rockMat.diffuseColor  = new BABYLON.Color3(0.41, 0.37, 0.33);
     rockMat.specularColor = new BABYLON.Color3(0.04, 0.04, 0.04);
 
@@ -1762,9 +1834,9 @@ function _startGame() {
     // ── Pool dive environment ────────────────────────────────────────────────
     if (_poolDiveMode) {
         // ── Pool geometry (walls + water surface + splash texture) ──────────
-        const _pwMat = new BABYLON.StandardMaterial('poolWallMat', scene);
+        const _pwMat = makePBR('poolWallMat', scene);
         _pwMat.diffuseColor = new BABYLON.Color3(0.50, 0.55, 0.62);
-        const _pfMat = new BABYLON.StandardMaterial('poolFloorMat', scene);
+        const _pfMat = makePBR('poolFloorMat', scene);
         _pfMat.diffuseColor = new BABYLON.Color3(0.10, 0.28, 0.50);
         const _pCY = poolSurfaceY - POOL_DEPTH / 2 - POOL_WALL_T / 2;
         [   // [width, height, depth, x, y, z, material]
@@ -1804,7 +1876,7 @@ function _startGame() {
         const _wVD = new BABYLON.VertexData();
         _wVD.positions = _wPos; _wVD.indices = _wIdx; _wVD.normals = _wNorm; _wVD.uvs = _wUV;
         _wVD.applyToMesh(waterMesh, true);
-        const _wMat = new BABYLON.StandardMaterial('waterMat', scene);
+        const _wMat = makePBR('waterMat', scene);
         _wMat.diffuseColor = new BABYLON.Color3(0.07, 0.36, 0.72);
         _wMat.specularColor = new BABYLON.Color3(0.65, 0.85, 1.0);
         _wMat.specularPower = 90;
@@ -1830,7 +1902,7 @@ function _startGame() {
           _splashTex.update(); }
 
         // ── Outdoor pool deck ────────────────────────────────────────────────
-        const _deckMat = new BABYLON.StandardMaterial('deckMat', scene);
+        const _deckMat = makePBR('deckMat', scene);
         _deckMat.diffuseColor = new BABYLON.Color3(0.72, 0.72, 0.68);
         // Deck top sits at pool rim level (poolSurfaceY), NOT across the opening
         const _deckTopY = poolSurfaceY;
@@ -1854,9 +1926,9 @@ function _startGame() {
         });
 
         // ── Three separate diving towers alongside the pool ──────────────────
-        const _platMat = new BABYLON.StandardMaterial('platMat', scene);
+        const _platMat = makePBR('platMat', scene);
         _platMat.diffuseColor = new BABYLON.Color3(0.55, 0.58, 0.65);
-        const _railMat = new BABYLON.StandardMaterial('railMat', scene);
+        const _railMat = makePBR('railMat', scene);
         _railMat.diffuseColor = new BABYLON.Color3(0.85, 0.87, 0.9);
 
         PLATFORM_CONFIGS.forEach((cfg, li) => {
@@ -1882,7 +1954,7 @@ function _startGame() {
         });
 
         // Sky backdrop
-        const _skyMat = new BABYLON.StandardMaterial('skyMat', scene);
+        const _skyMat = makePBR('skyMat', scene);
         _skyMat.diffuseColor  = new BABYLON.Color3(0.42, 0.68, 0.92);
         _skyMat.emissiveColor = new BABYLON.Color3(0.42, 0.68, 0.92);
         _skyMat.backFaceCulling = false;
@@ -1989,7 +2061,7 @@ function _startGame() {
 
     if (_trampolineMode) {
         // ── Trampoline frame & deformable bed ─────────────────────────────
-        const frameMat = new BABYLON.StandardMaterial('frameMat', scene);
+        const frameMat = makePBR('frameMat', scene);
         frameMat.diffuseColor  = new BABYLON.Color3(0.55, 0.55, 0.55);
         frameMat.specularColor = new BABYLON.Color3(0.80, 0.80, 0.80);
         frameMat.specularPower = 60;
@@ -2020,7 +2092,7 @@ function _startGame() {
         tramFrameMesh = tramFrameRails[0];
 
         // ── Pit walls (inground) ──────────────────────────────────────────
-        const pitMat = new BABYLON.StandardMaterial('pitMat', scene);
+        const pitMat = makePBR('pitMat', scene);
         pitMat.diffuseColor  = new BABYLON.Color3(0.55, 0.50, 0.45);
         pitMat.specularColor = new BABYLON.Color3(0.1, 0.1, 0.1);
         const PIT_W = TRAM_GRID_W + 0.44;  // matches hole in floor (PIT_HALF*2)
@@ -2079,7 +2151,7 @@ function _startGame() {
         tramGridMesh.position.y = TRAM_GRID_REST_Y;
         tramGridPosArr = gPos.slice();
         tramGridIdxArr = gIdx.slice();
-        const gridSurfMat = new BABYLON.StandardMaterial('gridSurfMat', scene);
+        const gridSurfMat = makePBR('gridSurfMat', scene);
         gridSurfMat.diffuseColor    = new BABYLON.Color3(0.07, 0.07, 0.09);
         gridSurfMat.backFaceCulling = false;
         tramGridMesh.material = gridSurfMat;
