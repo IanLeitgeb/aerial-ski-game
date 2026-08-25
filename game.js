@@ -660,39 +660,17 @@ function _startGame() {
     camera.inertia          = 0;             // no drift after mouse release
     camera.lowerBetaLimit   = 0.05;          // prevent flipping under the scene
     camera.upperBetaLimit   = Math.PI - 0.05;
-    // ── Long lens instead of orthographic ───────────────────────────────────
-    // This camera used to be ORTHOGRAPHIC. That is fine for Blinn-Phong, but it
-    // breaks physically based shading: an orthographic projection has ONE view
-    // direction for the entire frame, so specular response and image-based
-    // reflections cannot vary across the image. Everything renders uniformly
-    // lit and flat — which is exactly why the first-person view (a perspective
-    // FreeCamera) looked better once PBR and IBL went in.
-    //
-    // Rather than switch to a normal wide perspective and lose the flat,
-    // readable ski-game framing, this uses a LONG LENS: a narrow field of view
-    // with the camera pulled back to match. Framing at the athlete's distance is
-    // near-identical to the old orthographic view, but the projection is now a
-    // true perspective, so view-dependent shading works.
-    //
-    // d = halfH / tan(fov/2) keeps the visible height the same as orthoTop 3.0.
-    const CAM_FOV      = 0.3400;     // ~19.5 degrees — a long lens
-    const CAM_DISTANCE = 17.4767;     // derived, do not set independently
-    camera.mode   = BABYLON.Camera.PERSPECTIVE_CAMERA;
-    camera.fov    = CAM_FOV;
-    camera.radius = CAM_DISTANCE;
-    camera.lowerRadiusLimit = CAM_DISTANCE;   // zoom stays locked as before
-    camera.upperRadiusLimit = CAM_DISTANCE;
-    camera.minZ   = 0.5;
-    camera.maxZ   = 400;
+    camera.lowerRadiusLimit = 10;            // lock zoom — meaningless in ortho
+    camera.upperRadiusLimit = 10;
+    camera.mode = BABYLON.Camera.ORTHOGRAPHIC_CAMERA;
 
-    // Kept so the framing stays correct on resize. With a perspective camera the
-    // vertical FOV is fixed and the aspect ratio handles width, so this only
-    // needs to re-derive the distance if the target height ever changes.
     function setOrtho(halfH = 3.0) {
-        const d = halfH / Math.tan(camera.fov / 2);
-        camera.radius = d;
-        camera.lowerRadiusLimit = d;
-        camera.upperRadiusLimit = d;
+        const w = engine.getRenderWidth();
+        const h = engine.getRenderHeight();
+        camera.orthoTop    =  halfH;
+        camera.orthoBottom = -halfH;
+        camera.orthoLeft   = -halfH * (w / h);
+        camera.orthoRight  =  halfH * (w / h);
     }
     setOrtho();
     window.addEventListener('resize', () => { engine.resize(); setOrtho(3.0); });
