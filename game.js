@@ -1059,6 +1059,25 @@ function _startGame() {
                         part.alwaysSelectAsActiveMesh = true;
                     }
 
+                    // Register the body as a shadow caster HERE, not in the
+                    // caster block at the end of startup.
+                    //
+                    // That block runs synchronously; this glb resolves later, so
+                    // the body never reached the list. What did reach it were the
+                    // driver solids — which this loader then hides, and Babylon
+                    // skips invisible meshes when rendering the shadow map. The
+                    // net effect was an athlete that cast no shadow at all beyond
+                    // its skis, and it read as "the shadows are weak" rather than
+                    // as a missing caster. The drivers stay in the list on purpose:
+                    // if this load ever fails they remain visible and are once
+                    // again the thing that should cast.
+                    if (shadowGen) {
+                        const rl = shadowGen.getShadowMap() && shadowGen.getShadowMap().renderList;
+                        for (const part of bodyParts) {
+                            if (!rl || rl.indexOf(part) === -1) shadowGen.addShadowCaster(part);
+                        }
+                    }
+
                     // The body exports with two material slots — suit and helmet —
                     // so Babylon receives two submeshes. Shading them differently is
                     // most of what makes the head legible at distance; as one blue

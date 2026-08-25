@@ -241,6 +241,18 @@ test('the suit design lands on the right part of the body', async ({ page }) => 
         };
     });
 
+    // Pin the convention this test's sampling depends on. The athlete's UVs come
+    // through the glTF exporter, which rewrites them to glTF's top-left origin, so
+    // its maps must be built with invertY = false — the opposite of the terrain
+    // maps, whose uv2 comes from a sidecar in Blender convention.
+    const inv = await page.evaluate(() => {
+        const scene = BABYLON.EngineStore.LastCreatedScene;
+        const m = scene.materials.find(x => x.name === 'athleteBody_mat');
+        return m && m.albedoTexture ? m.albedoTexture.invertY : null;
+    });
+    expect(inv, 'the athlete albedo must be built with invertY = false to match ' +
+        'the glTF UV convention').toBe(false);
+
     const where = ` (bounds ${JSON.stringify(s.bounds)}, atlas ${s.tex.join('x')})`;
     expect(s.head && s.head.n, 'no triangles found on the head' + where).toBeGreaterThan(20);
     expect(s.leg && s.leg.n, 'no triangles found on the outboard side of a leg' + where)

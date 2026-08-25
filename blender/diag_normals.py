@@ -12,8 +12,11 @@ SIGNED VOLUME is unambiguous. For a closed mesh, sum(v0 . (v1 x v2)) / 6 over it
 triangles is positive when the normals point outward and negative when they point
 inward, regardless of orientation, tilt or shape.
 
-    ~/opt/blender-5.2.1-linux-x64/blender -b --factory-startup \
-        --python blender/diag_normals.py
+Plain Python — no bpy. The question is about the numbers in terrain.json and the
+conversion applied to them, so there is nothing for Blender to do, and running it
+without a 400 MB launch makes it cheap enough to reach for.
+
+    python3 blender/diag_normals.py
 """
 
 import json

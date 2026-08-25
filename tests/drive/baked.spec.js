@@ -55,6 +55,7 @@ test('the baked maps reach the terrain, with uv2 and the right slots', async ({ 
                     url: mat.ambientTexture.name,
                     coords: mat.ambientTexture.coordinatesIndex,
                     gamma: mat.ambientTexture.gammaSpace,
+                    invertY: mat.ambientTexture.invertY,
                 } : null,
                 lightmap: mat && mat.lightmapTexture ? {
                     url: mat.lightmapTexture.name,
@@ -83,6 +84,18 @@ test('the baked maps reach the terrain, with uv2 and the right slots', async ({ 
         expect(m.ambient.gamma, `sky-visibility map is being sRGB-decoded; it is ` +
             `data, not colour`).toBe(false);
 
+        // invertY TRUE here, and FALSE on the athlete's maps — the two are not
+        // inconsistent, they travel by different routes. The terrain's uv2 comes
+        // from the sidecar in Blender's own convention (v = 0 at the bottom of the
+        // image), which is what Babylon's default invertY already matches. The
+        // athlete's UVs come through the glTF exporter, which rewrites them to
+        // glTF's top-left origin, so its maps need the opposite. Getting either
+        // backwards samples the vertical mirror of every island while every other
+        // check still passes — which is exactly what happened to the athlete.
+        expect(m.ambient.invertY, 'the terrain maps must keep Babylon\'s default ' +
+            'invertY: their uv2 comes from the sidecar in Blender convention, not ' +
+            'through the glTF exporter').toBe(true);
+
         expect(m.lightmap, `"${n}" has no sun-shadow map`).not.toBeNull();
         expect(m.lightmap.coords).toBe(1);
         expect(m.lightmap.gamma).toBe(false);
@@ -93,16 +106,46 @@ test('the baked maps reach the terrain, with uv2 and the right slots', async ({ 
     expect(errors, 'errors or missing assets while applying the bake').toEqual([]);
 });
 
-test('only the athlete casts a real-time shadow', async ({ page }) => {
+test('only the athlete casts a real-time shadow, and it is the VISIBLE athlete', async ({ page }) => {
     // The static shadows are baked, so the runtime map no longer has to span the
-    // trees and the background peaks. If this regresses, the athlete's own shadow
+    // trees and the background peaks. If that regresses, the athlete's own shadow
     // gets a few texels of a several-hundred-metre frustum and turns to mush —
     // which reads as "shadows look bad" rather than as a caster-list problem.
+    //
+    // The second half of this is the part that was actually broken. Babylon skips
+    // meshes with isVisible === false when rendering the shadow map, and the
+    // caster list was built synchronously at startup — so it collected the driver
+    // solids, which the body loader then HIDES, while the skinned body that
+    // replaced them arrived too late to be added. Counting casters looked
+    // perfectly healthy; not one of them could cast.
     await boot(page);
-    const n = await page.evaluate(() => window._shadowCasters);
-    expect(n, 'shadow caster list was not restricted').toBeGreaterThan(0);
-    expect(n, `${n} shadow casters — the whole scene is still in the map`)
-        .toBeLessThan(40);
+    await page.waitForFunction(() => window._bodyLinked !== undefined,
+        null, { timeout: 30_000 });
+
+    const r = await page.evaluate(() => {
+        const scene = BABYLON.EngineStore.LastCreatedScene;
+        const light = scene.lights.find(l => l.getShadowGenerator && l.getShadowGenerator());
+        const sg = light ? light.getShadowGenerator() : null;
+        const map = sg && sg.getShadowMap ? sg.getShadowMap() : null;
+        const list = (map && map.renderList) || [];
+        const visible = list.filter(m => m.isVisible && m.getTotalVertices() > 0);
+        return {
+            declared: window._shadowCasters,
+            total: list.length,
+            visible: visible.length,
+            visibleNames: visible.map(m => m.name),
+            bodyCasting: list.filter(m => m.name && m.name.startsWith('athleteBody')).length,
+        };
+    });
+
+    expect(r.declared, 'shadow caster list was not restricted').toBeGreaterThan(0);
+    expect(r.total, `${r.total} shadow casters — the whole scene is still in the map`)
+        .toBeLessThan(60);
+    expect(r.bodyCasting, 'the skinned body is not a shadow caster — it loads after ' +
+        'the caster list is built, so it has to register itself').toBeGreaterThan(0);
+    expect(r.visible.valueOf(), `nothing in the caster list is visible ` +
+        `(${r.total} entries) — Babylon renders no shadow for a hidden mesh, so ` +
+        `the athlete casts nothing`).toBeGreaterThan(0);
 });
 
 test('every mesh using a baked material actually has uv2', async ({ page }) => {

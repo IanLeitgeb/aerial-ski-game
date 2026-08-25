@@ -79,11 +79,12 @@ import bpy
 import json
 import math
 import os
-import struct
 import sys
-import zlib
 
-import numpy as np
+HERE_BOOT = os.path.dirname(os.path.abspath(__file__))
+if HERE_BOOT not in sys.path:
+    sys.path.append(HERE_BOOT)
+import bakeutil                                              # noqa: E402
 
 argv = sys.argv[sys.argv.index('--') + 1:] if '--' in sys.argv else []
 
@@ -440,72 +441,20 @@ def configure_cycles():
     return used
 
 
-def write_png(path, rgb8, w, h):
-    """
-    Write an 8-bit RGB PNG without going through Blender's image saver.
-
-    Saving through bpy applies whatever view transform and colour management the
-    scene happens to have, which for BAKED DATA is a silent corruption: AgX would
-    tone-map the values before they ever reached the file. Encoding here means the
-    bytes in the file are exactly the bytes computed below.
-    """
-    raw = bytearray()
-    stride = w * 3
-    for y in range(h):
-        raw.append(0)                                   # filter type 0 (None)
-        raw += rgb8[y * stride:(y + 1) * stride]
-
-    def chunk(tag, data):
-        return (struct.pack('>I', len(data)) + tag + data
-                + struct.pack('>I', zlib.crc32(tag + data) & 0xFFFFFFFF))
-
-    png = (b'\x89PNG\r\n\x1a\n'
-           + chunk(b'IHDR', struct.pack('>IIBBBBB', w, h, 8, 2, 0, 0, 0))
-           + chunk(b'IDAT', zlib.compress(bytes(raw), 9))
-           + chunk(b'IEND', b''))
-    with open(path, 'wb') as f:
-        f.write(png)
-
-
 def encode(img, out_png, normalise):
     """
-    Normalise to 0-1 and encode to sRGB.
+    Write a baked float image to disk. See bakeutil.save_bake for the details.
 
-    Babylon treats a Texture as gamma-encoded by default, so the file must be sRGB
-    or every value comes back wrong — and wrong in the direction that crushes
-    exactly the dim detail these maps exist to carry.
+    Both baked terrain maps are 0-1 FRACTIONS — the fraction of the sky a point
+    can see, and the fraction of the sun that reaches it — so neither is
+    normalised. Normalising a fraction stretches whatever the darkest value
+    happens to be up to full brightness, which would erase exactly the contrast
+    the map exists to carry.
 
-    `normalise` divides by the 99th percentile, which for the sky-visibility pass
-    is the value on fully open, up-facing snow: that becomes 1.0 and everything
-    else becomes the fraction of the sky it can actually see. The shadow pass is
-    already a 0-1 visibility mask and must NOT be rescaled — normalising it would
-    stretch whatever the darkest shadow happens to be up to full sun.
+    They are also DATA rather than colour, so they are written linear and the game
+    sets gammaSpace = false to match.
     """
-    px = np.array(img.pixels[:], dtype=np.float32).reshape(-1, 4)
-    rgb = px[:, :3]
-
-    if normalise:
-        lit = rgb[rgb > 1e-4]
-        p99 = float(np.percentile(lit, 99.0)) if lit.size else 1.0
-        denom = max(p99, 1e-3)
-    else:
-        p99, denom = 1.0, 1.0
-
-    norm = np.clip(rgb / denom, 0.0, 1.0)
-    srgb = np.where(norm <= 0.0031308,
-                    norm * 12.92,
-                    1.055 * np.power(norm, 1.0 / 2.4) - 0.055)
-    rgb8 = (np.clip(srgb, 0, 1) * 255.0 + 0.5).astype(np.uint8)
-
-    w, h = img.size
-    # Blender's pixel buffer starts at the BOTTOM row; PNG starts at the top.
-    write_png(out_png, rgb8.reshape(h, w, 3)[::-1].tobytes(), w, h)
-
-    mean = float(norm.mean())
-    dark = float((norm.max(axis=1) < 0.5).mean())
-    log(f'{os.path.basename(out_png)}: p99={p99:.4f} mean={mean:.3f} '
-        f'below-half={dark * 100:.1f}%')
-    return {'p99': round(p99, 5), 'mean': round(mean, 4), 'belowHalf': round(dark, 4)}
+    return bakeutil.save_bake(img, out_png, srgb=False, normalise=normalise, log=log)
 
 
 def select_receivers(receivers):
