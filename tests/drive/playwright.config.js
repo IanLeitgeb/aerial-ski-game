@@ -41,7 +41,7 @@ module.exports = defineConfig({
         // canvas at ~8fps (deltaTime ~128ms), which trips that guard on EVERY
         // frame and the simulation never advances. Fewer pixels gets frame times
         // back under 100ms so the game actually runs.
-        viewport: { width: 480, height: 320 },
+        viewport: { width: 320, height: 220 },
         // WebGL in headless Chromium needs software rendering on a machine with
         // no display server. SwiftShader is slower than the GPU but correct,
         // which is what matters for a smoke test.
