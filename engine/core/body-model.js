@@ -132,6 +132,21 @@ const POSE_ARMS_UP = {
     lowerArmR: { x:  0.205, y:  0.725, rx:  0.00, rz:  0.00, dz:  0.00 },
 };
 
+// Frozen: these hang off the shared AerialEngine namespace, which every
+// discipline reads. Without this, one caller mutating a pose table would
+// silently change the athlete everywhere, with no error. Deep-frozen because the
+// values are nested objects and arrays.
+function deepFreeze(o) {
+    if (o && typeof o === 'object' && !Object.isFrozen(o)) {
+        Object.freeze(o);
+        for (const k of Object.keys(o)) deepFreeze(o[k]);
+    }
+    return o;
+}
+[SEGMENTS, BASE_Z, POSE_UNTUCKED, POSE_INRUN_TUCK, POSE_TUCKED, POSE_PIKED,
+ POSE_ARMS_FORWARD, POSE_ARMS_DROPPED, POSE_ARMS_50DEG, POSE_ARMS_T,
+ POSE_ARMS_UP].forEach(deepFreeze);
+
 const api = { SEGMENTS, BASE_Z, POSE_UNTUCKED, POSE_INRUN_TUCK, POSE_TUCKED, POSE_PIKED, POSE_ARMS_FORWARD, POSE_ARMS_DROPPED, POSE_ARMS_50DEG, POSE_ARMS_T, POSE_ARMS_UP };
 
 // Dual-mode: require() in node --test, <script> in the browser, and

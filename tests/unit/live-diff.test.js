@@ -232,3 +232,25 @@ test('the pose tables are GONE from game.js, not merely duplicated', () => {
         assert.ok(bm[t], `engine/core/body-model.js no longer exports ${t}`);
     }
 });
+
+test('body-model tables are deep-frozen', () => {
+    // Same hazard as DD_TABLE: shared via AerialEngine, so a caller mutating a
+    // pose table would change the athlete for every discipline. Deep, because
+    // the values are nested objects — a shallow freeze would still allow
+    // POSE_TUCKED.torso.y = 5.
+    const bm = require('../../engine/core/body-model.js');
+    for (const name of ['SEGMENTS', 'BASE_Z', 'POSE_UNTUCKED', 'POSE_TUCKED',
+                        'POSE_PIKED', 'POSE_ARMS_UP']) {
+        assert.ok(Object.isFrozen(bm[name]), `${name} is not frozen`);
+    }
+    const before = bm.POSE_TUCKED.torso.y;
+    try { bm.POSE_TUCKED.torso.y = 999; } catch { /* strict mode throws; fine */ }
+    assert.strictEqual(bm.POSE_TUCKED.torso.y, before,
+        'nested pose value was mutable — the freeze is shallow, not deep');
+
+    // game.js builds its render SEGMENTS with Object.assign({}, seg, {color}),
+    // which copies rather than mutates, so freezing the source cannot break it.
+    const derived = bm.SEGMENTS.map(s => Object.assign({}, s, { color: [0, 0, 0] }));
+    assert.strictEqual(derived[0].color.length, 3, 'deriving from frozen segments must still work');
+    assert.strictEqual(bm.SEGMENTS[0].color, undefined, 'the source must stay colour-free');
+});

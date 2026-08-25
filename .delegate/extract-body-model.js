@@ -1,4 +1,13 @@
 'use strict';
+// HISTORICAL — this no longer runs. It parsed the constants out of game.js, and
+// game.js no longer defines them: it now derives SEGMENTS from the engine and
+// the pose tables were deleted once computePose was wired. engine/core/
+// body-model.js is the source of truth from here.
+//
+// Kept as the record of HOW those values got extracted (mechanically, not
+// transcribed) and as the recipe if they ever need re-deriving from an old
+// revision via `git show <rev>:game.js`.
+//
 // Mechanically extract the body-model constants from game.js into a pure module.
 //
 // Deliberately NOT delegated to a subagent: this is ~100 lines of hand-tuned

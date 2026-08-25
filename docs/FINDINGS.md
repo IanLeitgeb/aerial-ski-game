@@ -429,3 +429,71 @@ The rest of the table scans clean:
 - difficulty is monotonic in twist count at every flip count (1, 2, 3 and 4 flips)
 - 15 groups share flips+twists but differ in difficulty, which is expected —
   twist PLACEMENT across flips is part of the difficulty, not just the total.
+
+---
+
+## REVIEW-003 — Adversarial review of the completed extraction (2026-08-24)
+
+The first attempt was given twelve files and exhausted its turn reading them
+without emitting a summary — "the review ran" and "the review reported" are not
+the same thing. Split into two narrower reviews that could answer within a turn.
+
+### Wiring review — nothing found on all three axes
+
+Verified: every load-time `AerialEngine.<ns>` read resolves to a namespace
+registered by a module EARLIER in the load order; the three module lists
+(`index.html`, `tests/test.html`, `ENGINE_MODULES`) agree element-for-element
+**including order**; and no registration/read namespace mismatch exists.
+
+It raised one caveat it could not check: if the harness sandbox provided
+`module`/`require`, every module would take the CommonJS branch, never register
+on `AerialEngine`, and every later read would throw. Checked directly:
+
+```
+typeof module in vm  : undefined
+typeof require in vm : undefined
+AerialEngine namespaces: math,bodyModel,pose,inertia,power,rotation,tricks,landing,aerialSki
+```
+
+Cleared.
+
+### Purity review — one real fix, several assessed and dismissed
+
+**FIXED — shared mutable state.** `tricks.js` exported the live `DD_TABLE`, and
+`body-model.js` the live pose tables. Both hang off the shared `AerialEngine`
+namespace every discipline reads, so a single caller doing
+`DD_TABLE['2,2,2'] = 9` would silently rewrite scoring everywhere, with no error.
+Nothing mutates them today — a latent hazard, not an active bug — but freezing
+removes it rather than relying on caller discipline. `body-model` is DEEP-frozen,
+since a shallow freeze would still permit `POSE_TUCKED.torso.y = 5`. Pinned by
+tests that attempt the mutation and assert it fails.
+
+Safe because `game.js` derives its render segments with
+`Object.assign({}, seg, {color})`, which copies rather than mutates. Asserted.
+
+**NOT A DEFECT — `calcDD` falls through to the FORMULA, not the default table,
+when an injected table lacks the key.** The reviewer flagged this as a semantic
+choice to verify. It is intentional and specified: a discipline supplying its own
+scoring must not silently inherit aerial-ski difficulty values. Already covered
+by a test using a probe key where table and formula diverge (`[0]`: table 1.7 vs
+formula 1.9), because the obvious probe `[2,2]` cannot discriminate — both paths
+give 4.0 there.
+
+**NOT A REGRESSION — `isFeetDown` and `executionScore` disagree at exactly
+`norm === LAND_TOL`.** `isFeetDown` uses strict `<`, so the boundary is not
+feet-down; `executionScore` uses `<=`, so it awards maximum forward lean. Both
+faithfully reproduce the original, which had the same property, and the two are
+never both consulted at that value in practice — `executionScore` is only reached
+inside the landed branch. Recorded rather than "fixed", because changing either
+comparison would alter landing behaviour.
+
+**LATENT, NOT ACTED ON — NaN/Infinity paths on public entry points.**
+`flipSpeedMultiplier(undefined)`, `executionScore(a, 0)` and
+`angularVelocity(L, 0)` each produce `NaN` or `Infinity`. All are reachable only
+by a caller passing a value no current caller passes; `computeI` clamps with
+`Math.max(I, 0.5)` so `I = 0` cannot arise from it. Adding `|| 0` guards would
+silently mask a caller bug rather than surface it, and would be a behaviour
+change with no failing case to justify it. Left alone deliberately.
+
+**LATENT — `integrateFlip` with `flipDir: 0` freezes the angle, `undefined`
+gives NaN.** Same reasoning: no caller does this.

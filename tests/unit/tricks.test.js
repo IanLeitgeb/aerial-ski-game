@@ -136,3 +136,16 @@ test('game.js no longer defines its own DD_TABLE, matchTrick or calcDD', () => {
     assert.ok(/AerialEngine\.tricks/.test(GAME),
         'game.js does not reference AerialEngine.tricks — removed but never wired');
 });
+
+test('DD_TABLE is frozen against mutation by any caller', () => {
+    // It hangs off the shared AerialEngine namespace, so an unfrozen table would
+    // let one caller silently rewrite scoring for every other caller in every
+    // discipline, with no error. Flagged by adversarial review as a latent
+    // hazard (nothing mutates it today) and closed by freezing.
+    assert.ok(Object.isFrozen(mod.DD_TABLE), 'DD_TABLE must be frozen');
+    const before = mod.DD_TABLE['2,2,2'];
+    try { mod.DD_TABLE['2,2,2'] = 99; } catch { /* strict mode throws; fine */ }
+    try { delete mod.DD_TABLE['0']; } catch { /* fine */ }
+    assert.strictEqual(mod.DD_TABLE['2,2,2'], before, 'a write got through');
+    assert.strictEqual(mod.DD_TABLE['0'], 1.7, 'a delete got through');
+});

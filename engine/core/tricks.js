@@ -107,6 +107,12 @@
         return Math.round((1.4 + flips * 0.5 + twists * 0.4) * 1000) / 1000;
     }
 
+// Frozen: DD_TABLE hangs off the shared AerialEngine namespace, so without this
+// any caller could do `DD_TABLE['2,2,2'] = 9` and silently change scoring for
+// every other caller, in every discipline, with no error. Nothing mutates it
+// today; freezing removes the hazard rather than relying on caller discipline.
+Object.freeze(DD_TABLE);
+
 const api = { DD_TABLE: DD_TABLE, matchTrick: matchTrick, calcDD: calcDD };
 
 if (typeof module !== 'undefined' && module.exports) {
