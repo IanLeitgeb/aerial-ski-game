@@ -784,6 +784,29 @@ function _startGame() {
         scene.environmentTexture = null;   // renderer still works, just flatter
     }
 
+    // ── Baked global illumination ───────────────────────────────────────────
+    // This is the thing Blender uniquely provides here. WebGL2 has no real-time
+    // GI: the scene is lit by one sun plus an ambient term with ZERO bounce,
+    // which is why snow in shadow renders dark grey when in reality it stays
+    // bright — snow is enormously reflective and throws light back up into
+    // every shaded face.
+    //
+    // assets/lightmap.png is baked by blender/bake_lightmap.py with Cycles on
+    // OptiX, from geometry extracted out of this very scene, and carries
+    // multi-bounce indirect light at zero runtime cost.
+    //
+    // Applied as an ambient contribution rather than through lightmapTexture +
+    // uv2: the procedurally generated terrain has no second UV channel, and
+    // adding one would mean replacing the terrain with baked geometry. This
+    // gives most of the benefit — bounce fill in the shaded areas — without
+    // that surgery. Using the baked map properly via uv2 is the next step.
+    let _lightmapTex = null;
+    try {
+        _lightmapTex = new BABYLON.Texture('assets/lightmap.png', scene);
+        _lightmapTex.coordinatesIndex = 0;
+        _lightmapTex.level = 0.85;
+    } catch (e) { _lightmapTex = null; }
+
     // ── Surface texturing ───────────────────────────────────────────────────
     // Every material was a flat colour, which is the most reliable "this is a
     // game" signal there is: real surfaces vary, and it is the VARIATION the eye
@@ -923,8 +946,15 @@ function _startGame() {
             BABYLON.SceneLoader.ImportMeshAsync('', 'assets/', 'athlete_body.glb', scene)
                 .then(function (res) {
                     const skel = res.skeletons && res.skeletons[0];
-                    const bodyMesh = res.meshes.find(m =>
-                        m.name === 'athleteBody' && m.getTotalVertices && m.getTotalVertices() > 0);
+                    // glTF has no multi-material primitive: Blender's two material
+                    // slots export as SEPARATE primitives, named
+                    // athleteBody_primitive0 (suit) and _primitive1 (helmet).
+                    // Matching the exact name 'athleteBody' therefore found
+                    // nothing and silently linked zero bones.
+                    const bodyParts = res.meshes.filter(m =>
+                        m.name && m.name.startsWith('athleteBody') &&
+                        m.getTotalVertices && m.getTotalVertices() > 0);
+                    const bodyMesh = bodyParts[0];
                     if (!skel || !bodyMesh) { window._bodyLinked = 0; return; }
 
                     let linked = 0;
@@ -938,14 +968,39 @@ function _startGame() {
                         linked++;
                     }
 
-                    bodyMesh.parent = character.root;
-                    bodyMesh.skeleton = skel;
-                    bodyMesh.alwaysSelectAsActiveMesh = true;   // skinned bounds move a lot
+                    // Every primitive needs the parent, skeleton and the
+                    // always-active flag — skinned bounds move far enough that
+                    // frustum culling drops them mid-flip otherwise.
+                    for (const part of bodyParts) {
+                        part.parent = character.root;
+                        part.skeleton = skel;
+                        part.alwaysSelectAsActiveMesh = true;
+                    }
+
+                    // The body exports with two material slots — suit and helmet —
+                    // so Babylon receives two submeshes. Shading them differently is
+                    // most of what makes the head legible at distance; as one blue
+                    // mass the figure had no read at the top at all.
+                    const helmetMat = makePBR('athleteHelmet_mat', scene);
+                    helmetMat.albedoColor = new BABYLON.Color3(0.05, 0.05, 0.06);
+                    helmetMat.metallic  = 0.0;
+                    helmetMat.roughness = 0.30;      // moulded shell, slight sheen
+                    if (helmetMat.clearCoat) {
+                        helmetMat.clearCoat.isEnabled = true;
+                        helmetMat.clearCoat.intensity = 0.55;
+                        helmetMat.clearCoat.roughness = 0.18;
+                    }
 
                     const bodyMat = makePBR('athleteBody_mat', scene);
-                    bodyMat.albedoColor = new BABYLON.Color3(0.10, 0.26, 0.72);  // race suit
+                    bodyMat.albedoColor = new BABYLON.Color3(0.22, 0.42, 0.88);  // race suit — lighter than
+                    // navy so the form reads; a dark suit under this ambient level
+                    // renders as a flat silhouette with no visible shading
                     bodyMat.roughness   = 0.62;
-                    bodyMesh.material = bodyMat;
+                    // primitive0 is material slot 0 (suit), primitive1 is slot 1
+                    // (helmet), in Blender's slot order.
+                    for (const part of bodyParts) {
+                        part.material = /primitive1$/.test(part.name) ? helmetMat : bodyMat;
+                    }
 
                     // Hide the solids the body replaces. They keep articulating —
                     // they are the drivers — they are simply no longer rendered.
@@ -953,7 +1008,7 @@ function _startGame() {
                         if (nm === 'skiL' || nm === 'skiR') continue;   // equipment stays visible
                         const e = character.meshes[nm];
                         const m = (e && e.mesh) ? e.mesh : e;
-                        if (m && m !== bodyMesh) m.isVisible = false;
+                        if (m && !bodyParts.includes(m)) m.isVisible = false;
                     }
                     // Detail meshes parented to the hidden solids must go too.
                     for (const m of scene.meshes) {
@@ -963,7 +1018,7 @@ function _startGame() {
                     }
 
                     for (const m of res.meshes) {
-                        if (m !== bodyMesh && !/^ski[LR]$/.test(m.name)) {
+                        if (!bodyParts.includes(m) && !/^ski[LR]$/.test(m.name)) {
                             try { m.dispose(); } catch (e) {}
                         }
                     }

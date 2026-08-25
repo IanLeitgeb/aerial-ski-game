@@ -98,28 +98,49 @@ def build_metaball_body():
     bpy.context.collection.objects.link(obj)
 
     def strand(name, count, radius_scale=1.0, stiffness=2.0):
+        """
+        Place metaball elements along a segment's axis.
+
+        A metaball's isosurface sits WELL INSIDE its stated radius — the field
+        falls below threshold before reaching it. Measuring showed the torso
+        coming out ~0.18 across where the segment is 0.30x0.28, i.e. everything
+        was roughly 40% too thin and the figure read as a cardboard cutout.
+        RADIUS_COMPENSATION corrects for that shrinkage.
+
+        (Blender's ELLIPSOID element type was tried first, to control depth
+        separately; its size_x/y/z are expansion BEYOND the radius rather than
+        the radius itself, which produced a 58-vertex speck. Spheres with honest
+        radii are the simpler correct answer, since these segments are close to
+        round anyway.)
+        """
+        # Calibrated, not guessed. Measuring the built mesh against the stated
+        # radii showed the isosurface lands at ~0.72x the radius, so a segment
+        # whose real half-width is W needs radius W/0.72 = 1.39*W. At 1.75 the
+        # torso was 25% too wide and swallowed the arms, which is why the figure
+        # kept reading as a blob with a bulge rather than a body with limbs.
+        RADIUS_COMPENSATION = 1.40
         seg = SEGMENTS[name]
         cx, cy, cz = bl(name)
         half = seg['h'] / 2
-        r = (seg['w'] + seg['d']) / 4 * radius_scale
+        r = (seg['w'] + seg['d']) / 4 * radius_scale * RADIUS_COMPENSATION
         for i in range(count):
-            t = (i / max(1, count - 1)) * 2 - 1        # -1 .. 1 along the segment
+            t = (i / max(1, count - 1)) * 2 - 1
             el = mball.elements.new()
             el.co = (cx, cy, cz + t * half * 0.9)
             el.radius = r
             el.stiffness = stiffness
 
     # Torso: fuller at the chest, tapering to the hips.
-    strand('torso', 9, radius_scale=0.92, stiffness=2.6)
+    strand('torso', 11, radius_scale=1.00, stiffness=2.0)
     # Neck/head. A slightly smaller radius keeps the helmet from swallowing the
     # shoulders.
-    strand('head', 4, radius_scale=0.95, stiffness=2.6)
+    strand('head', 5, radius_scale=1.10, stiffness=2.4)
 
     for side in ('L', 'R'):
-        strand(f'upperArm{side}', 9, radius_scale=1.25, stiffness=3.0)
-        strand(f'lowerArm{side}', 9, radius_scale=1.15, stiffness=3.0)
-        strand(f'upperLeg{side}', 9, radius_scale=1.00, stiffness=2.8)
-        strand(f'lowerLeg{side}', 9, radius_scale=0.92, stiffness=2.8)
+        strand(f'upperArm{side}', 11, radius_scale=1.00, stiffness=1.9)
+        strand(f'lowerArm{side}', 11, radius_scale=0.92, stiffness=1.9)
+        strand(f'upperLeg{side}', 11, radius_scale=0.66, stiffness=1.5)
+        strand(f'lowerLeg{side}', 11, radius_scale=0.62, stiffness=1.5)
 
     log(f'{len(mball.elements)} metaball elements placed')
 
@@ -140,6 +161,24 @@ def build_metaball_body():
     xs = [v.co.x for v in body.data.vertices]
     ys = [v.co.y for v in body.data.vertices]
     zs = [v.co.z for v in body.data.vertices]
+    # Two material slots: suit (0) and helmet (1). Faces above the neck line get
+    # slot 1, so Babylon receives two submeshes and can shade them differently.
+    suit = bpy.data.materials.new('suitMat')
+    helmet = bpy.data.materials.new('helmetMat')
+    body.data.materials.append(suit)
+    body.data.materials.append(helmet)
+
+    head_seg = SEGMENTS['head']
+    hx, hy, hz = bl('head')
+    neck_z = hz - head_seg['h'] / 2 * 0.85
+    n_head = 0
+    for poly in body.data.polygons:
+        cz = sum(body.data.vertices[v].co.z for v in poly.vertices) / len(poly.vertices)
+        if cz >= neck_z:
+            poly.material_index = 1
+            n_head += 1
+    log(f'material split: {n_head} helmet faces above z={neck_z:.3f}')
+
     log(f'body mesh: {len(body.data.vertices)} verts, {len(body.data.polygons)} faces')
     log(f'blender bbox: x={min(xs):.3f}..{max(xs):.3f} '
         f'y={min(ys):.3f}..{max(ys):.3f} z={min(zs):.3f}..{max(zs):.3f}')

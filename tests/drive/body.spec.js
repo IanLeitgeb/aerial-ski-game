@@ -31,12 +31,17 @@ test('the continuous body loads and every bone is linked to its driver', async (
 
     const info = await page.evaluate((bones) => {
         const scene = BABYLON.EngineStore.LastCreatedScene;
-        const body = scene.meshes.find(m => m.name === 'athleteBody');
+        // The body exports as one primitive PER MATERIAL SLOT — glTF has no
+        // multi-material primitive — so it arrives as athleteBody_primitive0
+        // (suit) and _primitive1 (helmet), not as a single 'athleteBody'.
+        const parts = scene.meshes.filter(m => m.name && m.name.startsWith('athleteBody'));
+        const body = parts[0];
         const skel = body ? body.skeleton : null;
         return {
             linked: window._bodyLinked,
-            hasBody: !!body,
-            verts: body ? body.getTotalVertices() : 0,
+            hasBody: parts.length > 0,
+            parts: parts.length,
+            verts: parts.reduce((n, p) => n + p.getTotalVertices(), 0),
             hasSkeleton: !!skel,
             boneNames: skel ? skel.bones.map(b => b.name) : [],
             linkedNames: skel
@@ -46,7 +51,8 @@ test('the continuous body loads and every bone is linked to its driver', async (
         };
     }, BODY_BONES);
 
-    expect(info.hasBody, 'athleteBody mesh not in the scene').toBe(true);
+    expect(info.hasBody, 'no athleteBody primitives in the scene').toBe(true);
+    expect(info.parts, 'expected suit and helmet primitives').toBeGreaterThanOrEqual(2);
     expect(info.verts, 'body has no geometry').toBeGreaterThan(500);
     expect(info.hasSkeleton, 'body has no skeleton — it will not deform').toBe(true);
     expect(info.parent, 'body is not parented to the character root').toBe('skierRoot');
@@ -72,7 +78,10 @@ test('the solids the body replaces are hidden, and the skis are not', async ({ p
             torso: v('torso'), head: v('head'), upperArmL: v('upperArmL'),
             neck: v('neck'), visor: v('visor'),
             skiL: v('skiL'), skiR: v('skiR'),
-            body: v('athleteBody'),
+            body: (() => {
+                const p = scene.meshes.filter(x => x.name && x.name.startsWith('athleteBody'));
+                return p.length ? p.every(x => x.isVisible) : null;
+            })(),
         };
     });
 
@@ -105,7 +114,7 @@ test('the body deforms when the physics poses the athlete', async ({ page }) => 
 
     const moved = await page.evaluate(async () => {
         const scene = BABYLON.EngineStore.LastCreatedScene;
-        const body = scene.meshes.find(m => m.name === 'athleteBody');
+        const body = scene.meshes.find(m => m.name && m.name.startsWith('athleteBody'));
         const skel = body.skeleton;
         const read = () => skel.bones
             .filter(b => b.name === 'upperArmL' || b.name === 'lowerLegL')
