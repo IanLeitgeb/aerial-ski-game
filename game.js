@@ -701,7 +701,11 @@ function _startGame() {
     // ── Depth of field + bloom pipeline ──────────────────────────────────────
     let dofPipeline = null;
     try {
-        dofPipeline = new BABYLON.DefaultRenderingPipeline('dof', false, scene, [camera]);
+        // 2nd arg is `hdr`. It was false, which meant no float framebuffer: every
+        // value clamped at 1.0 before tonemapping could act on it. Snow is the
+        // worst possible subject for that — it clips to flat white and loses all
+        // form. Bloom was also computing in LDR as a result.
+        dofPipeline = new BABYLON.DefaultRenderingPipeline('dof', true, scene, [camera]);
         dofPipeline.depthOfFieldEnabled   = false;
         dofPipeline.depthOfFieldBlurLevel = BABYLON.DepthOfFieldEffectBlurLevel.Medium;
         if (dofPipeline.depthOfField) {
@@ -712,8 +716,30 @@ function _startGame() {
         // Subtle bloom — white snow and bright sky get a soft glow
         dofPipeline.bloomEnabled   = true;
         dofPipeline.bloomWeight    = 0.18;
-        dofPipeline.bloomThreshold = 0.72;
+        dofPipeline.bloomThreshold = 0.88;  // raised: HDR values exceed 1.0, so 0.72 over-blooms
         dofPipeline.bloomScale     = 0.5;
+
+        // ── Tonemapping — the reason HDR is now on ────────────────────────
+        // ACES rolls highlights off filmically instead of clipping them, which
+        // is what lets sunlit snow keep its shape instead of blowing out.
+        if (dofPipeline.imageProcessing) {
+            dofPipeline.imageProcessing.toneMappingEnabled = true;
+            dofPipeline.imageProcessing.toneMappingType =
+                BABYLON.ImageProcessingConfiguration.TONEMAPPING_ACES;
+            dofPipeline.imageProcessing.exposure = 1.25;
+            dofPipeline.imageProcessing.contrast = 1.1;
+
+            // Dithering breaks up 8-bit banding in large smooth gradients. The
+            // sky and open snow are exactly that, and with untextured flat
+            // surfaces there is no detail to hide the steps.
+            dofPipeline.imageProcessing.ditheringEnabled   = true;
+            dofPipeline.imageProcessing.ditheringIntensity = 1 / 255;
+        }
+
+        // MSAA. Thin geometry — ski edges, poles, rails — is where aliasing
+        // reads as "game", and it is the cheapest thing to fix on this GPU.
+        dofPipeline.samples     = 4;
+        dofPipeline.fxaaEnabled = false;   // redundant alongside MSAA
     } catch(e) {
         dofPipeline = null;
     }
