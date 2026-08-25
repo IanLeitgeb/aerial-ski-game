@@ -739,7 +739,8 @@ function _startGame() {
 
     // ── Lighting ─────────────────────────────────────────────────────────────
     const hemi = new BABYLON.HemisphericLight('hemi', new BABYLON.Vector3(0.4, 1, -0.8), scene);
-    hemi.intensity   = 0.45; // reduced — sun provides the primary light
+    hemi.intensity   = 0.18; // IBL now supplies the ambient fill (see environmentTexture);
+                         // leaving this at 0.45 double-counted it and blew the image out
     hemi.groundColor = new BABYLON.Color3(0.18, 0.22, 0.30); // cool shadow fill from below
 
     // Directional sun light — afternoon angle from upper-left-back
@@ -760,7 +761,7 @@ function _startGame() {
     // ── Atmospheric fog — makes distant terrain fade into the sky ──────────────
     if (!_trampolineMode) {
         scene.fogMode    = BABYLON.Scene.FOGMODE_EXP2;
-        scene.fogDensity = _poolDiveMode ? 0.006 : 0.010;
+        scene.fogDensity = _poolDiveMode ? 0.003 : 0.005;  // halved: was lifting the black floor ~29 levels
         scene.fogColor   = _poolDiveMode
             ? new BABYLON.Color3(0.50, 0.72, 0.95)
             : new BABYLON.Color3(0.68, 0.87, 0.99);
@@ -778,7 +779,7 @@ function _startGame() {
             'assets/environment.env', scene);
         // Tuned against the existing hemi+sun rig rather than replacing it: the
         // directional sun still casts the shadows, IBL supplies the ambient fill.
-        scene.environmentIntensity = 0.72;
+        scene.environmentIntensity = 0.45;
     } catch (e) {
         scene.environmentTexture = null;   // renderer still works, just flatter
     }
@@ -832,8 +833,9 @@ function _startGame() {
             dofPipeline.imageProcessing.toneMappingEnabled = true;
             dofPipeline.imageProcessing.toneMappingType =
                 BABYLON.ImageProcessingConfiguration.TONEMAPPING_ACES;
-            dofPipeline.imageProcessing.exposure = 1.18;
-            dofPipeline.imageProcessing.contrast = 1.1;
+            dofPipeline.imageProcessing.exposure = 1.0;
+            dofPipeline.imageProcessing.contrast = 1.6;   // ACES compresses hard; without this the
+                                              // histogram sits in a narrow mid band and reads as haze
 
             // Dithering breaks up 8-bit banding in large smooth gradients. The
             // sky and open snow are exactly that, and with untextured flat
