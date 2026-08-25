@@ -1,0 +1,15 @@
+{
+  "name": "aerial-ski-game",
+  "private": true,
+  "description": "Browser aerial-ski game. The SHIPPED game has no dependencies and no build step — index.html loads local files directly. Everything below is tooling for tests only and is never served to players. See docs/adr/0010-playwright-for-drive-through.md.",
+  "scripts": {
+    "test": "./tests/run-all.sh",
+    "test:unit": "node --test tests/unit/*.test.js",
+    "test:golden": "node tests/golden/verify.js",
+    "test:browser": "node tests/browser-suite.js",
+    "test:drive": "playwright test --config tests/drive/playwright.config.js"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.62.1"
+  }
+}

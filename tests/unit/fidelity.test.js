@@ -100,6 +100,30 @@ test('engine module load order is consistent across all three entry points', () 
         assert.ok(testHtml.includes(asRelative) || testHtml.includes(mod),
             `tests/test.html does not load ${mod}`);
     }
+
+    // ORDER, not just membership. Modules resolve each other at LOAD time via
+    // global.AerialEngine.<ns>, so a module loaded before its dependency reads
+    // `undefined` and throws — the whole game fails to boot. Membership-only
+    // checking would pass while the browser was broken.
+    const orderIn = (haystack) => ENGINE_MODULES
+        .map(m => ({ m, at: haystack.indexOf(m) }))
+        .filter(x => x.at >= 0)
+        .sort((a, b) => a.at - b.at)
+        .map(x => x.m);
+
+    assert.deepStrictEqual(orderIn(indexHtml), ENGINE_MODULES,
+        'index.html loads the engine modules in a DIFFERENT ORDER than the ' +
+        'harness, so the browser and the tests run different code');
+    assert.deepStrictEqual(orderIn(testHtml), ENGINE_MODULES,
+        'tests/test.html loads the engine modules in a different order than the harness');
+
+    // The reverse direction the earlier review flagged: a module listed in a page
+    // but absent from ENGINE_MODULES would load in the browser and not in the
+    // tests, so the traces would never exercise it.
+    const pageMods = [...indexHtml.matchAll(/engine\/[\w/-]+\.js/g)].map(m => m[0]);
+    const extra = [...new Set(pageMods)].filter(m => !ENGINE_MODULES.includes(m));
+    assert.deepStrictEqual(extra, [],
+        `index.html loads engine module(s) the harness does not: ${extra.join(', ')}`);
 });
 
 test('every browser-loaded engine module is browser-safe', () => {

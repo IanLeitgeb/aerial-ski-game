@@ -61,8 +61,23 @@ else
 fi
 
 echo
+echo "── Real-browser drive-through (Playwright) ──────────────────"
+# The ONLY layer that runs against real Babylon in a real browser. Skipped
+# rather than failed when Playwright is not installed, because the other four
+# layers are dependency-free by design and must stay runnable on a bare checkout.
+if [ -d node_modules/@playwright ]; then
+    if npx playwright test --config tests/drive/playwright.config.js 2>&1 | tail -3; then
+        echo "drive: PASS"
+    else
+        echo "drive: FAIL"; fail=1
+    fi
+else
+    echo "drive: SKIPPED — run 'npm install && npx playwright install chromium-headless-shell'"
+fi
+
+echo
 if [ "$fail" -eq 0 ]; then
-    echo "ALL GREEN — unit + live-diff + golden traces + browser suite"
+    echo "ALL GREEN — unit + live-diff + golden + browser + mutation + coverage + drive"
 else
     echo "SUITE RED — do not merge"
 fi
