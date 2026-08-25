@@ -31,6 +31,7 @@ const ENGINE_MODULES = [
     'engine/core/inertia.js',
     'engine/core/power.js',
     'engine/core/rotation.js',
+    'render/textures.js',
     'engine/core/tricks.js',
     'engine/core/landing.js',
     // Discipline modules load after the shared core they depend on.

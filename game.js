@@ -784,6 +784,54 @@ function _startGame() {
         scene.environmentTexture = null;   // renderer still works, just flatter
     }
 
+    // ── Surface texturing ───────────────────────────────────────────────────
+    // Every material was a flat colour, which is the most reliable "this is a
+    // game" signal there is: real surfaces vary, and it is the VARIATION the eye
+    // reads far more than the base hue.
+    //
+    // Maps are generated procedurally at runtime (engine/render/textures.js)
+    // rather than shipped: the project has no build step, a texture set for a
+    // dozen materials would be megabytes, and generated maps tile perfectly by
+    // construction with no seam authoring. They are deterministic, so the look
+    // cannot drift between sessions.
+    //
+    // Honest limitation: procedural noise cannot match a photographed or
+    // sculpt-baked texture for specificity. This covers the WHOLE scene at once,
+    // which a per-asset bake would not.
+    function _applySurfaces() {
+        const T = AerialEngine && AerialEngine.textures;
+        if (!T) return 0;
+        // material name fragment -> recipe, tiling scale, bump strength
+        const RULES = [
+            [/^snowMat$/,                 'snow',    26, 0.9],
+            [/rock/i,                     'rock',     6, 1.0],
+            [/trunk/i,                    'bark',     4, 1.0],
+            [/foliage/i,                  'foliage',  5, 0.8],
+            [/torso|Arm|Leg|athleteBody/, 'fabric',  10, 0.5],
+            [/head|helmet|visor|goggles/, 'shell',    6, 0.35],
+            [/ski[LR]_mat|matGround|land|table|pit/i, 'snow', 18, 0.6],
+        ];
+        let applied = 0;
+        for (const mat of scene.materials) {
+            if (!mat || !mat.albedoColor) continue;
+            if (mat.bumpTexture) continue;                 // already textured
+            const rule = RULES.find(r => r[0].test(mat.name));
+            if (!rule) continue;
+            const base = [mat.albedoColor.r, mat.albedoColor.g, mat.albedoColor.b];
+            const surf = T.makeSurface(BABYLON, scene, rule[1], 256, {
+                scale: rule[2], strength: rule[3] * 2.6, baseColor: base,
+            });
+            if (!surf) continue;                            // headless: no canvas
+            mat.bumpTexture = surf.normal;
+            mat.albedoTexture = surf.albedo;
+            // The albedo map already carries the hue; leaving albedoColor set
+            // would multiply it in twice and darken everything.
+            mat.albedoColor = new BABYLON.Color3(1, 1, 1);
+            applied++;
+        }
+        return applied;
+    }
+
     // ── Ambient occlusion ───────────────────────────────────────────────────
     // Contact darkening is the strongest cue that objects are actually TOUCHING
     // rather than floating near each other — where the skis meet snow, where the
@@ -1521,20 +1569,10 @@ function _startGame() {
     snowMat.metallic    = 0.0;
     snowMat.roughness   = 0.46;   // packed piste, slightly rougher: scatters more, glares less
 
-    // Surface detail. Tiled small so the grain stays fine at the camera's
-    // typical distance rather than reading as large lumps.
-    try {
-        const _snowN = _makeSnowNormalMap(scene, 512);
-        if (_snowN) {
-            _snowN.uScale = 14;
-            _snowN.vScale = 14;
-            snowMat.bumpTexture = _snowN;
-            // Babylon's tangent-space convention differs per axis; inverting Y
-            // keeps lit slopes reading convex rather than hollow.
-            snowMat.invertNormalMapY = true;
-            if (snowMat.bumpTexture) snowMat.bumpTexture.level = 0.85;
-        }
-    } catch (e) { /* renderer still fine without it */ }
+    // Snow's surface detail now comes from the general procedural texturing
+    // pass (_applySurfaces) rather than a snow-specific one-off, so it gets an
+    // albedo map as well as a normal map and shares one code path with rock,
+    // bark, foliage and fabric.
 
     // Subsurface: light entering the snow, scattering, and leaving blue-shifted.
     if (snowMat.subSurface) {
@@ -4521,6 +4559,13 @@ function _startGame() {
     }
 
     // ── Run ───────────────────────────────────────────────────────────────────
+    // Texturing runs late and once: the athlete body, goggles and terrain
+    // materials must all exist first, and several arrive asynchronously.
+    setTimeout(function () {
+        try { window._surfacesApplied = _applySurfaces(); }
+        catch (e) { window._surfacesApplied = 0; }
+    }, 1200);
+
     engine.runRenderLoop(() => scene.render());
 }
 if (document.readyState === 'loading') {

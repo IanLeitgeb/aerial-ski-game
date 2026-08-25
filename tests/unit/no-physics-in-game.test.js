@@ -30,6 +30,7 @@ const ALLOWED_FUNCTIONS = {
     applyPose:           'writes solved transforms onto meshes + IK fix-up — renderer',
     applyGamepadLateral: 'repositions arm meshes — renderer',
     _startGame:          'scene/loop orchestration — wiring, not simulation',
+    makePBR:             'material factory — a StandardMaterial->PBR compat shim, renderer',
 };
 
 test('game.js defines no top-level function outside the allowed renderer set', () => {
