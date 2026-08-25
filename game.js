@@ -717,38 +717,22 @@ function _startGame() {
     camera.inertia          = 0;             // no drift after mouse release
     camera.lowerBetaLimit   = 0.05;          // prevent flipping under the scene
     camera.upperBetaLimit   = Math.PI - 0.05;
-    // ── Telephoto, standing in for orthographic ─────────────────────────────
-    // This camera was ORTHOGRAPHIC. That is fine for Blinn-Phong but it caps
-    // physically based shading: an orthographic projection has ONE view
-    // direction for the whole frame, so specular response and image-based
-    // REFLECTIONS cannot vary across the image. Diffuse IBL still works; it is
-    // the specular that goes flat, which is why first person looked better.
-    //
-    // A previous attempt used a 19.5 degree lens and the convergence was
-    // visible — it read as a different shot. This is a much longer lens: at
-    // ~8 degrees the vertical parallax across the athlete is under a degree, so
-    // it is very close to orthographic to look at, while still being a true
-    // perspective projection so the shading works.
-    //
-    // Distance is DERIVED, never set independently:  d = halfH / tan(fov/2).
-    // Changing CAM_FOV alone keeps the framing correct.
-    const CAM_FOV      = 0.1400;      // ~8 degrees
-    const CAM_DISTANCE = 42.7871;      // derived from CAM_FOV
-    camera.mode   = BABYLON.Camera.PERSPECTIVE_CAMERA;
-    camera.fov    = CAM_FOV;
-    camera.radius = CAM_DISTANCE;
-    camera.lowerRadiusLimit = CAM_DISTANCE;   // zoom stays locked, as before
-    camera.upperRadiusLimit = CAM_DISTANCE;
-    camera.minZ   = 1.0;
-    // A long lens sits far back, so the far plane has to move out with it or the
-    // scenery behind the athlete gets clipped away.
-    camera.maxZ   = 800;
+    camera.lowerRadiusLimit = 10;            // lock zoom — meaningless in ortho
+    camera.upperRadiusLimit = 10;
+    camera.mode = BABYLON.Camera.ORTHOGRAPHIC_CAMERA;
 
+    // NOTE: this orthographic assignment is OVERRIDDEN later — game.js:2510 sets
+    // PERSPECTIVE_CAMERA with fov 0.9 unconditionally during setup, so the game
+    // has always rendered in perspective despite what this line says. Left as-is
+    // rather than "tidied", because removing it is a behaviour question for the
+    // author, not a refactor.
     function setOrtho(halfH = 3.0) {
-        const d = halfH / Math.tan(camera.fov / 2);
-        camera.radius = d;
-        camera.lowerRadiusLimit = d;
-        camera.upperRadiusLimit = d;
+        const w = engine.getRenderWidth();
+        const h = engine.getRenderHeight();
+        camera.orthoTop    =  halfH;
+        camera.orthoBottom = -halfH;
+        camera.orthoLeft   = -halfH * (w / h);
+        camera.orthoRight  =  halfH * (w / h);
     }
     setOrtho();
     window.addEventListener('resize', () => { engine.resize(); setOrtho(3.0); });
