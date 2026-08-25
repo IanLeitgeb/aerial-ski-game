@@ -225,6 +225,40 @@ function extendStub(ctx) {
     if (!B.SpotLight)  B.SpotLight  = inert('SpotLight',  { intensity: 1, diffuse: null, specular: null });
     if (!B.PointLight) B.PointLight = inert('PointLight', { intensity: 1, diffuse: null, specular: null });
 
+    // ── PBR materials ────────────────────────────────────────────────────────
+    // Provided WITH subSurface and clearCoat sub-objects on purpose. game.js
+    // guards those with `if (mat.subSurface)`, so omitting them here would make
+    // the tests silently skip a branch the real browser takes — the stub would
+    // then be testing a different code path than the one that ships.
+    if (!B.PBRMaterial) {
+        function PBRMaterial(name) {
+            this.name = name;
+            this.albedoColor = null; this.albedoTexture = null;
+            this.metallic = 1; this.roughness = 1;
+            this.emissiveColor = null; this.bumpTexture = null;
+            this.ambientTexture = null; this.lightmapTexture = null;
+            this.useLightmapAsShadowmap = false;
+            this.alpha = 1; this.backFaceCulling = true;
+            this.environmentIntensity = 1;
+            this.subSurface = {
+                isTranslucencyEnabled: false, translucencyIntensity: 0,
+                isRefractionEnabled: false, tintColor: null,
+                minimumThickness: 0, maximumThickness: 1,
+            };
+            this.clearCoat = {
+                isEnabled: false, intensity: 0, roughness: 0,
+                indexOfRefraction: 1.5,
+            };
+            this.sheen = { isEnabled: false, intensity: 0, color: null, roughness: 0 };
+            this.anisotropy = { isEnabled: false, intensity: 0, direction: null };
+            this.iridescence = { isEnabled: false, intensity: 0 };
+            this.freeze = noop; this.unfreeze = noop; this.dispose = noop;
+        }
+        B.PBRMaterial = PBRMaterial;
+    }
+    if (!B.PBRMetallicRoughnessMaterial) B.PBRMetallicRoughnessMaterial = B.PBRMaterial;
+    if (!B.OpenPBRMaterial)              B.OpenPBRMaterial              = B.PBRMaterial;
+
     // ── Textures ─────────────────────────────────────────────────────────────
     if (!B.Texture) {
         B.Texture = inert('Texture', {

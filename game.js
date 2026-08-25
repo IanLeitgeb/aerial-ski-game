@@ -112,7 +112,7 @@ function buildCharacter(scene) {
             // Sphere for the helmet
             mesh = BABYLON.MeshBuilder.CreateSphere(n, {
                 diameter: seg.h,
-                segments: 12,
+                segments: 32,
             }, scene);
         } else if (n === 'torso') {
             // Tapered cylinder — wider at shoulders, narrower at hips
@@ -120,7 +120,7 @@ function buildCharacter(scene) {
                 diameterTop:    seg.w,
                 diameterBottom: seg.w * 0.68,
                 height:         seg.h,
-                tessellation:   18,
+                tessellation:   48,
             }, scene);
         } else if (n === 'skiL' || n === 'skiR') {
             // Skis remain flat boxes
@@ -135,7 +135,7 @@ function buildCharacter(scene) {
                 diameterTop:    0.175,
                 diameterBottom: 0.115,
                 height:         seg.h,
-                tessellation:   18,
+                tessellation:   48,
             }, scene);
         } else if (n === 'lowerLegL' || n === 'lowerLegR') {
             // Calf — full at top, tapers to ankle
@@ -143,7 +143,7 @@ function buildCharacter(scene) {
                 diameterTop:    0.135,
                 diameterBottom: 0.080,
                 height:         seg.h,
-                tessellation:   18,
+                tessellation:   48,
             }, scene);
         } else if (n === 'upperArmL' || n === 'upperArmR') {
             // Upper arm — wider at shoulder, tapers to elbow
@@ -151,7 +151,7 @@ function buildCharacter(scene) {
                 diameterTop:    0.120,
                 diameterBottom: 0.090,
                 height:         seg.h,
-                tessellation:   18,
+                tessellation:   48,
             }, scene);
         } else if (n === 'lowerArmL' || n === 'lowerArmR') {
             // Forearm — wider at elbow, tapers to wrist
@@ -159,7 +159,7 @@ function buildCharacter(scene) {
                 diameterTop:    0.095,
                 diameterBottom: 0.065,
                 height:         seg.h,
-                tessellation:   18,
+                tessellation:   48,
             }, scene);
         } else {
             // Fallback — rounded cylinder
@@ -167,8 +167,14 @@ function buildCharacter(scene) {
             mesh = BABYLON.MeshBuilder.CreateCylinder(n, {
                 diameter:     diam,
                 height:       seg.h,
-                tessellation: 18,
+                tessellation: 48,
             }, scene);
+        }
+
+        // Extra tessellation only reads as CURVED if the normals are smoothed —
+        // otherwise it is just more visible facets.
+        if (mesh.forceSharedVertices) {
+            try { mesh.forceSharedVertices(); mesh.createNormals(true); } catch (e) { /* stub */ }
         }
 
         mesh.parent = root;
@@ -698,6 +704,23 @@ function _startGame() {
             : new BABYLON.Color3(0.68, 0.87, 0.99);
     }
 
+    // ── Image-based lighting ────────────────────────────────────────────────
+    // Without this there is nothing in the scene for a PBR surface to reflect,
+    // and PBR materials fall back to looking flat and plasticky. Snow in
+    // particular is largely SKY LIGHT — it reads as snow because it reflects a
+    // bright hemisphere, not because it is white.
+    //
+    // Loaded from a local .env (prefiltered mip chain), so no network at runtime.
+    try {
+        scene.environmentTexture = BABYLON.CubeTexture.CreateFromPrefilteredData(
+            'assets/environment.env', scene);
+        // Tuned against the existing hemi+sun rig rather than replacing it: the
+        // directional sun still casts the shadows, IBL supplies the ambient fill.
+        scene.environmentIntensity = 0.85;
+    } catch (e) {
+        scene.environmentTexture = null;   // renderer still works, just flatter
+    }
+
     // ── Depth of field + bloom pipeline ──────────────────────────────────────
     let dofPipeline = null;
     try {
@@ -1179,10 +1202,28 @@ function _startGame() {
 
     // ── Terrain meshes (visual — physics uses terrainRootY()) ────────────────────
     if (!_trampolineMode && !_trampolineMatMode && !_poolDiveMode) {
-    const snowMat = new BABYLON.StandardMaterial('snowMat', scene);
-    snowMat.diffuseColor  = new BABYLON.Color3(0.78, 0.84, 0.91); // groomed course snow — not pure white
-    snowMat.specularColor = new BABYLON.Color3(0.20, 0.26, 0.38);
-    snowMat.specularPower = 22;
+    // Snow is physically based now. StandardMaterial is Blinn-Phong and cannot
+    // express what actually makes snow look like snow: a rough specular response
+    // to sky light, plus subsurface scattering that tints shadowed snow BLUE.
+    // That blue scatter is the single most recognisable cue and Blinn-Phong has
+    // no way to produce it.
+    const snowMat = new BABYLON.PBRMaterial('snowMat', scene);
+    snowMat.albedoColor = new BABYLON.Color3(0.78, 0.84, 0.91); // groomed course snow — not pure white
+    snowMat.metallic    = 0.0;
+    snowMat.roughness   = 0.38;   // packed piste: 0.25 icy, 0.6 fresh powder
+
+    // Subsurface: light entering the snow, scattering, and leaving blue-shifted.
+    if (snowMat.subSurface) {
+        snowMat.subSurface.isTranslucencyEnabled  = true;
+        snowMat.subSurface.translucencyIntensity  = 0.45;
+        snowMat.subSurface.tintColor = new BABYLON.Color3(0.70, 0.82, 1.00);
+    }
+    // A thin icy sheen on the groomed surface.
+    if (snowMat.clearCoat) {
+        snowMat.clearCoat.isEnabled = true;
+        snowMat.clearCoat.intensity = 0.22;
+        snowMat.clearCoat.roughness = 0.16;
+    }
 
     const kickerWidth = 3.4; // all hills use double width
 
