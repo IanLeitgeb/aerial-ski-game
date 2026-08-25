@@ -1,42 +1,89 @@
 """
-Bake global illumination for the static scenery with Cycles + OptiX.
+Bake the two lighting terms Babylon cannot compute, with Cycles + OptiX.
 
     ~/opt/blender-5.2.1-linux-x64/blender -b --factory-startup \
-        --python blender/bake_lightmap.py -- --res 1024 --samples 256
+        --python blender/bake_lightmap.py -- --res 2048 --samples 512
 
-WHY THIS IS THE REAL WIN
-------------------------
-Babylon (WebGL2) has no real-time global illumination. The scene is lit by one
-directional light plus a hemisphere with zero bounce, which is why it reads flat
-no matter how good the materials are.
+WHAT IS ACTUALLY MISSING FROM THE RUNTIME
+-----------------------------------------
+The first version of this script baked COMBINED lighting and the second baked
+indirect bounce. Both were wrong for this scene, and measuring said so:
 
-But the scenery is STATIC — only the athlete moves. Static geometry can carry
-lighting BAKED from an offline path tracer, giving multi-bounce GI at zero
-runtime cost. Snow makes this unusually valuable: it is highly reflective, so in
-reality it throws enormous amounts of light back up into shadowed areas. That
-bounce is completely absent from the game right now.
+  * COMBINED includes direct sunlight, which Babylon already renders in real
+    time. Adding it counts every photon twice — the same mistake that washed the
+    scene out when the map was first applied through the ambient slot.
+
+  * INDIRECT-only came back 99.2% black. That is not a bug, it is geometry: this
+    terrain is a handful of large flat slabs under an open sky. A point on a flat
+    plane sees sky across almost its whole hemisphere and hardly any other
+    surface, so there is nearly no bounce to capture. (The trees would bounce,
+    except they are dark brown — they absorb.)
+
+What the runtime genuinely gets wrong is different, and both errors are
+MULTIPLICATIVE, which is what makes them safe to bake — a multiplier cannot
+double-count light the way an additive term can:
+
+  1. SKY VISIBILITY. The image-based ambient is applied at full strength
+     everywhere, as though the entire sky dome were visible from every point.
+     Snow tucked under a tree, inside the kicker's concave transition, or against
+     a wall receives the same ambient as snow in the open. A path tracer computes
+     the real fraction exactly.
+
+  2. SUN SHADOW RESOLUTION. One 2048 shadow map is auto-fitted around every
+     caster in the scene — 174 trees, the whole run, AND the distant background
+     peaks — so it spans hundreds of metres and the terrain shadows come out
+     mushy. Baked offline, the tree shadows on the snow are path-traced and soft
+     in the right way, and the runtime map is then free to cover the athlete
+     alone at a tight frustum.
+
+OUTPUT
+------
+assets/terrain_skyvis.png   sky visibility, 1 = open sky   -> ambientTexture
+assets/terrain_shadow.png   sun visibility, 1 = full sun   -> lightmapTexture
+                                                              (as a shadowmap)
+assets/terrain_uv2.json     per-mesh lightmap UVs, IN THE GAME'S VERTEX ORDER
+assets/terrain_baked.glb    the same geometry, for eyeballing the bake offline
+
+Both maps MULTIPLY an existing term, so the worst case if one is wrong is a
+scene that is too dark or too flat — never one that is doubly lit.
+
+ONLY THE SNOW RECEIVES
+----------------------
+Trees still CAST shadows and occlude sky — they are in the scene for the path
+tracer — but they do not receive a map. There are ~174 of them against 28 snow
+surfaces, so letting them into the atlas would spend most of the texels on
+geometry nobody looks at and leave the landing hill with a patch a few pixels
+across. Small dark objects keep real-time lighting; nobody can tell.
 
 INPUT
 -----
 blender/terrain.json, extracted from the RUNNING game by
 tests/drive/extract-terrain.spec.js — real world-space geometry and the actual
-light rig values, so the bake matches what the player sees rather than a
-re-typed approximation.
+light rig values, so the bake matches what the player sees.
 
-OUTPUT
-------
-assets/terrain_baked.glb   geometry + lightmap UVs (UV channel 1)
-assets/lightmap.png        the baked irradiance
+WHY A UV SIDECAR AND NOT THE GLB
+--------------------------------
+The game needs uv2 on the meshes it already has. Reading it back out of the glb
+does not work: the glTF exporter splits a vertex wherever a UV seams, so the
+exported vertex order no longer matches the game's and there is no way to map one
+to the other after the fact. The sidecar is written directly from Blender in the
+ORIGINAL vertex order, so the game applies it with a single setVerticesData and
+keeps its meshes, materials, parents and physics untouched.
 
-The game loads the glb and applies the lightmap via material.lightmapTexture with
-coordinatesIndex = 1.
+The script REFUSES to write a sidecar whose UVs are ambiguous (one vertex, two
+different UVs across the faces that share it) rather than silently emitting a
+mesh that would be lit wrongly. See check_uv_consistency.
 """
 
 import bpy
 import json
 import math
 import os
+import struct
 import sys
+import zlib
+
+import numpy as np
 
 argv = sys.argv[sys.argv.index('--') + 1:] if '--' in sys.argv else []
 
@@ -49,37 +96,92 @@ def arg(name, default):
     return default
 
 
-RES = int(arg('--res', '1024'))
-SAMPLES = int(arg('--samples', '256'))
+RES = int(arg('--res', '2048'))
+SAMPLES = int(arg('--samples', '512'))
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 DATA = json.load(open(os.path.join(HERE, 'terrain.json')))
+
+# Surfaces that RECEIVE a baked map. Everything else in terrain.json is still
+# built — it has to be, or it would cast no shadow and occlude no sky — but it is
+# kept out of the atlas so the snow gets the texels.
+#
+# The background peaks (pk_body_*, pk_cap_*) are deliberately absent. They are
+# cones whose vertices are SHARED between faces, so check_uv_consistency rejects
+# them — correctly, since a per-vertex uv2 cannot describe a seam. They are also
+# the surfaces that least need this: distant silhouettes under open sky, with
+# nothing shadowing them and nothing nearby to occlude. Splitting them to force
+# them in would spend atlas space on the least visible change in the scene.
+RECEIVER_PREFIXES = (
+    'slope', 'trans_seg_', 'flatTable', 'landing', 'outrun', 'start',
+    'wInrun', 'wTable', 'wLanding', 'wOutrun', 'wStartPlat', 'wUpperMtn',
+)
 
 
 def log(msg):
     print(f'[bake] {msg}', flush=True)
 
 
+def is_receiver(name):
+    return name.startswith(RECEIVER_PREFIXES)
+
+
 def clear():
     bpy.ops.wm.read_factory_settings(use_empty=True)
+
+
+def signed_volume(verts, faces):
+    """
+    Positive when a closed mesh's normals point outward, negative when inward.
+
+    Unambiguous regardless of the mesh's orientation, tilt or shape, which is
+    exactly what the face-normal counting it replaces was not.
+    """
+    total = 0.0
+    for a, b, c in faces:
+        ax, ay, az = verts[a]
+        bx, by, bz = verts[b]
+        cx, cy, cz = verts[c]
+        total += (ax * (by * cz - bz * cy)
+                  - ay * (bx * cz - bz * cx)
+                  + az * (bx * cy - by * cx))
+    return total / 6.0
 
 
 def build_geometry():
     """
     Rebuild the extracted meshes in Blender.
 
-    Babylon is Y-up / left-handed; Blender is Z-up / right-handed. Converting
-    (x, y, z) -> (x, z, y) also flips handedness, so triangle winding is reversed
-    to keep normals facing outward. Getting this wrong bakes the lighting onto the
-    BACK of every surface, which looks like a completely black lightmap.
+    Babylon is Y-up / left-handed; Blender is Z-up / right-handed, so positions
+    convert (x, y, z) -> (x, z, y).
+
+    WINDING IS LEFT ALONE, and that took three failed bakes to establish. Every
+    earlier version of this script reversed it — "to compensate for the handedness
+    flip" — and the result was that all 202 meshes came out INSIDE-OUT. Nothing
+    about the render looked wrong, because the maps were never applied; what it
+    looked like was a bake that produced black. Twice I went looking for the fault
+    in Cycles settings instead.
+
+    The reason it was so hard to see: counting up-facing against down-facing faces
+    proves nothing (a box has two of each either way), and "is the +Z face on top"
+    misreports on a tilted slab. SIGNED VOLUME settles it in one number, and
+    build_geometry now asserts on it so this cannot regress silently. See
+    blender/diag_normals.py.
     """
-    objs = []
+    receivers, casters = [], []
     for m in DATA['meshes']:
         p = m['positions']
         verts = [(p[i], p[i + 2], p[i + 1]) for i in range(0, len(p), 3)]
         idx = m['indices']
-        faces = [(idx[i], idx[i + 2], idx[i + 1]) for i in range(0, len(idx), 3)]
+        faces = [(idx[i], idx[i + 1], idx[i + 2]) for i in range(0, len(idx), 3)]
+
+        vol = signed_volume(verts, faces)
+        if vol < 0:
+            raise SystemExit(
+                f'[bake] {m["name"]} rebuilt inside-out (signed volume {vol:.3f}). '
+                f'Every hemisphere ray would start inside the solid and every '
+                f'diffuse-style bake would return black.')
 
         mesh = bpy.data.meshes.new(m['name'])
         mesh.from_pydata(verts, [], faces)
@@ -98,16 +200,20 @@ def build_geometry():
             if 'Roughness' in bsdf.inputs:
                 bsdf.inputs['Roughness'].default_value = float(m.get('roughness', 0.8))
         obj.data.materials.append(mat)
-        objs.append(obj)
 
-    log(f'built {len(objs)} objects')
-    return objs
+        (receivers if is_receiver(m['name']) else casters).append(obj)
+
+    log(f'built {len(receivers)} receivers + {len(casters)} casters')
+    if not receivers:
+        raise SystemExit('[bake] no receiver meshes matched — nothing to bake onto')
+    return receivers, casters
 
 
 def build_lighting():
     """Reproduce the game's light rig from the extracted values."""
     L = DATA['lighting']
 
+    sun = None
     if L.get('sunDirection'):
         d = L['sunDirection']                       # Babylon direction
         bpy.ops.object.light_add(type='SUN', location=(0, 0, 50))
@@ -115,7 +221,10 @@ def build_lighting():
         sun.data.energy = max(1.0, (L.get('sunIntensity') or 1.0) * 3.0)
         c = L.get('sunColor') or [1, 1, 1]
         sun.data.color = (c[0], c[1], c[2])
-        sun.data.angle = math.radians(1.5)          # soft-ish shadow edge
+        # A real sun subtends about half a degree. Widening it to 1.5 gives the
+        # soft shadow edge that sells baked shadows as baked rather than as a
+        # low-resolution shadow map with the aliasing filtered off.
+        sun.data.angle = math.radians(1.5)
         # Point the sun ALONG the game's direction vector (Babylon -> Blender axes).
         bx, by, bz = d[0], d[2], d[1]
         sun.rotation_euler = (
@@ -124,58 +233,180 @@ def build_lighting():
             math.atan2(by, bx) + math.pi / 2,
         )
 
-    # Sky. The hemisphere light is what actually makes snow read as snow, and it
-    # is also the source of most of the bounce we are here to capture.
+    # Sky. The game's ambient is TWO terms — the hemisphere light and the
+    # image-based environment — and both illuminate the snow, so both are summed.
+    # Using hemiIntensity alone understated the sky by ~3.5x once the PBR
+    # conversion moved most of the ambient into the IBL.
     world = bpy.data.worlds.new('World')
     bpy.context.scene.world = world
     world.use_nodes = True
     bg = world.node_tree.nodes.get('Background')
+    ambient = ((L.get('hemiIntensity') or 0.0)
+               + (L.get('environmentIntensity') or 0.0))
+    sky_strength = max(0.3, ambient * 2.2)
     if bg:
-        hemi = L.get('hemiIntensity') or 0.45
         bg.inputs['Color'].default_value = (0.55, 0.70, 0.95, 1.0)   # cool sky
-        bg.inputs['Strength'].default_value = max(0.3, hemi * 2.2)
-    log('lighting rebuilt from the extracted rig')
+        bg.inputs['Strength'].default_value = sky_strength
+    log(f'lighting rebuilt: sky strength {sky_strength:.3f} from ambient '
+        f'{ambient:.3f}, sun {"yes" if sun else "none"}')
+    return sun, bg, sky_strength
 
 
-def unwrap_for_lightmap(objs):
+def unwrap_for_lightmap(receivers):
     """
-    Lightmaps need their OWN non-overlapping UV set. The game meshes have no uv2
-    at all, so one is generated here and exported with the geometry — the game
-    must use exactly these UVs or the lightmap will not line up.
+    Give the RECEIVERS a shared, area-proportional atlas.
+
+    Smart UV Project in multi-object edit mode unwraps every selected object into
+    one shared UV space at a consistent world scale, so a 40-metre landing hill
+    gets proportionally more texels than a 2-metre lip. Blender's older
+    lightmap_pack gives every FACE a similar-sized island regardless of how big it
+    is in the world, which on this scene spent as many texels on a kicker corner
+    as on the entire outrun.
+
+    Channel 0 is left as a plain copy so the game's tiled detail textures still
+    have somewhere to live; channel 1 is the atlas.
     """
-    for o in objs:
+    for o in receivers:
         while len(o.data.uv_layers) > 0:
             o.data.uv_layers.remove(o.data.uv_layers[0])
         o.data.uv_layers.new(name='UVMap')       # channel 0
-        o.data.uv_layers.new(name='Lightmap')    # channel 1
+        lm = o.data.uv_layers.new(name='Lightmap')   # channel 1
+        o.data.uv_layers.active = lm
+        # Cycles bakes into the ACTIVE RENDER layer, which is not the same
+        # property as the active one. Leaving it on 'UVMap' bakes the whole scene
+        # into whatever that untouched layer happens to contain.
+        lm.active_render = True
+
+    # UV selection has to follow mesh selection, or pack_islands finds nothing
+    # selected in a headless session and silently does nothing.
+    bpy.context.scene.tool_settings.use_uv_select_sync = True
 
     bpy.ops.object.select_all(action='DESELECT')
-    for o in objs:
+    for o in receivers:
         o.select_set(True)
-    bpy.context.view_layer.objects.active = objs[0]
-
-    # Pack every object into ONE atlas so a single texture covers the scene.
-    for o in objs:
-        o.data.uv_layers.active = o.data.uv_layers['Lightmap']
+    bpy.context.view_layer.objects.active = receivers[0]
 
     bpy.ops.object.mode_set(mode='EDIT')
     bpy.ops.mesh.select_all(action='SELECT')
-    bpy.ops.uv.lightmap_pack(PREF_CONTEXT='ALL_FACES', PREF_MARGIN_DIV=0.3)
+    bpy.ops.uv.smart_project(
+        angle_limit=math.radians(66.0),
+        island_margin=0.0,
+        area_weight=1.0,
+        correct_aspect=True,
+        scale_to_bounds=False,
+    )
+
+    # smart_project alone lays the islands out at WORLD scale and leaves them
+    # wherever they land: measured on this scene it filled 0.7% of a 2048 atlas,
+    # a strip along the top edge, wasting 99% of the texels. pack_islands with
+    # scale=True grows them all by one common factor until they fill the square,
+    # which keeps the area-proportional relationship smart_project established
+    # (big hill, big island) while actually using the atlas.
+    #
+    # margin is in UV units: 0.004 at 2048 is ~8 texels, enough that bilinear
+    # filtering and mipmaps cannot pull a neighbouring island across a seam and
+    # leave a bright fringe along a ridge.
+    bpy.ops.uv.pack_islands(
+        rotate=True, scale=True, merge_overlap=False,
+        margin_method='FRACTION', margin=0.004, shape_method='AABB',
+    )
     bpy.ops.object.mode_set(mode='OBJECT')
-    log('lightmap UVs packed into a shared atlas')
+
+    fill = atlas_fill(receivers)
+    log(f'atlas unwrapped and packed: {fill * 100:.1f}% of UV space used')
+    # A bad pack is invisible until the game renders black, and then it looks
+    # like the BAKE failed rather than the unwrap. Fail here instead.
+    if fill < 0.25:
+        raise SystemExit(
+            f'[bake] atlas fill is only {fill * 100:.1f}% — the islands were not '
+            f'packed. Almost every texel would be wasted and the lit surfaces '
+            f'would get a few pixels each.')
 
 
-def setup_bake_targets(objs, img):
-    """Every material needs an image node selected as the bake destination."""
-    for o in objs:
+def atlas_fill(receivers):
+    """Fraction of the 0-1 UV square actually covered by islands."""
+    total = 0.0
+    for o in receivers:
+        me = o.data
+        lay = me.uv_layers['Lightmap']
+        for poly in me.polygons:
+            uvs = [lay.data[i].uv for i in poly.loop_indices]
+            a = 0.0                                    # shoelace over the outline
+            for i in range(len(uvs)):
+                x1, y1 = uvs[i]
+                x2, y2 = uvs[(i + 1) % len(uvs)]
+                a += x1 * y2 - x2 * y1
+            total += abs(a) * 0.5
+    return total
+
+
+def check_uv_consistency(receivers):
+    """
+    A vertex must carry exactly ONE lightmap UV, or the sidecar cannot represent
+    it.
+
+    The game applies uv2 per VERTEX. Blender stores UVs per LOOP (per face
+    corner), so a vertex shared by two faces on opposite sides of a UV seam has
+    two different UVs and there is no correct single value to write. Emitting one
+    of them anyway would stretch that triangle across the atlas and light it with
+    whatever happens to be there — a subtle, hard-to-attribute artefact. So this
+    fails loudly instead.
+
+    This already caught the background peaks on its first run, which is why they
+    are not in RECEIVER_PREFIXES.
+    """
+    uv2, bad = {}, {}
+    for o in receivers:
+        me = o.data
+        lay = me.uv_layers['Lightmap']
+        table = [None] * len(me.vertices)
+        conflicts = 0
+        for loop in me.loops:
+            u, v = lay.data[loop.index].uv
+            vi = loop.vertex_index
+            if table[vi] is None:
+                table[vi] = (u, v)
+            elif abs(table[vi][0] - u) > 1e-4 or abs(table[vi][1] - v) > 1e-4:
+                conflicts += 1
+        flat = []
+        for t in table:
+            u, v = t if t is not None else (0.0, 0.0)
+            flat.append(round(float(u), 5))
+            flat.append(round(float(v), 5))
+        uv2[o.name] = flat
+        if conflicts:
+            bad[o.name] = conflicts
+    if bad:
+        worst = sorted(bad.items(), key=lambda kv: -kv[1])[:5]
+        raise SystemExit(
+            f'[bake] {len(bad)} meshes have per-vertex UV conflicts (worst: {worst}). '
+            f'The sidecar cannot represent these; the terrain generator must emit '
+            f'unshared vertices for lightmapped surfaces.')
+    log(f'uv2 extracted for {len(uv2)} meshes, no per-vertex conflicts')
+    return uv2
+
+
+def setup_bake_targets(receivers, img):
+    """
+    Point every RECEIVER material at `img` as the bake destination.
+
+    Called before each pass, and it REPLACES the previous target rather than
+    adding a second image node: two selected image nodes in one material is
+    undefined behaviour, and the pass that ran second would land in whichever
+    Blender happened to consider active.
+    """
+    for o in receivers:
         for slot in o.material_slots:
             mat = slot.material
             if not mat or not mat.use_nodes:
                 continue
-            node = mat.node_tree.nodes.new('ShaderNodeTexImage')
+            tree = mat.node_tree
+            for n in [n for n in tree.nodes if n.bl_idname == 'ShaderNodeTexImage']:
+                tree.nodes.remove(n)
+            node = tree.nodes.new('ShaderNodeTexImage')
             node.image = img
             node.select = True
-            mat.node_tree.nodes.active = node
+            tree.nodes.active = node
 
 
 def configure_cycles():
@@ -201,50 +432,183 @@ def configure_cycles():
     sc.cycles.samples = SAMPLES
     sc.cycles.use_denoising = True
     sc.cycles.max_bounces = 8
-    sc.cycles.diffuse_bounces = 8          # snow bounce is the whole point
+    sc.cycles.diffuse_bounces = 8
     sc.cycles.caustics_reflective = False
     sc.cycles.caustics_refractive = False
+    sc.render.bake.use_selected_to_active = False
+    sc.render.bake.margin = 8
     return used
+
+
+def write_png(path, rgb8, w, h):
+    """
+    Write an 8-bit RGB PNG without going through Blender's image saver.
+
+    Saving through bpy applies whatever view transform and colour management the
+    scene happens to have, which for BAKED DATA is a silent corruption: AgX would
+    tone-map the values before they ever reached the file. Encoding here means the
+    bytes in the file are exactly the bytes computed below.
+    """
+    raw = bytearray()
+    stride = w * 3
+    for y in range(h):
+        raw.append(0)                                   # filter type 0 (None)
+        raw += rgb8[y * stride:(y + 1) * stride]
+
+    def chunk(tag, data):
+        return (struct.pack('>I', len(data)) + tag + data
+                + struct.pack('>I', zlib.crc32(tag + data) & 0xFFFFFFFF))
+
+    png = (b'\x89PNG\r\n\x1a\n'
+           + chunk(b'IHDR', struct.pack('>IIBBBBB', w, h, 8, 2, 0, 0, 0))
+           + chunk(b'IDAT', zlib.compress(bytes(raw), 9))
+           + chunk(b'IEND', b''))
+    with open(path, 'wb') as f:
+        f.write(png)
+
+
+def encode(img, out_png, normalise):
+    """
+    Normalise to 0-1 and encode to sRGB.
+
+    Babylon treats a Texture as gamma-encoded by default, so the file must be sRGB
+    or every value comes back wrong — and wrong in the direction that crushes
+    exactly the dim detail these maps exist to carry.
+
+    `normalise` divides by the 99th percentile, which for the sky-visibility pass
+    is the value on fully open, up-facing snow: that becomes 1.0 and everything
+    else becomes the fraction of the sky it can actually see. The shadow pass is
+    already a 0-1 visibility mask and must NOT be rescaled — normalising it would
+    stretch whatever the darkest shadow happens to be up to full sun.
+    """
+    px = np.array(img.pixels[:], dtype=np.float32).reshape(-1, 4)
+    rgb = px[:, :3]
+
+    if normalise:
+        lit = rgb[rgb > 1e-4]
+        p99 = float(np.percentile(lit, 99.0)) if lit.size else 1.0
+        denom = max(p99, 1e-3)
+    else:
+        p99, denom = 1.0, 1.0
+
+    norm = np.clip(rgb / denom, 0.0, 1.0)
+    srgb = np.where(norm <= 0.0031308,
+                    norm * 12.92,
+                    1.055 * np.power(norm, 1.0 / 2.4) - 0.055)
+    rgb8 = (np.clip(srgb, 0, 1) * 255.0 + 0.5).astype(np.uint8)
+
+    w, h = img.size
+    # Blender's pixel buffer starts at the BOTTOM row; PNG starts at the top.
+    write_png(out_png, rgb8.reshape(h, w, 3)[::-1].tobytes(), w, h)
+
+    mean = float(norm.mean())
+    dark = float((norm.max(axis=1) < 0.5).mean())
+    log(f'{os.path.basename(out_png)}: p99={p99:.4f} mean={mean:.3f} '
+        f'below-half={dark * 100:.1f}%')
+    return {'p99': round(p99, 5), 'mean': round(mean, 4), 'belowHalf': round(dark, 4)}
+
+
+def select_receivers(receivers):
+    bpy.ops.object.select_all(action='DESELECT')
+    for o in receivers:
+        o.select_set(True)
+    bpy.context.view_layer.objects.active = receivers[0]
+
+
+def bake_sky_visibility(receivers, sun, bg, sky_strength, out_dir):
+    """
+    How much of the sky each point can actually see: Cycles' AO bake.
+
+    An earlier version computed this from light transport instead — sun hidden,
+    DIFFUSE bake, direct+indirect, colour off — and came back 99.7% black while
+    the SHADOW pass over the identical UVs filled the atlas. Baking AO removes the
+    whole question: it traces rays into the hemisphere and returns the unoccluded
+    fraction directly, with no lights, no world, no albedo and no pass
+    classification to get wrong. It is already 0-1, so it must NOT be normalised.
+
+    This is exactly the multiplier ambientTexture wants: the game applies its
+    image-based ambient at full strength everywhere, as though the whole sky dome
+    were visible from every point, and this is the fraction that actually is.
+    """
+    if sun:
+        sun.hide_render = True
+
+    img = bpy.data.images.new('skyvis', width=RES, height=RES, float_buffer=True)
+    setup_bake_targets(receivers, img)
+    select_receivers(receivers)
+
+    log(f'baking sky visibility (AO) {RES}x{RES} at {SAMPLES} samples...')
+    bpy.ops.object.bake(type='AO')
+    return encode(img, os.path.join(out_dir, 'terrain_skyvis.png'), normalise=False)
+
+
+def bake_sun_shadow(receivers, sun, bg, out_dir):
+    """
+    What fraction of the sun reaches each point.
+
+    Cycles' SHADOW bake returns exactly this: 1 in full sun, 0 in full shade, soft
+    across the penumbra. Because it is a fraction rather than an amount of light,
+    Babylon can apply it with useLightmapAsShadowmap — it MULTIPLIES the direct
+    lighting instead of adding to it, so the sun is still rendered in real time
+    and there is no double count.
+
+    The sky is switched off for this pass. Leaving it on would light the shadowed
+    side and drag the mask towards 1 everywhere, quietly erasing the shadows.
+    """
+    if sun:
+        sun.hide_render = False
+    if bg:
+        bg.inputs['Strength'].default_value = 0.0
+
+    img = bpy.data.images.new('sunshadow', width=RES, height=RES, float_buffer=True)
+    setup_bake_targets(receivers, img)
+    select_receivers(receivers)
+
+    bake = bpy.context.scene.render.bake
+    bake.use_pass_direct = True
+    bake.use_pass_indirect = False
+    bake.use_pass_color = False
+
+    log(f'baking sun shadow {RES}x{RES} at {SAMPLES} samples...')
+    bpy.ops.object.bake(type='SHADOW')
+    return encode(img, os.path.join(out_dir, 'terrain_shadow.png'), normalise=False)
 
 
 def main():
     clear()
-    objs = build_geometry()
-    build_lighting()
-    unwrap_for_lightmap(objs)
-
-    img = bpy.data.images.new('lightmap', width=RES, height=RES, float_buffer=False)
-    setup_bake_targets(objs, img)
+    receivers, casters = build_geometry()
+    sun, bg, sky_strength = build_lighting()
+    unwrap_for_lightmap(receivers)
+    uv2 = check_uv_consistency(receivers)
     device = configure_cycles()
 
-    bpy.ops.object.select_all(action='DESELECT')
-    for o in objs:
-        o.select_set(True)
-    bpy.context.view_layer.objects.active = objs[0]
+    out_dir = os.path.join(ROOT, 'assets')
+    os.makedirs(out_dir, exist_ok=True)
 
-    sc = bpy.context.scene
-    sc.render.bake.use_pass_direct = True
-    sc.render.bake.use_pass_indirect = True
-    sc.render.bake.use_selected_to_active = False
-    sc.render.bake.margin = 4
+    sky_stats = bake_sky_visibility(receivers, sun, bg, sky_strength, out_dir)
+    shadow_stats = bake_sun_shadow(receivers, sun, bg, out_dir)
 
-    log(f'baking {RES}x{RES} at {SAMPLES} samples over {len(objs)} objects...')
-    bpy.ops.object.bake(type='COMBINED')
+    with open(os.path.join(out_dir, 'terrain_uv2.json'), 'w') as f:
+        json.dump({
+            'coordinatesIndex': 1,
+            'skyVisibility': 'assets/terrain_skyvis.png',
+            'sunShadow': 'assets/terrain_shadow.png',
+            'stats': {'skyvis': sky_stats, 'shadow': shadow_stats},
+            'meshes': uv2,
+        }, f, separators=(',', ':'))
 
-    out_png = os.path.join(ROOT, 'assets', 'lightmap.png')
-    os.makedirs(os.path.dirname(out_png), exist_ok=True)
-    img.filepath_raw = out_png
-    img.file_format = 'PNG'
-    img.save()
-
-    out_glb = os.path.join(ROOT, 'assets', 'terrain_baked.glb')
+    # Debug artefact only — the game does not load this. It exists so the bake can
+    # be opened and eyeballed when something looks wrong in-game.
     bpy.ops.object.select_all(action='SELECT')
     bpy.ops.export_scene.gltf(
-        filepath=out_glb, export_format='GLB',
+        filepath=os.path.join(out_dir, 'terrain_baked.glb'), export_format='GLB',
         export_yup=True, export_apply=True, export_animations=False,
     )
 
-    log(f'BAKE_DONE device={device} png={out_png} glb={out_glb}')
+    log(f'BAKE_DONE device={device} receivers={len(receivers)} '
+        f'casters={len(casters)} res={RES} samples={SAMPLES} '
+        f'skyvis_mean={sky_stats["mean"]} shadow_mean={shadow_stats["mean"]} '
+        f'shadow_dark={shadow_stats["belowHalf"]}')
 
 
 main()

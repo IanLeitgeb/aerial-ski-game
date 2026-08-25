@@ -98,6 +98,192 @@ test('the solids the body replaces are hidden, and the skis are not', async ({ p
     expect(vis.body, 'the body itself is hidden').toBe(true);
 });
 
+test('the suit design lands on the right part of the body', async ({ page }) => {
+    // This is the test the previous set could not have written, and the reason it
+    // exists: the baked maps were bound, loaded, ready, with UVs spanning the full
+    // atlas — and the figure rendered as a featureless white mannequin, because
+    // glTF stores UVs top-left-origin while a hand-constructed BABYLON.Texture
+    // defaults to invertY = true. Every island sampled its vertical mirror.
+    //
+    // So this checks the one thing that actually matters and that nothing else
+    // covers: that a vertex on the HEAD samples helmet-dark, and a vertex on the
+    // OUTSIDE OF A LEG samples stripe-blue. It reads the texture through a 2D
+    // canvas rather than the renderer, so it cannot be fooled — or broken — by
+    // lighting, fog, tone mapping or depth of field.
+    await boot(page);
+
+    const s = await page.evaluate(async () => {
+        const scene = BABYLON.EngineStore.LastCreatedScene;
+        const parts = scene.meshes.filter(m => m.name && m.name.startsWith('athleteBody'));
+
+        const img = await new Promise((res, rej) => {
+            const i = new Image();
+            i.onload = () => res(i);
+            i.onerror = () => rej(new Error('albedo failed to load'));
+            i.src = 'assets/athlete_albedo.png';
+        });
+        const cv = document.createElement('canvas');
+        cv.width = img.width; cv.height = img.height;
+        const ctx = cv.getContext('2d');
+        ctx.drawImage(img, 0, 0);
+        const data = ctx.getImageData(0, 0, cv.width, cv.height).data;
+
+        // The material is built with invertY = false, so v = 0 is the TOP row of
+        // the file — which is also row 0 of the canvas. Sample the same way.
+        const sample = (u, v) => {
+            const x = Math.min(cv.width - 1, Math.max(0, Math.round(u * cv.width)));
+            const y = Math.min(cv.height - 1, Math.max(0, Math.round(v * cv.height)));
+            const o = (y * cv.width + x) * 4;
+            return [data[o] / 255, data[o + 1] / 255, data[o + 2] / 255];
+        };
+
+        // Gather every vertex first and select by FRACTION of the body's own
+        // bounding box, not by absolute coordinates. An earlier version hard-coded
+        // the numbers from body-model.json and selected nothing, because the
+        // exported mesh does not sit in exactly the frame those numbers describe —
+        // and "selected nothing" is a test failure that says nothing about the
+        // thing under test.
+        // TRIANGLE CENTROIDS, not vertices. A vertex sits on the boundary of its
+        // UV island, so sampling at its exact UV lands in the margin bleed as
+        // often as on the surface — the first version of this read the head at
+        // luma 0.50, halfway between the helmet and the white margin around it,
+        // and could not distinguish "correct" from "mirrored". A centroid is
+        // always strictly inside the island.
+        const V = [];
+        for (const p of parts) {
+            const pos = p.getVerticesData(BABYLON.VertexBuffer.PositionKind);
+            const uv = p.getVerticesData(BABYLON.VertexBuffer.UVKind);
+            const idx = p.getIndices();
+            if (!pos || !uv || !idx) continue;
+            for (let t = 0; t < idx.length; t += 3) {
+                const a = idx[t], b = idx[t + 1], c = idx[t + 2];
+                V.push({
+                    x: (pos[a * 3] + pos[b * 3] + pos[c * 3]) / 3,
+                    y: (pos[a * 3 + 1] + pos[b * 3 + 1] + pos[c * 3 + 1]) / 3,
+                    z: (pos[a * 3 + 2] + pos[b * 3 + 2] + pos[c * 3 + 2]) / 3,
+                    u: (uv[a * 2] + uv[b * 2] + uv[c * 2]) / 3,
+                    v: (uv[a * 2 + 1] + uv[b * 2 + 1] + uv[c * 2 + 1]) / 3,
+                });
+            }
+        }
+        const ext = (k) => ({
+            lo: Math.min(...V.map(p => p[k])), hi: Math.max(...V.map(p => p[k])),
+        });
+        const X = ext('x'), Y = ext('y'), Z = ext('z');
+        const fy = (p) => (p.y - Y.lo) / (Y.hi - Y.lo);      // 0 = feet, 1 = crown
+
+        // Work out which horizontal axis is LATERAL from the data rather than
+        // assuming. In bind-pose vertex data the arm span lies along local Z here,
+        // not X — the root's own rotation is what puts it along world X — and
+        // assuming otherwise selected the front of the shin instead of its
+        // outboard side, which is bare suit and reported no stripe at all.
+        // Whichever axis the arms span is the wide one.
+        const lat = (X.hi - X.lo) >= (Z.hi - Z.lo) ? 'x' : 'z';
+        const fwd = lat === 'x' ? 'z' : 'x';
+        const L = lat === 'x' ? X : Z;
+        const F = fwd === 'x' ? X : Z;
+        const latCentre = (L.lo + L.hi) / 2;
+        const fwdMid = (F.lo + F.hi) / 2;
+
+        const pick = (test) => V.filter(test).map(p => sample(p.u, p.v));
+        // MEDIAN, not mean. These regions are defined geometrically and always
+        // catch a few triangles from the neighbouring one; a mean lets those
+        // outliers drag the figure a long way, and it was a mean that reported the
+        // helmet at 0.50 when most of it was where it should be.
+        const med = (xs) => {
+            if (!xs.length) return null;
+            const s = [...xs].sort((a, b) => a - b);
+            return s[Math.floor(s.length / 2)];
+        };
+        // A median cannot see the stripe or the bib: each is only a few percent of
+        // the body, so the median of any region containing one is still plain
+        // suit. What distinguishes them is the FRACTION of the region that is
+        // strongly blue, which is a real signal at 3% and zero when the design has
+        // landed somewhere else. Luma stays a median, because the helmet is most
+        // of the region it is measured in.
+        const stats = (cols) => cols.length ? {
+            n: cols.length,
+            luma: +med(cols.map(c => (c[0] + c[1] + c[2]) / 3)).toFixed(3),
+            blueFrac: +(cols.filter(c => c[2] - c[0] > 0.15).length / cols.length).toFixed(3),
+        } : null;
+
+        // Top of the figure is the helmet.
+        const head = pick(p => fy(p) > 0.94);
+
+        // Lower quarter is the shins; within that band the outboard side is the
+        // most lateral 15%, which is where the stripe runs.
+        const shins = V.filter(p => fy(p) < 0.25);
+        const latLim = Math.max(...shins.map(p => Math.abs(p[lat] - latCentre))) * 0.85;
+        const legOut = shins
+            .filter(p => Math.abs(p[lat] - latCentre) > latLim)
+            .map(p => sample(p.u, p.v));
+
+        // The torso, split front from back. Which fore/aft sign is the chest is
+        // not assumed: the bib is on exactly ONE side, so the bluer half IS the
+        // front and the other half is the plain-suit reference. That is also a
+        // stronger claim than checking a side picked in advance — it fails if the
+        // bib wraps all the way round.
+        const torso = V.filter(p => fy(p) > 0.55 && fy(p) < 0.78);
+        const halfA = torso.filter(p => p[fwd] < fwdMid).map(p => sample(p.u, p.v));
+        const halfB = torso.filter(p => p[fwd] >= fwdMid).map(p => sample(p.u, p.v));
+        const sA = stats(halfA), sB = stats(halfB);
+        const frontIsA = (sA && sB) ? sA.blueFrac > sB.blueFrac : true;
+
+        return {
+            head: stats(head), leg: stats(legOut),
+            front: frontIsA ? sA : sB,
+            back: frontIsA ? sB : sA,
+            axes: { lateral: lat, forward: fwd },
+            bounds: { x: [+X.lo.toFixed(3), +X.hi.toFixed(3)],
+                      y: [+Y.lo.toFixed(3), +Y.hi.toFixed(3)],
+                      z: [+Z.lo.toFixed(3), +Z.hi.toFixed(3)] },
+            tex: [cv.width, cv.height],
+        };
+    });
+
+    const where = ` (bounds ${JSON.stringify(s.bounds)}, atlas ${s.tex.join('x')})`;
+    expect(s.head && s.head.n, 'no triangles found on the head' + where).toBeGreaterThan(20);
+    expect(s.leg && s.leg.n, 'no triangles found on the outboard side of a leg' + where)
+        .toBeGreaterThan(10);
+    expect(s.back && s.back.n, 'no triangles found on the back of the torso' + where)
+        .toBeGreaterThan(20);
+
+    console.log('SUIT ' + JSON.stringify(s));
+
+    // Everything below is RELATIVE to the suit itself, measured on the back of the
+    // torso — bare white suit, no bib, no stripe. Absolute thresholds would encode
+    // the sRGB encoding of the file and the exact palette, neither of which this
+    // test is about; what it is about is that the design lands on the right parts
+    // of the body.
+    const suit = s.back.luma;
+    expect(suit, 'the back of the suit is not the pale colour it should be')
+        .toBeGreaterThan(0.7);
+
+    // The helmet must read as clearly darker than the suit. Under the flip bug it
+    // sampled white suit and this difference collapsed to nothing.
+    expect(suit - s.head.luma,
+        `the helmet (${s.head.luma}) is not darker than the suit (${suit}) — the ` +
+        `head is sampling the wrong part of the atlas`).toBeGreaterThan(0.25);
+
+    // The stripe: a real share of the outboard side of the shin must be strongly
+    // blue. This is the assertion that caught the stripe being painted down the
+    // INSIDE of each leg, where nothing renders it and nothing else noticed.
+    expect(s.leg.blueFrac,
+        `only ${(s.leg.blueFrac * 100).toFixed(1)}% of the outboard side of the ` +
+        `shin is blue — the royal-blue stripe is not landing there`)
+        .toBeGreaterThan(0.10);
+
+    // The bib is a FRONT garment: the front of the torso carries blue and the
+    // back does not. Asserting both directions is what distinguishes "there is a
+    // bib" from "the whole torso is blue".
+    expect(s.front.blueFrac - s.back.blueFrac,
+        `front (${s.front.blueFrac}) and back (${s.back.blueFrac}) of the torso ` +
+        `carry the same amount of blue — the competition bib is missing`)
+        .toBeGreaterThan(0.03);
+    expect(s.back.blueFrac, 'the back of the torso is blue — the bib has wrapped ' +
+        'all the way round the body').toBeLessThan(0.10);
+});
+
 test('the body deforms when the physics poses the athlete', async ({ page }) => {
     // The whole point of skinning: bone-driven deformation. If linkTransformNode
     // silently failed, the mesh would sit in its bind pose forever while the

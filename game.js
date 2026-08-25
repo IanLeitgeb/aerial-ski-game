@@ -784,28 +784,97 @@ function _startGame() {
         scene.environmentTexture = null;   // renderer still works, just flatter
     }
 
-    // ── Baked global illumination ───────────────────────────────────────────
-    // This is the thing Blender uniquely provides here. WebGL2 has no real-time
-    // GI: the scene is lit by one sun plus an ambient term with ZERO bounce,
-    // which is why snow in shadow renders dark grey when in reality it stays
-    // bright — snow is enormously reflective and throws light back up into
-    // every shaded face.
+    // ── Baked lighting for the static scenery ───────────────────────────────
+    // Blender bakes the two terms this renderer cannot compute, and BOTH are
+    // multipliers — which is the property that makes them safe. An additive
+    // baked term double-counts light the runtime already renders (that is what
+    // washed the scene out the first time a bake was wired in); a multiplier
+    // can only ever scale down something that is already there.
     //
-    // assets/lightmap.png is baked by blender/bake_lightmap.py with Cycles on
-    // OptiX, from geometry extracted out of this very scene, and carries
-    // multi-bounce indirect light at zero runtime cost.
+    //   terrain_skyvis.png   how much of the sky each point can actually see.
+    //                        The image-based ambient is otherwise applied at full
+    //                        strength everywhere, as though the whole sky dome
+    //                        were visible from every point — so snow tucked under
+    //                        a tree or inside the kicker's transition is lit
+    //                        exactly like snow in the open. -> ambientTexture
     //
-    // Applied as an ambient contribution rather than through lightmapTexture +
-    // uv2: the procedurally generated terrain has no second UV channel, and
-    // adding one would mean replacing the terrain with baked geometry. This
-    // gives most of the benefit — bounce fill in the shaded areas — without
-    // that surgery. Using the baked map properly via uv2 is the next step.
-    let _lightmapTex = null;
-    try {
-        _lightmapTex = new BABYLON.Texture('assets/lightmap.png', scene);
-        _lightmapTex.coordinatesIndex = 0;
-        _lightmapTex.level = 0.85;
-    } catch (e) { _lightmapTex = null; }
+    //   terrain_shadow.png   what fraction of the sun reaches each point, path
+    //                        traced with a real sun angle. -> lightmapTexture with
+    //                        useLightmapAsShadowmap, which MULTIPLIES the direct
+    //                        light rather than adding to it.
+    //
+    // Both need uv2, which the procedural terrain has none of. It comes from
+    // assets/terrain_uv2.json, written by the bake IN THIS GAME'S VERTEX ORDER —
+    // the glb cannot supply it, because the glTF exporter splits vertices at UV
+    // seams and the order stops matching. So the meshes, materials, parents and
+    // physics are all left exactly as they are and only a uv2 buffer is added.
+    //
+    // Materials are shared between terrain meshes, so the textures are assigned
+    // once per material while uv2 is assigned per mesh.
+    window._bakedApplied = 0;
+    (function applyBakedLighting() {
+        try {
+            fetch('assets/terrain_uv2.json')
+                .then(r => r.ok ? r.json() : null)
+                .then(function (data) {
+                    if (!data || !data.meshes) { window._bakedApplied = 0; return; }
+
+                    // gammaSpace = false on both: these are DATA, not colour. An
+                    // sRGB decode would bend every value and quietly change the
+                    // shape of the occlusion.
+                    const mk = (url) => {
+                        const t = new BABYLON.Texture(url, scene);
+                        t.gammaSpace = false;
+                        t.coordinatesIndex = data.coordinatesIndex || 1;
+                        t.wrapU = t.wrapV = BABYLON.Texture.CLAMP_ADDRESSMODE;
+                        return t;
+                    };
+                    const skyvis = mk(data.skyVisibility || 'assets/terrain_skyvis.png');
+                    const shadow = mk(data.sunShadow || 'assets/terrain_shadow.png');
+
+                    // The baked material is a CLONE, and that is not an
+                    // optimisation detail — it is required for correctness.
+                    // snowMat is shared by 71 meshes while only 28 are in the
+                    // atlas; putting the maps on the shared material would leave
+                    // the other 43 sampling uv2 (0, 0), because a mesh with no uv2
+                    // buffer feeds the shader zeros rather than being skipped.
+                    // Whatever happens to sit in that corner of the atlas would
+                    // then be applied as the sky visibility and sun shadow of the
+                    // background peaks. Cloning keeps the maps on exactly the
+                    // meshes the bake covers.
+                    const baked = new Map();
+                    const bakedMaterial = (mat) => {
+                        if (!mat) return null;
+                        if (baked.has(mat.uniqueId)) return baked.get(mat.uniqueId);
+                        const clone = mat.clone(mat.name + '_baked') || mat;
+                        clone.ambientTexture = skyvis;
+                        clone.lightmapTexture = shadow;
+                        clone.useLightmapAsShadowmap = true;
+                        baked.set(mat.uniqueId, clone);
+                        return clone;
+                    };
+
+                    let applied = 0;
+                    for (const name of Object.keys(data.meshes)) {
+                        const mesh = scene.getMeshByName(name);
+                        if (!mesh || !mesh.getTotalVertices()) continue;
+
+                        const uv2 = data.meshes[name];
+                        // A length mismatch means the terrain generator changed
+                        // since the bake. Applying it anyway would smear the atlas
+                        // across the wrong triangles, so skip and let the count
+                        // report the shortfall.
+                        if (uv2.length !== mesh.getTotalVertices() * 2) continue;
+                        mesh.setVerticesData(BABYLON.VertexBuffer.UV2Kind, uv2, false);
+                        mesh.material = bakedMaterial(mesh.material) || mesh.material;
+                        applied++;
+                    }
+                    window._bakedApplied = applied;
+                    window._bakedMaterials = baked.size;
+                })
+                .catch(function () { window._bakedApplied = 0; });
+        } catch (e) { window._bakedApplied = 0; }
+    })();
 
     // ── Surface texturing ───────────────────────────────────────────────────
     // Every material was a flat colour, which is the most reliable "this is a
@@ -834,11 +903,24 @@ function _startGame() {
             [/head|helmet|visor|goggles/, 'shell',    6, 0.35],
             [/ski[LR]_mat|matGround|land|table|pit/i, 'snow', 18, 0.6],
         ];
+        // Materials that carry BAKED maps must never be touched here. The
+        // "already textured" guard below would usually cover them, but the body
+        // loads asynchronously and this runs on a timer — so on a slow load the
+        // generic tiled fabric would land on top of a bake that had not arrived
+        // yet, replacing the stripe and the bib with noise. Naming them is
+        // deterministic; the race is not.
+        const BAKED = /^athlete(Body|Helmet)_mat$/;
         let applied = 0;
         for (const mat of scene.materials) {
             if (!mat || !mat.albedoColor) continue;
+            if (BAKED.test(mat.name)) continue;            // baked in Blender
             if (mat.bumpTexture) continue;                 // already textured
-            const rule = RULES.find(r => r[0].test(mat.name));
+            // The lightmapped terrain runs on CLONES named "<name>_baked" (see
+            // applyBakedLighting). They are the same surface and must get the same
+            // detail maps, so the suffix is stripped before matching — without
+            // this, exactly the 28 meshes the bake covers would be the ones left
+            // as flat untextured colour.
+            const rule = RULES.find(r => r[0].test(mat.name.replace(/_baked$/, '')));
             if (!rule) continue;
             const base = [mat.albedoColor.r, mat.albedoColor.g, mat.albedoColor.b];
             const surf = T.makeSurface(BABYLON, scene, rule[1], 256, {
@@ -981,8 +1063,52 @@ function _startGame() {
                     // so Babylon receives two submeshes. Shading them differently is
                     // most of what makes the head legible at distance; as one blue
                     // mass the figure had no read at the top at all.
+                    // ── Baked suit detail ──────────────────────────────────
+                    // The maps come from blender/build_body.py, which builds the
+                    // body a second time at high resolution with seams, panel
+                    // grooves, joint creasing, the leg stripe and the bib, then
+                    // bakes that onto this low-poly mesh. The suit design is read
+                    // off the reference footage: white suit, royal-blue stripe
+                    // down the outside of each leg, powder-blue competition bib,
+                    // navy waist, dark gloves and helmet.
+                    //
+                    // This is the reason the athlete is built in Blender at all.
+                    // The flat colour it replaces could have been written in one
+                    // line here; what could not is surface — and surface, not
+                    // silhouette, is what made the figure read as a mannequin.
+                    //
+                    // Normal and AO are DATA (gammaSpace false); albedo is
+                    // COLOUR (sRGB, the default). Getting that backwards on a
+                    // normal map tilts every normal towards flat and the relief
+                    // quietly disappears.
+                    //
+                    // invertY MUST be false, and it is the fourth constructor
+                    // argument rather than a property because the flag decides how
+                    // the image is uploaded. glTF stores UVs with the origin at the
+                    // TOP-left, so Blender's exporter writes v_gltf = 1 - v_blender;
+                    // Babylon's glTF loader compensates for textures that come
+                    // packed inside the .glb, but these arrive as separate files
+                    // built by hand, where Texture defaults to invertY = true. The
+                    // two conventions then disagree by a vertical flip, every UV
+                    // island samples a different island, and the figure renders as
+                    // whatever happens to be on the other side of the atlas —
+                    // uniform white suit, as it turned out, with the helmet and the
+                    // leg stripe nowhere to be seen. Every structural check passed:
+                    // the textures were bound, loaded and ready.
+                    const map = (url, isColour) => {
+                        const t = new BABYLON.Texture(url, scene, false, false);
+                        t.gammaSpace = !!isColour;
+                        return t;
+                    };
+                    const suitAlbedo = map('assets/athlete_albedo.png', true);
+                    const suitNormal = map('assets/athlete_normal.png', false);
+                    const suitAO = map('assets/athlete_ao.png', false);
+
                     const helmetMat = makePBR('athleteHelmet_mat', scene);
-                    helmetMat.albedoColor = new BABYLON.Color3(0.05, 0.05, 0.06);
+                    helmetMat.albedoTexture = suitAlbedo;
+                    helmetMat.bumpTexture   = suitNormal;
+                    helmetMat.ambientTexture = suitAO;
+                    helmetMat.albedoColor = new BABYLON.Color3(1, 1, 1);  // the map carries the hue
                     helmetMat.metallic  = 0.0;
                     helmetMat.roughness = 0.30;      // moulded shell, slight sheen
                     if (helmetMat.clearCoat) {
@@ -992,10 +1118,14 @@ function _startGame() {
                     }
 
                     const bodyMat = makePBR('athleteBody_mat', scene);
-                    bodyMat.albedoColor = new BABYLON.Color3(0.22, 0.42, 0.88);  // race suit — lighter than
-                    // navy so the form reads; a dark suit under this ambient level
-                    // renders as a flat silhouette with no visible shading
-                    bodyMat.roughness   = 0.62;
+                    bodyMat.albedoTexture = suitAlbedo;
+                    bodyMat.bumpTexture   = suitNormal;
+                    bodyMat.ambientTexture = suitAO;
+                    bodyMat.albedoColor = new BABYLON.Color3(1, 1, 1);
+                    // Lycra race suit: matte, with only a faint sheen. Anything
+                    // glossier reads as a wetsuit.
+                    bodyMat.roughness   = 0.68;
+                    bodyMat.metallic    = 0.0;
                     // primitive0 is material slot 0 (suit), primitive1 is slot 1
                     // (helmet), in Blender's slot order.
                     for (const part of bodyParts) {
@@ -4604,13 +4734,36 @@ function _startGame() {
         }
     } catch(e) { hud.text = 'ERR: ' + e.message; console.error(e); } });
 
-    // ── Shadow casters/receivers — register all scene meshes after full build ──
+    // ── Shadow casters/receivers ──────────────────────────────────────────────
+    // Only the ATHLETE casts a real-time shadow. Everything still receives one.
+    //
+    // Every mesh used to be a caster, which meant one 2048 map had to be fitted
+    // around 174 trees, the whole run AND the distant background peaks — several
+    // hundred metres of frustum, so the athlete's own shadow got a handful of
+    // texels and the terrain shadows came out mushy. The static shadows are now
+    // baked (see terrain_shadow.png above), so the runtime map is free to fit
+    // itself around a two-metre figure, which is what it is actually good at.
     if (shadowGen) {
+        const casters = new Set();
+        for (const key of Object.keys(character.meshes)) {
+            const e = character.meshes[key];
+            const m = (e && e.mesh) ? e.mesh : e;
+            if (m && m.getTotalVertices && m.getTotalVertices() > 0) casters.add(m);
+        }
+        // The skinned body arrives asynchronously and is parented to the root, so
+        // it is picked up by descendants rather than by name.
+        if (character.root && character.root.getChildMeshes) {
+            for (const m of character.root.getChildMeshes()) {
+                if (m.getTotalVertices && m.getTotalVertices() > 0) casters.add(m);
+            }
+        }
+        casters.forEach(m => shadowGen.addShadowCaster(m));
+
         scene.meshes.forEach(m => {
             if (m.name === '__root__' || m.getTotalVertices() === 0) return;
-            shadowGen.addShadowCaster(m);
             m.receiveShadows = true;
         });
+        window._shadowCasters = casters.size;
     }
 
     // ── Run ───────────────────────────────────────────────────────────────────

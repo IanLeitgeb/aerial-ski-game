@@ -16,6 +16,16 @@ test('look', async ({ page }) => {
         }
     });
 
+    // Enlarge the canvas for the stills. The 320x220 config viewport exists to
+    // keep frame times under the rawDt > 0.1 stall guard so the SIMULATION
+    // advances (see playwright.config.js); a still does not need the simulation to
+    // advance, and at 320x220 the athlete is about 60 px tall, which is far too
+    // small to judge anything baked onto it. Every close-up looked like it had
+    // been shot through frosted glass, and that was the screenshot, not the render.
+    await page.setViewportSize({ width: 1100, height: 850 });
+    await page.evaluate(() => BABYLON.EngineStore.LastCreatedScene.getEngine().resize());
+    await page.waitForTimeout(400);
+
     const dims = await page.evaluate(() => {
         const scene = BABYLON.EngineStore.LastCreatedScene;
         // The body exports as several primitives (one per material slot), so
@@ -37,11 +47,26 @@ test('look', async ({ page }) => {
         cam.radius = 2.4; cam.fov = 0.8;
         cam.beta = Math.PI / 2.35; cam.alpha = Math.PI * 1.30;
         const e = bb.extendSizeWorld;
-        const mat = body.material;
+        // Report what the body's materials ACTUALLY carry. "It looks wrong" is not
+        // a diagnosis, and a white figure is equally consistent with a missing
+        // albedo map, a map that failed to load, and a map whose UVs all land on
+        // white — which need completely different fixes.
+        const describe = (m) => m ? {
+            name: m.name,
+            albedo: m.albedoTexture ? m.albedoTexture.name : null,
+            albedoReady: m.albedoTexture ? m.albedoTexture.isReady() : null,
+            normal: m.bumpTexture ? m.bumpTexture.name : null,
+            ao: m.ambientTexture ? m.ambientTexture.name : null,
+            albedoColor: m.albedoColor
+                ? [m.albedoColor.r, m.albedoColor.g, m.albedoColor.b].map(v => +v.toFixed(2))
+                : null,
+        } : null;
+        const uvs = body.getVerticesData(BABYLON.VertexBuffer.UVKind);
         return {
             w: +(e.x * 2).toFixed(3), h: +(e.y * 2).toFixed(3), d: +(e.z * 2).toFixed(3),
             verts: parts.reduce((n, p) => n + p.getTotalVertices(), 0),
-            bodyTextured: !!(mat && mat.bumpTexture),
+            uvSpan: uvs ? +(Math.max(...uvs) - Math.min(...uvs)).toFixed(3) : 0,
+            mats: parts.map(p => describe(p.material)),
             surfaces: window._surfacesApplied,
         };
     });
@@ -49,6 +74,17 @@ test('look', async ({ page }) => {
 
     await page.waitForTimeout(900);
     await page.screenshot({ path: path.join(OUT, 'figure.png') });
+
+    // A second angle from the FRONT. The bib and the number patch are front-only
+    // and the leg stripe runs down the outboard side, so a single rear view shows
+    // none of the suit design and makes a correct build look like a blank one.
+    await page.evaluate(() => {
+        const cam = BABYLON.EngineStore.LastCreatedScene.activeCamera;
+        cam.alpha = Math.PI * 0.32;
+        cam.beta = Math.PI / 2.6;
+    });
+    await page.waitForTimeout(900);
+    await page.screenshot({ path: path.join(OUT, 'figure_front.png') });
 
     // Pull back for the whole scene.
     await page.evaluate(() => {

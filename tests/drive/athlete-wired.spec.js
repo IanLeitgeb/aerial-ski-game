@@ -71,7 +71,15 @@ test('the donor meshes and skeleton are cleaned up', async ({ page }) => {
     });
 
     expect(leftovers.donorRoots, 'the glb root was not disposed — a second athlete is in the scene').toBe(0);
-    expect(leftovers.skeletons, 'the donor skeleton was left behind').toBe(0);
+    // ONE skeleton is correct, not zero. This asserted zero from back when the
+    // athlete was separate rigid solids and every skeleton in the scene was donor
+    // debris. The continuous skinned body needs its skeleton to exist — the whole
+    // point of it is that the bones are driven by the physics — and body.spec.js
+    // asserts the same skeleton is present. The two tests contradicted each other,
+    // and which one failed depended on whether the body's glb had finished loading
+    // when the check ran.
+    expect(leftovers.skeletons, 'more than the skinned body\'s own skeleton is in ' +
+        'the scene — a donor was left behind').toBeLessThanOrEqual(1);
     expect(leftovers.duplicateTorso, 'more than one torso in the scene').toBe(1);
     expect(leftovers.duplicateHead, 'more than one head in the scene').toBe(1);
 });
