@@ -111,6 +111,58 @@ def add_box(name, w, h, d, location, bevel=0.01):
     return o
 
 
+
+def add_goggles(head_obj, seg):
+    """
+    Goggles are the hero detail on a helmeted athlete.
+
+    Nothing else on the figure returns as much visual credibility per triangle:
+    a tinted curved lens picks up the sky and immediately reads as real gear
+    rather than a smooth blob. The face is otherwise almost entirely occluded by
+    the helmet, which is precisely why this one element carries so much weight.
+
+    Built as three pieces — lens, surrounding frame, and strap — so each can take
+    its own material in the game (the lens wants low roughness and a clearcoat;
+    the strap wants fabric).
+    """
+    h = seg['h']
+    made = []
+
+    # Lens: a flattened, forward-bulging shell across the eye line.
+    bpy.ops.mesh.primitive_uv_sphere_add(segments=48, ring_count=16, radius=h * 0.40,
+                                         location=(0, -h * 0.16, h * 0.04))
+    lens = bpy.context.active_object
+    lens.name = 'gogglesLens'
+    lens.scale = (1.0, 0.42, 0.46)      # wide, shallow, wraps the face
+    bpy.ops.object.transform_apply(scale=True)
+    bpy.ops.object.shade_smooth()
+    made.append(lens)
+
+    # Frame: a slightly larger shell behind the lens, so the lens sits IN
+    # something rather than floating on the helmet.
+    bpy.ops.mesh.primitive_uv_sphere_add(segments=48, ring_count=16, radius=h * 0.43,
+                                         location=(0, -h * 0.13, h * 0.04))
+    frame = bpy.context.active_object
+    frame.name = 'gogglesFrame'
+    frame.scale = (1.0, 0.40, 0.50)
+    bpy.ops.object.transform_apply(scale=True)
+    bpy.ops.object.shade_smooth()
+    made.append(frame)
+
+    # Strap: a band around the helmet at the goggle line.
+    bpy.ops.mesh.primitive_torus_add(
+        major_radius=h * 0.50, minor_radius=h * 0.045,
+        major_segments=48, minor_segments=10,
+        location=(0, 0, h * 0.04), rotation=(math.pi / 2, 0, 0))
+    strap = bpy.context.active_object
+    strap.name = 'gogglesStrap'
+    strap.scale = (1.0, 1.0, 0.62)
+    bpy.ops.object.transform_apply(scale=True)
+    bpy.ops.object.shade_smooth()
+    made.append(strap)
+
+    return made
+
 def build_parts():
     """One object per physics segment, named identically."""
     parts = {}
@@ -129,6 +181,11 @@ def build_parts():
             bpy.ops.object.transform_apply(scale=True)
             bpy.ops.object.shade_smooth()
             parts[name] = o
+            # Goggles are separate objects so the game can give the lens its own
+            # material. They are exported alongside and parented to the head.
+            for g in add_goggles(o, seg):
+                g.parent = o
+                parts[g.name] = g
 
         elif name in ('skiL', 'skiR'):
             parts[name] = add_box(name, w, h, d, loc, bevel=0.006)

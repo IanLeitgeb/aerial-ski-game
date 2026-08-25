@@ -114,3 +114,56 @@ test('the pose solver still drives the transplanted geometry', async ({ page }) 
     expect(moved.ok,
         `pose solver is not moving the transplanted mesh: ${JSON.stringify(moved)}`).toBe(true);
 });
+
+test('the goggles are present, parented to the head, and correctly shaded', async ({ page }) => {
+    // Goggles are the highest-value detail on a helmeted athlete: the face is
+    // almost entirely occluded, so a tinted lens picking up the sky is what
+    // makes the figure read as real gear rather than a smooth blob.
+    //
+    // They arrive by ADOPTION rather than transplant — they have no counterpart
+    // in the primitive athlete — so this checks a different path from the rest
+    // of the file.
+    await bootAndUpgrade(page);
+    await page.waitForFunction(() => window._athleteAdopted !== undefined,
+        null, { timeout: 30_000 });
+
+    const g = await page.evaluate(() => {
+        const scene = BABYLON.EngineStore.LastCreatedScene;
+        const find = (n) => scene.meshes.find(m => m.name === n);
+        const info = (n) => {
+            const m = find(n);
+            if (!m) return null;
+            return {
+                parent: m.parent ? m.parent.name : null,
+                verts: m.getTotalVertices(),
+                roughness: m.material ? m.material.roughness : null,
+                clearCoat: m.material && m.material.clearCoat
+                    ? m.material.clearCoat.isEnabled : null,
+            };
+        };
+        return {
+            adopted: window._athleteAdopted,
+            lens: info('gogglesLens'),
+            frame: info('gogglesFrame'),
+            strap: info('gogglesStrap'),
+        };
+    });
+
+    expect(g.adopted, 'no goggle parts were adopted').toContain('gogglesLens');
+    expect(g.lens, 'gogglesLens missing from the scene').not.toBeNull();
+    expect(g.frame, 'gogglesFrame missing').not.toBeNull();
+    expect(g.strap, 'gogglesStrap missing').not.toBeNull();
+
+    // Parented to the head, or they will not follow the athlete's rotation and
+    // will hang in space the moment the flip starts.
+    expect(g.lens.parent, 'lens is not parented to the head').toBe('head');
+    expect(g.strap.parent, 'strap is not parented to the head').toBe('head');
+
+    // The lens must be SMOOTH and clearcoated — that is what makes it reflect
+    // the sky. A rough lens reads as painted plastic.
+    expect(g.lens.roughness).toBeLessThan(0.2);
+    expect(g.lens.clearCoat, 'lens has no clearcoat').toBe(true);
+
+    // The strap is fabric and must NOT be shiny, or it reads as more plastic.
+    expect(g.strap.roughness).toBeGreaterThan(0.5);
+});

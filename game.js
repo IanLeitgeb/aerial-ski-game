@@ -883,9 +883,51 @@ function _startGame() {
                             swapped++;
                         } catch (e) { /* leave that segment as a primitive */ }
                     }
-                    // The loaded originals are only a geometry donor — remove them
-                    // and their skeleton so nothing renders twice or animates.
-                    for (const m of res.meshes) { try { m.dispose(); } catch (e) {} }
+                    // Parts with no counterpart in the primitive athlete — the
+                    // goggles — are ADOPTED rather than used as donors: kept,
+                    // parented to the head, and given their own materials. This
+                    // is how new geometry enters the figure without touching
+                    // buildCharacter.
+                    const headMesh = character.meshes['head'];
+                    const adopted = [];
+                    for (const src of res.meshes) {
+                        if (character.meshes[src.name]) continue;      // was a donor
+                        if (!src.name.startsWith('goggles')) continue;
+                        if (!headMesh) continue;
+                        src.parent = headMesh;
+                        src.isPickable = false;
+
+                        const gm = makePBR(src.name + '_mat', scene);
+                        if (src.name === 'gogglesLens') {
+                            // The lens is the hero detail: dark, smooth, and
+                            // clearcoated so it picks up the sky.
+                            gm.albedoColor = new BABYLON.Color3(0.02, 0.03, 0.05);
+                            gm.metallic    = 0.0;
+                            gm.roughness   = 0.08;
+                            if (gm.clearCoat) {
+                                gm.clearCoat.isEnabled = true;
+                                gm.clearCoat.intensity = 1.0;
+                                gm.clearCoat.roughness = 0.04;
+                            }
+                            gm.alpha = 0.92;
+                        } else if (src.name === 'gogglesStrap') {
+                            gm.albedoColor = new BABYLON.Color3(0.06, 0.06, 0.08);
+                            gm.roughness   = 0.85;      // fabric
+                        } else {
+                            gm.albedoColor = new BABYLON.Color3(0.10, 0.10, 0.12);
+                            gm.roughness   = 0.45;      // moulded frame
+                        }
+                        src.material = gm;
+                        adopted.push(src.name);
+                    }
+                    window._athleteAdopted = adopted;
+
+                    // Everything else the loader produced is only a geometry
+                    // donor — remove it so nothing renders twice or animates.
+                    for (const m of res.meshes) {
+                        if (adopted.includes(m.name)) continue;
+                        try { m.dispose(); } catch (e) {}
+                    }
                     for (const sk of (res.skeletons || [])) { try { sk.dispose(); } catch (e) {} }
                     for (const tn of (res.transformNodes || [])) { try { tn.dispose(); } catch (e) {} }
                     window._athleteGeometryUpgraded = swapped;
