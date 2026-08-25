@@ -1,0 +1,20 @@
+# Delegated-agent raw output. The TASK prompts are committed (they are the
+# reproducible input); the model's raw responses and stderr are not.
+.delegate/out/
+
+# Node — dev tooling only; the shipped game has no dependencies (ADR-0010)
+node_modules/
+package-lock.json
+
+# Playwright artefacts
+test-results/
+playwright-report/
+npm-debug.log*
+
+# Editor / OS
+.DS_Store
+*.swp
+*~
+
+# Local scratch
+*.bak

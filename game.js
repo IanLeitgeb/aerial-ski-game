@@ -22,23 +22,26 @@ const _CC = {
 // ── Segment definitions ────────────────────────────────────────────────────
 // Each segment has a name, box size (w × h × d), and mass (arbitrary units,
 // proportional to a real athlete — ratios are what matter for physics).
-const SEGMENTS = [
-    { name: 'torso',     w: 0.30, h: 0.55, d: 0.28, mass: 22.0, color: _CC.torso  },
-    { name: 'head',      w: 0.22, h: 0.24, d: 0.24, mass:  6.0, color: _CC.helmet },
-    { name: 'upperArmL', w: 0.11, h: 0.30, d: 0.11, mass:  2.5, color: _CC.arms   },
-    { name: 'upperArmR', w: 0.11, h: 0.30, d: 0.11, mass:  2.5, color: _CC.arms   },
-    { name: 'lowerArmL', w: 0.09, h: 0.25, d: 0.09, mass:  1.5, color: _CC.arms   },
-    { name: 'lowerArmR', w: 0.09, h: 0.25, d: 0.09, mass:  1.5, color: _CC.arms   },
-    { name: 'upperLegL', w: 0.13, h: 0.36, d: 0.18, mass:  7.0, color: _CC.legs   },
-    { name: 'upperLegR', w: 0.13, h: 0.36, d: 0.18, mass:  7.0, color: _CC.legs   },
-    { name: 'lowerLegL', w: 0.11, h: 0.36, d: 0.14, mass:  5.0, color: _CC.legs   },
-    { name: 'lowerLegR', w: 0.11, h: 0.36, d: 0.14, mass:  5.0, color: _CC.legs   },
-    // Skis: long (≈ leg length), thin, flat — centered under each foot
-    { name: 'skiL',      w: 0.08, h: 0.03, d: 1.20, mass:  2.0, color: [0.08, 0.08, 0.08] },
-    { name: 'skiR',      w: 0.08, h: 0.03, d: 1.20, mass:  2.0, color: [0.08, 0.08, 0.08] },
-];
+// Segment physics (name, box size, mass) comes from the shared engine core
+// (engine/core/body-model.js). Colour is RENDERER data and stays here — that is
+// why body-model.js deliberately strips it (ADR-0002). The two are merged into
+// the render-side SEGMENTS list the mesh builder consumes.
+const _SEG_COLOR = {
+    torso: _CC.torso,   head: _CC.helmet,
+    upperArmL: _CC.arms, upperArmR: _CC.arms,
+    lowerArmL: _CC.arms, lowerArmR: _CC.arms,
+    upperLegL: _CC.legs, upperLegR: _CC.legs,
+    lowerLegL: _CC.legs, lowerLegR: _CC.legs,
+    skiL: [0.08, 0.08, 0.08], skiR: [0.08, 0.08, 0.08],
+};
+const SEGMENTS = AerialEngine.bodyModel.SEGMENTS.map(
+    seg => Object.assign({}, seg, { color: _SEG_COLOR[seg.name] }));
 
 // ── Poses ─────────────────────────────────────────────────────────────────
+// Pose tables now live in the shared engine core
+// (engine/core/body-model.js), consumed via AerialEngine.pose.computePose().
+// They were duplicated here until the pose solver was extracted.
+
 // Local transform of each segment relative to the CoM root TransformNode.
 // x, y  = local position (root is ~center of torso / whole-body CoM)
 // rz    = local rotation around Z (radians, positive = counterclockwise in body frame)
@@ -47,14 +50,7 @@ const SEGMENTS = [
 
 // Base Z offsets — separate L/R segments to avoid depth-buffer fighting.
 // These are constant and never changed by pose animation.
-const BASE_Z = {
-    torso: 0, head: 0,
-    upperArmL:  0.008, upperArmR: -0.008,
-    lowerArmL:  0.008, lowerArmR: -0.008,
-    upperLegL:  0.008, upperLegR: -0.008,
-    lowerLegL:  0.008, lowerLegR: -0.008,
-    skiL:       0.008, skiR:      -0.008,
-};
+const BASE_Z = AerialEngine.bodyModel.BASE_Z;
 
 // Segment chain geometry (all heights for reference):
 //   torso h=0.55  → top y=+0.275, bottom y=-0.275
@@ -68,134 +64,38 @@ const BASE_Z = {
 // x offset arms = ±0.205, legs = ±0.075. dz = forward/back delta from BASE_Z.
 // Backflip tuck folds in the YZ plane: knees come forward (+dz) up toward chest.
 
-const POSE_UNTUCKED = {
-    // All rx=0, dz=0 — segments hang straight down, arms at sides
-    torso:     { x:  0.000, y:  0.000, rx:  0.00, rz:  0.00, dz:  0.00 },
-    head:      { x:  0.000, y:  0.400, rx:  0.00, rz:  0.00, dz:  0.00 },
-    upperArmL: { x: -0.205, y:  0.300, rx:  0.00, rz:  0.00, dz:  0.00 },
-    upperArmR: { x:  0.205, y:  0.300, rx:  0.00, rz:  0.00, dz:  0.00 },
-    lowerArmL: { x: -0.205, y:  0.575, rx:  0.00, rz:  0.00, dz:  0.00 },
-    lowerArmR: { x:  0.205, y:  0.575, rx:  0.00, rz:  0.00, dz:  0.00 },
-    upperLegL: { x: -0.075, y: -0.455, rx:  0.00, rz:  0.00, dz:  0.00 },
-    upperLegR: { x:  0.075, y: -0.455, rx:  0.00, rz:  0.00, dz:  0.00 },
-    lowerLegL: { x: -0.075, y: -0.815, rx:  0.00, rz:  0.00, dz:  0.00 },
-    lowerLegR: { x:  0.075, y: -0.815, rx:  0.00, rz:  0.00, dz:  0.00 },
-    // Skis centered under feet: foot bottom = -0.995, ski center = -0.995 - h/2 = -1.010
-    skiL:      { x: -0.075, y: -1.010, rx:  0.00, rz:  0.00, dz:  0.00 },
-    skiR:      { x:  0.075, y: -1.010, rx:  0.00, rz:  0.00, dz:  0.00 },
-};
 
 // Inrun crouch: egg/tuck position — torso leans forward over knees.  Root is lowered
 // 0.35 units when fully tucked, so ski y is set to -0.675 (= -1.010 + 0.35).
-const POSE_INRUN_TUCK = {
-    torso:     { x:  0.000, y:  0.000, rx: -1.10, rz:  0.00, dz: -0.10 },  // torso tips forward
-    head:      { x:  0.000, y:  0.160, rx: -1.00, rz:  0.00, dz: -0.45 },  // head drives forward/down
-    upperArmL: { x: -0.205, y:  0.000, rx:  0.00, rz:  0.00, dz:  0.00 },
-    upperArmR: { x:  0.205, y:  0.000, rx:  0.00, rz:  0.00, dz:  0.00 },
-    lowerArmL: { x: -0.205, y: -0.275, rx:  0.00, rz:  0.00, dz:  0.00 },
-    lowerArmR: { x:  0.205, y: -0.275, rx:  0.00, rz:  0.00, dz:  0.00 },
-    upperLegL: { x: -0.075, y: -0.240, rx:  0.85, rz:  0.00, dz:  0.15 },  // thighs push back
-    upperLegR: { x:  0.075, y: -0.240, rx:  0.85, rz:  0.00, dz:  0.15 },
-    lowerLegL: { x: -0.075, y: -0.490, rx: -0.40, rz:  0.00, dz:  0.05 },  // shins tilt forward
-    lowerLegR: { x:  0.075, y: -0.490, rx: -0.40, rz:  0.00, dz:  0.05 },
-    skiL:      { x: -0.075, y: -0.660, rx:  0.00, rz:  0.00, dz:  0.00 },
-    skiR:      { x:  0.075, y: -0.660, rx:  0.00, rz:  0.00, dz:  0.00 },
-};
 
-const POSE_TUCKED = {
-    // Knees lift forward (-dz) and up toward chest — tuck in the YZ plane
-    torso:     { x:  0.000, y:  0.000, rx:  0.35, rz:  0.00, dz:  0.00 },  // torso curls forward
-    head:      { x:  0.000, y:  0.340, rx:  0.45, rz:  0.00, dz: -0.06 },  // chin toward knees
-    upperArmL: { x: -0.160, y: -0.180, rx: -1.00, rz:  0.20, dz: -0.18 },  // arms reach forward to grab shins
-    upperArmR: { x:  0.160, y: -0.180, rx: -1.00, rz: -0.20, dz: -0.18 },
-    lowerArmL: { x: -0.100, y: -0.280, rx: -1.00, rz:  0.20, dz: -0.26 },
-    lowerArmR: { x:  0.100, y: -0.280, rx: -1.00, rz: -0.20, dz: -0.26 },
-    upperLegL: { x: -0.075, y: -0.140, rx: -1.20, rz:  0.00, dz: -0.20 },  // thighs up and forward
-    upperLegR: { x:  0.075, y: -0.140, rx: -1.20, rz:  0.00, dz: -0.20 },
-    lowerLegL: { x: -0.075, y: -0.230, rx: -0.55, rz:  0.00, dz: -0.10 },  // shins fold in
-    lowerLegR: { x:  0.075, y: -0.230, rx: -0.55, rz:  0.00, dz: -0.10 },
-    // Skis track feet: foot moves to ~y=-0.396 at same rx as lower leg
-    skiL:      { x: -0.075, y: -0.410, rx: -0.55, rz:  0.00, dz:  0.00 },
-    skiR:      { x:  0.075, y: -0.410, rx: -0.55, rz:  0.00, dz:  0.00 },
-};
 
 // Pike: hips flexed 145° forward from hanging, legs perfectly straight (no knee bend).
 // rx=+2.53 rad (≈145°) for all leg/ski segments: kinematically verified so the hip
 // joint (+Y top of upperLeg) sits exactly at y=-0.275, the bottom of the torso.
-const POSE_PIKED = {
-    torso:     { x:  0.000, y:  0.000, rx:  0.00, rz:  0.00, dz:  0.00 },  // upper body stays untucked
-    head:      { x:  0.000, y:  0.400, rx:  0.00, rz:  0.00, dz:  0.00 },
-    upperArmL: { x: -0.205, y:  0.150, rx: -1.57, rz:  0.00, dz: -0.15 },  // arms straight out in front
-    upperArmR: { x:  0.205, y:  0.150, rx: -1.57, rz:  0.00, dz: -0.15 },
-    lowerArmL: { x: -0.205, y:  0.150, rx: -1.57, rz:  0.00, dz: -0.40 },
-    lowerArmR: { x:  0.205, y:  0.150, rx: -1.57, rz:  0.00, dz: -0.40 },
-    upperLegL: { x: -0.075, y: -0.128, rx:  2.53, rz:  0.00, dz: -0.103 },
-    upperLegR: { x:  0.075, y: -0.128, rx:  2.53, rz:  0.00, dz: -0.103 },
-    lowerLegL: { x: -0.075, y:  0.167, rx:  2.53, rz:  0.00, dz: -0.309 },  // straight (no knee bend)
-    lowerLegR: { x:  0.075, y:  0.167, rx:  2.53, rz:  0.00, dz: -0.309 },
-    skiL:      { x: -0.075, y:  0.310, rx:  2.53, rz:  0.00, dz: -0.410 },
-    skiR:      { x:  0.075, y:  0.310, rx:  2.53, rz:  0.00, dz: -0.410 },
-};
 
 // Arm sweep: two-phase animation.
 // Phase 1 (armDrop 0→0.5): raised → swung out in front (horizontal forward)
 // Phase 2 (armDrop 0.5→1): in front → hanging at side
 // Character faces -Z, so dz negative = in front of body.
-const POSE_ARMS_FORWARD = {
-    upperArmL: { x: -0.205, y:  0.150, rx: -1.57, rz:  0.00, dz: -0.15 },
-    upperArmR: { x:  0.205, y:  0.150, rx: -1.57, rz:  0.00, dz: -0.15 },
-    lowerArmL: { x: -0.205, y:  0.150, rx: -1.57, rz:  0.00, dz: -0.40 },
-    lowerArmR: { x:  0.205, y:  0.150, rx: -1.57, rz:  0.00, dz: -0.40 },
-};
-const POSE_ARMS_DROPPED = {
-    upperArmL: { x: -0.205, y:  0.000, rx:  0.00, rz:  0.00, dz:  0.00 },
-    upperArmR: { x:  0.205, y:  0.000, rx:  0.00, rz:  0.00, dz:  0.00 },
-    lowerArmL: { x: -0.205, y: -0.275, rx:  0.00, rz:  0.00, dz:  0.00 },
-    lowerArmR: { x:  0.205, y: -0.275, rx:  0.00, rz:  0.00, dz:  0.00 },
-};
 // Arms angled 50° forward from vertical, straight (no elbow bend).
 // rx = -50° = -0.873 rad. Shoulder at y=0.15, arm points forward-down.
-const POSE_ARMS_50DEG = {
-    upperArmL: { x: -0.205, y:  0.054, rx: -0.873, rz:  0.00, dz: -0.115 },
-    upperArmR: { x:  0.205, y:  0.054, rx: -0.873, rz:  0.00, dz: -0.115 },
-    lowerArmL: { x: -0.205, y: -0.123, rx: -0.873, rz:  0.00, dz: -0.326 },
-    lowerArmR: { x:  0.205, y: -0.123, rx: -0.873, rz:  0.00, dz: -0.326 },
-};
 // T-pose: arms straight out to the sides.
 // rz = +π/2 (left arm), rz = -π/2 (right arm).
-const POSE_ARMS_T = {
-    upperArmL: { x: -0.355, y:  0.150, rx: 0.00, rz:  1.57, dz:  0.00 },
-    upperArmR: { x:  0.355, y:  0.150, rx: 0.00, rz: -1.57, dz:  0.00 },
-    lowerArmL: { x: -0.580, y:  0.150, rx: 0.00, rz:  1.57, dz:  0.00 },
-    lowerArmR: { x:  0.580, y:  0.150, rx: 0.00, rz: -1.57, dz:  0.00 },
-};
 // Arms raised straight up overhead.
-const POSE_ARMS_UP = {
-    upperArmL: { x: -0.205, y:  0.450, rx:  0.00, rz:  0.00, dz:  0.00 },
-    upperArmR: { x:  0.205, y:  0.450, rx:  0.00, rz:  0.00, dz:  0.00 },
-    lowerArmL: { x: -0.205, y:  0.725, rx:  0.00, rz:  0.00, dz:  0.00 },
-    lowerArmR: { x:  0.205, y:  0.725, rx:  0.00, rz:  0.00, dz:  0.00 },
-};
 
 // ── Physics helpers ────────────────────────────────────────────────────────
-function lerp(a, b, t) { return a + (b - a) * t; }
+// lerp now comes from the shared engine core (engine/core/math.js), loaded
+// before this file. Same implementation, single source of truth across the ski,
+// trampoline and diving disciplines. See ADR-0002 / ADR-0003.
+// Safe as a const: the first call site is inside a function body (computeI),
+// so nothing evaluates it before this line runs.
+const { lerp } = AerialEngine.math;
 
 // Moment of inertia about the flip axis (X, shoulder-to-shoulder).
 // Distance from X axis = sqrt(y² + z²), so I = Σ [ m_i·(y_i²+z_i²) + m_i·(h_i²+d_i²)/12 ]
-function computeI(tuck) {
-    let I = 0;
-    for (const seg of SEGMENTS) {
-        const up = POSE_UNTUCKED[seg.name];
-        const tk = POSE_TUCKED[seg.name];
-        const y  = lerp(up.y,  tk.y,  tuck);
-        const dz = lerp(up.dz, tk.dz, tuck);
-        const z  = (BASE_Z[seg.name] || 0) + dz;
-        I += seg.mass * (y * y + z * z);
-        // Self-inertia of box around X axis: m*(h² + d²)/12
-        I += seg.mass * (seg.h * seg.h + seg.d * seg.d) / 12;
-    }
-    return Math.max(I, 0.5); // prevent division by zero
-}
+// computeI now comes from the shared engine core (engine/core/inertia.js),
+// which reads the body model from engine/core/body-model.js.
+const { computeI } = AerialEngine.inertia;
 
 // ── Character builder ──────────────────────────────────────────────────────
 function buildCharacter(scene) {
@@ -457,21 +357,8 @@ function buildCharacter(scene) {
 // joint, sweeping straight forward in front of the body and then down.
 // Character faces -Z, so forward = negative dz.
 // t = 0: arm raised straight up.  t = 1: arm hanging straight down.
-function armSweep(name, _up, t) {
-    const phi  = Math.PI * t;           // 0 (up) → π (down)
-    const baseX = (name === 'upperArmR' || name === 'lowerArmR') ? 0.205 : -0.205;
-    // Radial distances from the shoulder pivot (y=0.150) along the arm chain:
-    //   upper-arm centre: h/2         = 0.30/2        = 0.150
-    //   lower-arm centre: h_u + h_l/2 = 0.30 + 0.125  = 0.425
-    const dist = (name === 'lowerArmL' || name === 'lowerArmR') ? 0.425 : 0.150;
-    return {
-        x:  baseX,
-        y:  0.150 + dist * Math.cos(phi),   // 0.300/0.575 up → 0.000/-0.275 down
-        rx: -phi,                            // 0 up → -π/2 forward → -π down
-        rz: 0,
-        dz: -dist * Math.sin(phi),           // 0 up → max-forward at mid-arc → 0 down
-    };
-}
+// armSweep now comes from the shared engine core (engine/core/pose.js).
+const { armSweep } = AerialEngine.pose;
 
 // ── Pose applicator ────────────────────────────────────────────────────────
 // tuck:       0 = fully extended, 1 = fully tucked
@@ -486,84 +373,27 @@ function armSweep(name, _up, t) {
 function applyPose(meshes, tuck, armDropL, armDropR, armSnap, layArmT, armRaise, grounded, pikeAmount, pikeArmDrop) {
     pikeAmount  = pikeAmount  || 0;
     pikeArmDrop = pikeArmDrop || 0;
+
+    // ── Solve, then apply ──────────────────────────────────────────────────
+    // The pose maths lives in the shared engine core (engine/core/pose.js) and
+    // is pure: it returns transforms and touches nothing. This function keeps
+    // only the RENDERING half — writing those transforms onto meshes, plus the
+    // IK fix-up and glove placement below, which are display concerns that read
+    // mesh state. See ADR-0002.
+    const solved = AerialEngine.pose.computePose({
+        tuck, armDropL, armDropR, armSnap, layArmT, armRaise,
+        grounded, pikeAmount, pikeArmDrop,
+    });
+
     for (const seg of SEGMENTS) {
         const mesh = meshes[seg.name];
-        const up   = POSE_UNTUCKED[seg.name];
-        // Choose target pose and blend factor
-        let tk, effectiveBlend;
-        if (grounded) {
-            tk = POSE_INRUN_TUCK[seg.name];
-            effectiveBlend = tuck;
-        } else if (pikeAmount > 0) {
-            tk = POSE_PIKED[seg.name];
-            // For arm segments: blend target from piked-forward toward dropped during release
-            if (pikeArmDrop > 0 && (seg.name === 'upperArmL' || seg.name === 'upperArmR' ||
-                                     seg.name === 'lowerArmL' || seg.name === 'lowerArmR')) {
-                const dropped = armSweep(seg.name, up, 1.0);
-                tk = {
-                    x:  lerp(tk.x,  dropped.x,  pikeArmDrop),
-                    y:  lerp(tk.y,  dropped.y,  pikeArmDrop),
-                    rx: lerp(tk.rx, dropped.rx, pikeArmDrop),
-                    rz: lerp(tk.rz, dropped.rz, pikeArmDrop),
-                    dz: lerp(tk.dz, dropped.dz, pikeArmDrop),
-                };
-            }
-            effectiveBlend = pikeAmount;
-        } else {
-            tk = POSE_TUCKED[seg.name];
-            effectiveBlend = tuck;
-        }
-        let ex = up;
-
-        if (seg.name === 'upperArmL' || seg.name === 'lowerArmL') {
-            ex = armSweep(seg.name, up, armDropL);
-            if (armSnap > 0) {
-                const sn = POSE_ARMS_50DEG[seg.name];
-                ex = { x: lerp(ex.x, sn.x, armSnap), y: lerp(ex.y, sn.y, armSnap),
-                       rx: lerp(ex.rx, sn.rx, armSnap), rz: lerp(ex.rz, sn.rz, armSnap),
-                       dz: lerp(ex.dz, sn.dz, armSnap) };
-            }
-            if (layArmT > 0) {
-                const tp = POSE_ARMS_T[seg.name];
-                ex = { x: lerp(ex.x, tp.x, layArmT), y: lerp(ex.y, tp.y, layArmT),
-                       rx: lerp(ex.rx, tp.rx, layArmT), rz: lerp(ex.rz, tp.rz, layArmT),
-                       dz: lerp(ex.dz, tp.dz, layArmT) };
-            }
-            if (armRaise > 0) {
-                const up2 = POSE_ARMS_UP[seg.name];
-                const raiseT = armRaise * (1 - armDropL);
-                ex = { x: lerp(ex.x, up2.x, raiseT), y: lerp(ex.y, up2.y, raiseT),
-                       rx: lerp(ex.rx, up2.rx, raiseT), rz: lerp(ex.rz, up2.rz, raiseT),
-                       dz: lerp(ex.dz, up2.dz, raiseT) };
-            }
-        } else if (seg.name === 'upperArmR' || seg.name === 'lowerArmR') {
-            ex = armSweep(seg.name, up, armDropR);
-            if (armSnap > 0) {
-                const sn = POSE_ARMS_50DEG[seg.name];
-                ex = { x: lerp(ex.x, sn.x, armSnap), y: lerp(ex.y, sn.y, armSnap),
-                       rx: lerp(ex.rx, sn.rx, armSnap), rz: lerp(ex.rz, sn.rz, armSnap),
-                       dz: lerp(ex.dz, sn.dz, armSnap) };
-            }
-            if (layArmT > 0) {
-                const tp = POSE_ARMS_T[seg.name];
-                ex = { x: lerp(ex.x, tp.x, layArmT), y: lerp(ex.y, tp.y, layArmT),
-                       rx: lerp(ex.rx, tp.rx, layArmT), rz: lerp(ex.rz, tp.rz, layArmT),
-                       dz: lerp(ex.dz, tp.dz, layArmT) };
-            }
-            if (armRaise > 0) {
-                const up2 = POSE_ARMS_UP[seg.name];
-                const raiseT = armRaise * (1 - armDropR);
-                ex = { x: lerp(ex.x, up2.x, raiseT), y: lerp(ex.y, up2.y, raiseT),
-                       rx: lerp(ex.rx, up2.rx, raiseT), rz: lerp(ex.rz, up2.rz, raiseT),
-                       dz: lerp(ex.dz, up2.dz, raiseT) };
-            }
-        }
-
-        mesh.position.x = lerp(ex.x,  tk.x,  effectiveBlend);
-        mesh.position.y = lerp(ex.y,  tk.y,  effectiveBlend);
-        mesh.position.z = (BASE_Z[seg.name] || 0) + lerp(ex.dz, tk.dz, effectiveBlend);
-        mesh.rotation.x = lerp(ex.rx, tk.rx, effectiveBlend);
-        mesh.rotation.z = lerp(ex.rz, tk.rz, effectiveBlend);
+        const p    = solved[seg.name];
+        if (!mesh || !p) continue;
+        mesh.position.x = p.x;
+        mesh.position.y = p.y;
+        mesh.position.z = p.z;
+        mesh.rotation.x = p.rx;
+        mesh.rotation.z = p.rz;
     }
 
     // ── Kinematic knee fix for pike ────────────────────────────────────────
@@ -754,71 +584,40 @@ const _tBP = [
     [TRANS_END_Z   - TRANS_LEN,  -(FLAT_Z)                     * Math.tan(SLOPE_ANGLE)],  // P2 at tableY (handle = 1/2 total span)
     [TRANS_END_Z,                -(FLAT_Z)                     * Math.tan(SLOPE_ANGLE)],  // P3 flat table
 ];
-function _transBezY(z) {
-    let lo = 0, hi = 1;
-    for (let _i = 0; _i < 14; _i++) {
-        const _m = (lo + hi) * 0.5, _u = 1 - _m;
-        (_u*_u*_u*_tBP[0][0] + 3*_u*_u*_m*_tBP[1][0] + 3*_u*_m*_m*_tBP[2][0] + _m*_m*_m*_tBP[3][0] < z)
-            ? (lo = _m) : (hi = _m);
-    }
-    const _t = (lo + hi) * 0.5, _u = 1 - _t;
-    return _u*_u*_u*_tBP[0][1] + 3*_u*_u*_t*_tBP[1][1] + 3*_u*_t*_t*_tBP[2][1] + _t*_t*_t*_tBP[3][1];
-}
+
 const _kBP    = [
     [KICKER_START_Z,                                                                  _KBP_tY],  // P0
     [KICKER_START_Z + _KBP_h * 0.85,                                                 _KBP_tY],  // P1 — flat tangent, long handle → brief gradual rise, then steepens quickly
     [KICKER_END_Z - _KBP_h * 0.18 * Math.cos(KICKER_ANGLE),  _KBP_lY - _KBP_h * 0.18 * Math.sin(KICKER_ANGLE)], // P2
     [KICKER_END_Z,                                                                    _KBP_lY],  // P3
 ];
+
+// ── Terrain config for the shared discipline module ────────────────────────
+// engine/disciplines/aerial-ski.js takes geometry as CONFIG rather than reading
+// globals, because these values are derived from URL params at runtime
+// (SLOPE_START_Z alone has six values depending on ?world=). See ADR-0003.
+const _terrainCfg = {
+    mode: _trampolineMode ? 'trampoline'
+        : _trampolineMatMode ? 'trampolineMat'
+        : _poolDiveMode ? 'pool' : 'ski',
+    SLOPE_ANGLE, SLOPE_START_Z, FLAT_Z, TRANS_START_Z, TRANS_END_Z,
+    KICKER_START_Z, KICKER_END_Z, LANDING_START_Z, OUTRUN_Z, LANDING_ANGLE,
+    MAT_LAND_START_Z, MAT_LAND_END_Z, TRAMPOLINE_Y,
+    tBP: _tBP, kBP: _kBP,
+};
+
+// Per-world physics tuning comes from the discipline module; game.js only
+// supplies the already-parsed URL parameters (ADR-0003).
+const _physicsCfg = AerialEngine.aerialSki.makePhysicsConfig({
+    world: _worldParam,
+    customFlipSpeed: _customFlipSpeed,
+});
+
+const terrainRootY  = (z) => AerialEngine.aerialSki.terrainRootY(z, _terrainCfg);
+const terrainAccelZ = (z) => AerialEngine.aerialSki.terrainAccelZ(z, _terrainCfg);
 // Binary-search for bezier parameter t where bz(t)≈z, return by(t).
-function _kickerBezY(z) {
-    let lo = 0, hi = 1;
-    for (let _i = 0; _i < 14; _i++) {
-        const _m = (lo + hi) * 0.5, _u = 1 - _m;
-        (_u*_u*_u*_kBP[0][0] + 3*_u*_u*_m*_kBP[1][0] + 3*_u*_m*_m*_kBP[2][0] + _m*_m*_m*_kBP[3][0] < z)
-            ? (lo = _m) : (hi = _m);
-    }
-    const _t = (lo + hi) * 0.5, _u = 1 - _t;
-    return _u*_u*_u*_kBP[0][1] + 3*_u*_u*_t*_kBP[1][1] + 3*_u*_t*_t*_kBP[2][1] + _t*_t*_t*_kBP[3][1];
-}
 
-function terrainRootY(z) {
-    if (_trampolineMode) return TRAMPOLINE_Y;
-    if (_trampolineMatMode) {
-        // Crash mat surface is 0.28m above gym floor; translate to rootY threshold
-        if (z >= MAT_LAND_START_Z && z <= MAT_LAND_END_Z) return TRAMPOLINE_Y + 0.28 + 0.10;
-        return TRAMPOLINE_Y;
-    }
-    if (z < SLOPE_START_Z) return -SLOPE_START_Z * Math.tan(SLOPE_ANGLE); // flat top
-    const tableY = -FLAT_Z * Math.tan(SLOPE_ANGLE); // y-height of the flat table
-    if (z < TRANS_START_Z) return -z * Math.tan(SLOPE_ANGLE); // straight inrun slope
-    // ── Cubic bezier transition: slope angle → flat, 3m before + 3m after FLAT_Z ──
-    if (z < TRANS_END_Z) return _transBezY(z);
-    // ── Flat table (TRANS_END_Z → KICKER_START_Z) ────────────────────────────────
-    if (z <= KICKER_START_Z) return tableY;
-    // ── Kicker: pure convex bezier KICKER_START_Z (flat) → KICKER_END_Z (lip angle) ──
-    // P0/P1 both at tableY → zero entry tangent → mathematically cannot dip below table.
-    if (z <= KICKER_END_Z) return _kickerBezY(z);
-    const _backFaceEndZ   = KICKER_END_Z + 0.5;
-    const _landingStartZ  = LANDING_START_Z;
-    // Landing: flat at tableY then simple straight slope downward
-    if (z <= _landingStartZ) return tableY;
-    if (z <= OUTRUN_Z) return tableY - (z - _landingStartZ) * Math.tan(LANDING_ANGLE);
-    return tableY - (OUTRUN_Z - _landingStartZ) * Math.tan(LANDING_ANGLE); // flat outrun
-}
 
-function terrainAccelZ(z) {
-    if (_trampolineMode || _trampolineMatMode || _poolDiveMode) return 0;
-    const g = 14.0;
-    if (z < SLOPE_START_Z) return 0;    // flat top
-    if (z > OUTRUN_Z)      return -14.0; // flat outrun friction
-    // Derive along-slope acceleration from terrain gradient.
-    // accZ = -g * sin(θ) = -g * (dy/dz) / sqrt(1 + (dy/dz)²)
-    // Works continuously across slope, transition, kicker, and landing.
-    const eps  = 0.01;
-    const dydz = (terrainRootY(z + eps) - terrainRootY(z - eps)) / (2 * eps);
-    return -g * dydz / Math.sqrt(1 + dydz * dydz);
-}
 
 // ── Entry point ────────────────────────────────────────────────────────────
 // Works whether DOM is still loading (normal sync case) or already ready
@@ -2101,13 +1900,13 @@ function _startGame() {
     // SPIN:  Separate rotation axis (Y). Can be initiated mid-air via arm drops.
     //        Stub only in Phase 1 — tracked in state, shown in HUD, not animated.
     //
-    const TARGET_OMEGA_UNTUCKED = 4.5 * 0.9925 * (_worldParam === 'custom' ? _customFlipSpeed : _worldParam === 'trampoline' ? 1.407 : _worldParam === 'quint' ? 1.96 : _worldParam === 'quad' ? 1.63 : _worldParam === 'triple' ? 1.45 : _worldParam === 'single' ? 0.65 : 1.10); // rad/s at full extension
+    const TARGET_OMEGA_UNTUCKED = _physicsCfg.TARGET_OMEGA_UNTUCKED; // rad/s at full extension
     const MAX_OMEGA = 12.0;            // rad/s cap — limits tucked flip speed
     const I0 = computeI(0);            // I at tuck = 0 (fully extended)
 
     const SPIN_SPEED    = Math.PI * 2.0 * (_worldParam === 'custom' ? _customFlipSpeed : _worldParam === 'trampoline' ? 1.3 : _worldParam === 'quint' ? 1.55 : _worldParam === 'quad' ? 1.62 : _worldParam === 'triple' ? 1.6 : _worldParam === 'single' ? 0.68 : 1.08); // rad/s ~= 1.0 full twist/second
     const ARM_DROP_RATE = 4.0;            // arm transitions in ~0.25 s
-    const GRAVITY       = 14.0;           // world-units / s²
+    const GRAVITY       = _physicsCfg.GRAVITY;  // world-units / s²
 
     const state = {
         L_flip:     I0 * TARGET_OMEGA_UNTUCKED,
@@ -2826,92 +2625,9 @@ function _startGame() {
     });
 
     // ── Scoring (FIS degree of difficulty) ──────────────────────────────────
-    const DD_TABLE = {
-        // Singles
-        '0':1.70, '1':2.00, '2':2.30, '3':2.60,
-        // Doubles
-        '0,0':2.10,
-        '0,1':2.50, '1,0':2.50,
-        '1,1':3.15,
-        '0,2':3.00, '2,0':3.00,
-        '1,2':3.50, '2,1':3.50,
-        '2,2':4.00,
-        '0,3':3.30, '3,0':3.30,
-        '1,3':3.80, '3,1':3.80,
-        '2,3':4.30, '3,2':4.30,
-        '3,3':4.70,
-        // Triples
-        '0,0,0':2.90,
-        '1,0,0':3.30, '0,1,0':3.30, '0,0,1':3.20,
-        '1,1,0':3.80, '1,0,1':3.75, '0,1,1':3.75,
-        '1,1,1':4.425,
-        '2,0,0':3.50, '0,2,0':3.50, '0,0,2':3.40,
-        '2,1,0':4.00, '1,2,0':4.00, '0,2,1':4.00, '0,1,2':3.90, '1,0,2':3.90, '2,0,1':3.95,
-        '2,1,1':4.75, '1,2,1':4.75, '1,1,2':4.65,
-        '2,2,0':5.00, '0,2,2':5.00, '2,0,2':4.90,
-        '2,2,1':5.25, '2,1,2':5.20, '1,2,2':5.20,
-        '2,2,2':5.70,
-        '2,3,2':6.30,
-        '3,1,1':5.05, '1,3,1':5.05, '1,1,3':4.95,
-        // Quads — lays and single-fulls
-        '0,0,0,0':3.50,
-        '1,0,0,0':3.90, '0,1,0,0':3.90, '0,0,1,0':3.90, '0,0,0,1':3.80,
-        '1,1,0,0':4.40, '1,0,1,0':4.35, '1,0,0,1':4.30,
-        '0,1,1,0':4.40, '0,1,0,1':4.35, '0,0,1,1':4.30,
-        '1,1,1,0':5.00, '1,1,0,1':4.95, '1,0,1,1':4.95, '0,1,1,1':4.95,
-        '1,1,1,1':5.80,
-        // Quads — one double-full
-        '2,0,0,0':4.10, '0,2,0,0':4.10, '0,0,2,0':4.00, '0,0,0,2':4.00,
-        // Quads — double-full + one single-full
-        '2,1,0,0':4.60, '1,2,0,0':4.60,
-        '2,0,1,0':4.55, '0,2,1,0':4.55,
-        '2,0,0,1':4.50, '0,2,0,1':4.50,
-        '1,0,2,0':4.50, '0,1,2,0':4.50,
-        '1,0,0,2':4.45, '0,1,0,2':4.45,
-        '0,0,2,1':4.45, '0,0,1,2':4.40,
-        // Quads — double-full + two single-fulls
-        '2,1,1,0':5.10, '1,2,1,0':5.10, '1,1,2,0':5.10,
-        '2,1,0,1':5.05, '1,2,0,1':5.00,
-        '2,0,1,1':5.00, '0,2,1,1':5.00,
-        '0,1,2,1':5.00, '1,0,2,1':5.00,
-        '1,1,0,2':4.95, '1,0,1,2':4.95, '0,1,1,2':4.95,
-        // Quads — double-full + three single-fulls
-        '2,1,1,1':5.95, '1,2,1,1':5.90, '1,1,2,1':5.90, '1,1,1,2':5.85,
-        // Quads — two double-fulls
-        '2,2,0,0':5.10, '2,0,2,0':5.05, '2,0,0,2':5.00,
-        '0,2,2,0':5.10, '0,2,0,2':5.00, '0,0,2,2':4.95,
-        // Quads — two double-fulls + one single-full
-        '2,2,1,0':5.60, '2,2,0,1':5.55,
-        '2,1,2,0':5.55, '2,0,2,1':5.50,
-        '2,1,0,2':5.45, '2,0,1,2':5.45,
-        '1,2,2,0':5.55, '0,2,2,1':5.50,
-        '1,2,0,2':5.45, '0,2,1,2':5.45,
-        '1,0,2,2':5.45, '0,1,2,2':5.45,
-        // Quads — two double-fulls + two single-fulls
-        '2,2,1,1':6.10, '2,1,2,1':6.05, '2,1,1,2':6.00,
-        '1,2,2,1':6.05, '1,2,1,2':6.00, '1,1,2,2':5.95,
-        // Quads — three double-fulls
-        '2,2,2,0':5.70, '2,2,0,2':5.65, '2,0,2,2':5.65, '0,2,2,2':5.65,
-        // Quads — three double-fulls + one single-full
-        '2,2,2,1':6.40, '2,2,1,2':6.35, '2,1,2,2':6.30, '1,2,2,2':6.30,
-        // Quads — four double-fulls
-        '2,2,2,2':6.80,
-        // Quads — one triple-full
-        '3,0,0,0':4.30, '0,3,0,0':4.30, '0,0,3,0':4.20, '0,0,0,3':4.15,
-        // Quads — triple-full + one single-full
-        '3,1,0,0':4.85, '1,3,0,0':4.85,
-        '3,0,1,0':4.80, '0,3,1,0':4.80,
-        '3,0,0,1':4.75, '0,3,0,1':4.75,
-        '1,0,3,0':4.75, '0,1,3,0':4.75,
-        '0,0,3,1':4.65, '1,0,0,3':4.65, '0,1,0,3':4.60, '0,0,1,3':4.55,
-        // Quads — triple-full + two single-fulls
-        '3,1,1,0':5.50, '3,1,0,1':5.40, '3,0,1,1':5.35,
-        '1,3,1,0':5.50, '1,3,0,1':5.40, '0,3,1,1':5.35,
-        '1,1,3,0':5.45, '1,0,3,1':5.35, '0,1,3,1':5.40,
-        '1,1,0,3':5.25, '1,0,1,3':5.25, '0,1,1,3':5.25,
-        // Quads — triple-full + three single-fulls
-        '3,1,1,1':6.30, '1,3,1,1':6.25, '1,1,3,1':6.20, '1,1,1,3':6.10,
-    };
+    // Difficulty table and trick matching now live in the shared engine core
+    // (engine/core/tricks.js). calcDD accepts a per-discipline table.
+    const DD_TABLE   = AerialEngine.tricks.DD_TABLE;
     const HS_KEY = `hs_${_worldParam}`;
     let highScore = parseFloat(_lsGet(HS_KEY) || '0');
 
@@ -2955,14 +2671,7 @@ function _startGame() {
     // 't' tokens require 0 twists AND the flip was tucked.
     // '0'-'3' tokens require matching twist count; for '0' in non-hardest pools
     //   tuck is not required (preserves existing easy/medium/hard behaviour).
-    function matchTrick(perFlipTwists, tuckedPerFlip, key) {
-        const parts = key.split(',');
-        if (parts.length !== perFlipTwists.length) return false;
-        return parts.every((p, i) => {
-            if (p === 't') return perFlipTwists[i] === 0 && tuckedPerFlip[i];
-            return perFlipTwists[i] === parseInt(p);
-        });
-    }
+    const matchTrick = AerialEngine.tricks.matchTrick;
     function compHudLabel(trick) {
         if (_compParam === 'ultra') return `☠ Jump ${_ultraJump + 1}/${ULTRA_POOL.length}: ${trickKeyToName(trick)}`;
         const total = _compProgression.length;
@@ -3044,14 +2753,7 @@ function _startGame() {
                 : '🏅 Attempt 1 — Crash · Press R to pick trick for attempt 2';
         }
     }
-    function calcDD(perFlipTwists) {
-        const key = perFlipTwists.join(',');
-        if (DD_TABLE[key] !== undefined) return DD_TABLE[key];
-        // Fallback for unlisted combos
-        const flips = perFlipTwists.length;
-        const twists = perFlipTwists.reduce((a, b) => a + b, 0);
-        return Math.round((1.4 + flips * 0.5 + twists * 0.4) * 1000) / 1000;
-    }
+    const calcDD     = AerialEngine.tricks.calcDD;
 
     // ── Billboard (shown when skier stops on outrun) ─────────────────────────
     const bbUI = BABYLON.GUI.AdvancedDynamicTexture.CreateFullscreenUI('bbUI', true, scene);
@@ -3131,7 +2833,7 @@ function _startGame() {
     let   pmActive  = false;      // true while meter is visible / accepting input
     let   pmDownHeld = false;     // true while ↓ is held on approach
     const APPROACH_START_Z = SLOPE_START_Z; // show meter from the top of the slope
-    const FLIP_POWER_RATE  = 1.7;           // seconds to fill from 0 → 1
+    const FLIP_POWER_RATE  = AerialEngine.power.FILL_SECONDS; // seconds to fill from 0 → 1
 
     // Build flip-count tick marks.
     // powerScale = 0.3 + flipPower * 0.7; at powerScale=1 the world's nominal
@@ -3451,8 +3153,8 @@ function _startGame() {
                 // Gamepad: minimum 75% so a normal take-off always produces a full flip;
                 // holding L2 on approach charges up to 133% for extra speed.
                 const _gpMode = _lsGet('setting_gamepad') === '1';
-                const _minPwr = _gpMode ? 0.75 : 0.05;
-                targetL_flip = I0 * TARGET_OMEGA_UNTUCKED * (Math.max(_minPwr, flipPower) / 0.75);
+                targetL_flip = I0 * TARGET_OMEGA_UNTUCKED
+                             * AerialEngine.power.flipSpeedMultiplier(flipPower, _gpMode);
                 state.L_flip = targetL_flip;
                 // Reset meter for next jump
                 flipPower = 0;
@@ -3667,10 +3369,14 @@ function _startGame() {
                     doubleMode     = false;
                     } // end feet-down bounce
                 } else {
-                const TWO_PI  = Math.PI * 2;
-                const norm    = ((state.flipAngle % TWO_PI) + TWO_PI) % TWO_PI;
-                const LAND_TOL = Math.PI / 4; // 45° — clean landing window
-                const feetDown = (norm < LAND_TOL || norm > TWO_PI - LAND_TOL);
+                // Landing validation now lives in the shared engine core
+                // (engine/core/landing.js) — ski, trampoline and diving all
+                // validate rotation at contact the same way, only the tolerance
+                // differs, which is why it is a parameter.
+                const TWO_PI   = AerialEngine.math.TWO_PI;
+                const norm     = AerialEngine.math.normalizeAngle(state.flipAngle);
+                const LAND_TOL = AerialEngine.landing.DEFAULT_LAND_TOL;
+                const feetDown = AerialEngine.landing.isFeetDown(state.flipAngle);
 
                 const _onLandSlope = state.posZ > LANDING_START_Z && state.posZ < OUTRUN_Z;
                 state.rootY      = surY + (_onLandSlope ? 0.22 : 0.10);
@@ -3769,21 +3475,11 @@ function _startGame() {
                     // ── Execution score ──────────────────────────────────────
                     // Forward lean (norm in [0, LAND_TOL]) scores highest — max forward = 30, upright = 15.
                     // Backward lean (norm in (TWO_PI-LAND_TOL, TWO_PI]) scores lowest — max backward = 0.
-                    let execRaw;
-                    if (norm <= LAND_TOL) {
-                        // Forward lean: norm=0 (upright) → 29, norm=LAND_TOL (max forward) → 30
-                        const fwd = norm / LAND_TOL;
-                        execRaw = 29 + 1 * fwd;
-                    } else {
-                        // Backward lean: norm=TWO_PI-LAND_TOL (max backward) → 25, norm near TWO_PI (nearly upright) → 29
-                        const bwd = (norm - (TWO_PI - LAND_TOL)) / LAND_TOL;
-                        execRaw = 25 + 4 * bwd;
-                    }
-                    state.execution = Math.max(0, Math.round(execRaw * 10) / 10);
+                    state.execution = AerialEngine.landing.executionScore(state.flipAngle);
                     state.crashed   = false;
                     if (typeof window._onQualifyLanded === 'function') window._onQualifyLanded(state.perFlipTwists, tuckedPerFlip.slice(), state.execution);
                     // Seed landing lean from captured rotation + residual angular momentum
-                    const _signedLean = norm < Math.PI ? norm : norm - TWO_PI;
+                    const _signedLean = AerialEngine.landing.signedLean(state.flipAngle);
                     const _omegaLand  = state.L_flip / I0;
                     state.landingLean    = _signedLean;
                     state.landingLeanVel = _omegaLand * state.flipDir * 0.3;
@@ -4031,19 +3727,22 @@ function _startGame() {
         // Opening up increases I, so ω naturally slows back to the launch value.
         const I = state.pikeAmount > 0 ? computeI(state.pikeAmount) : computeI(state.tuckAmount);
         // Trampoline caps at 13 rad/s; ski lets physics run free — full ice-skater effect on every hill
-        let omega = state.L_flip / I;
-        if (_trampolineMode) omega = Math.min(omega, 13.0);
-        // D key (trampoline): single flip — untucked = ~1 flip; full tuck/pike = 3×
-        if (singleLayoutMode) {
-            const boost = Math.max(state.tuckAmount, state.pikeAmount) * 2.0;
-            omega = Math.min(omega, Math.PI * (1.0 + boost));
-        }
+        // Rotation integration now lives in the shared engine core
+        // (engine/core/rotation.js), used by ski, trampoline and diving alike.
+        // The discipline-specific caps are passed as CONFIG rather than being
+        // branches inside the physics (ADR-0003).
+        const omega = AerialEngine.rotation.angularVelocity(state.L_flip, I, {
+            // Trampoline caps at 13 rad/s; ski lets physics run free.
+            maxOmega:     _trampolineMode ? 13.0 : undefined,
+            // D key (trampoline): single flip — untucked = ~1 flip; full tuck/pike = 3×
+            singleLayout: singleLayoutMode,
+            tuckAmount:   state.tuckAmount,
+            pikeAmount:   state.pikeAmount,
+        });
         if (!state.grounded && !tramBouncing && !matTramBouncing) {
-            const flipDirBoost = (state.flipDir === -1) ? 1.11 : 1.0; // frontflip ~11% faster
-            state.flipAngle += omega * state.flipDir * flipDirBoost * dt;
-            if (singleLayoutMode && !_trampolineMode) {
-                state.flipAngle = Math.max(-Math.PI * 2, Math.min(Math.PI * 2, state.flipAngle));
-            }
+            state.flipAngle = AerialEngine.rotation.integrateFlip(
+                state.flipAngle, omega, state.flipDir, dt,
+                { clampToFullRotation: singleLayoutMode && !_trampolineMode });
         }
         // ── Crash: ragdoll ────────────────────────────────────────────────
         if (state.crashed && !crashActive) {
@@ -4055,19 +3754,30 @@ function _startGame() {
                     ? (TRAMPOLINE_Y - FOOT_OFFSET)
                     : terrainRootY(state.posZ) - FOOT_OFFSET;
 
+            // BUG-001 fix: gloveL/gloveR are stored as { mesh, halfH } wrappers
+            // (see buildCharacter) rather than bare meshes, so calling mesh APIs
+            // on every character.meshes value threw TypeError here. The throw was
+            // swallowed by the frame-level try/catch, and because crashActive was
+            // already set the ragdoll never retried — no crash animation ever ran.
+            // Resolve the part list once so both passes agree on it.
+            const ragdollParts = Object.keys(character.meshes)
+                .map(name => {
+                    const entry = character.meshes[name];
+                    return { name, mesh: (entry && entry.mesh) ? entry.mesh : entry };
+                })
+                .filter(p => p.mesh && typeof p.mesh.computeWorldMatrix === 'function');
+
             // Pass 1: compute every mesh's world position BEFORE any detachment.
             // Must walk the full parent chain, so use getAbsolutePosition() not rootMatrix.
             const worldPositions = {};
             character.root.computeWorldMatrix(true);
-            for (const name of Object.keys(character.meshes)) {
-                const mesh = character.meshes[name];
+            for (const { name, mesh } of ragdollParts) {
                 mesh.computeWorldMatrix(true);
                 worldPositions[name] = mesh.getAbsolutePosition().clone();
             }
 
             // Pass 2: detach and launch each piece independently.
-            for (const name of Object.keys(character.meshes)) {
-                const mesh    = character.meshes[name];
+            for (const { name, mesh } of ragdollParts) {
                 const origPos  = mesh.position.clone();
                 const origQuat = mesh.rotationQuaternion ? mesh.rotationQuaternion.clone() : null;
                 const origRot  = mesh.rotation ? mesh.rotation.clone() : new BABYLON.Vector3();

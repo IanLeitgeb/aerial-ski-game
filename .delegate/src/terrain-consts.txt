@@ -1,0 +1,13 @@
+SLOPE_ANGLE = 22 * Math.PI / 180
+SLOPE_START_Z = _worldParam === 'custom' ? -_customInrun : _worldParam === 'quint' ? -51.0 : _worldParam === 'quad' ? -41.8 : _worldParam === 'triple' ? -27.8 : _worldParam === 'single' ? -12.3 : -19.3
+FLAT_Z = KICKER_Z - 16.0
+TRANS_START_Z = FLAT_Z - TRANS_LEN
+TRANS_END_Z = FLAT_Z + TRANS_LEN
+KICKER_START_Z = FLAT_Z + 10.0
+KICKER_END_Z = 23.7
+LANDING_START_Z = _worldParam === 'custom' ? KICKER_END_Z + 3.5 : KICKER_END_Z + ({ single: 2, double: 5, triple: 8, quad: 13, quint: 15 }[_worldParam] || 5)
+OUTRUN_Z = _worldParam === 'custom' ? KICKER_END_Z + _customLanding : LANDING_START_Z + ({ single: 25, double: 35, triple: 42, quad: 50, quint: 60 }[_worldParam] || 35)
+LANDING_ANGLE = 40 * Math.PI / 180
+MAT_LAND_START_Z = 16.0
+MAT_LAND_END_Z = 26.0
+TRAMPOLINE_Y = 0.0
