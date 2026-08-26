@@ -478,12 +478,24 @@ def skeleton_offset(co):
     best, best_d = None, 1e9
     for name in BODY_SEGMENTS:
         c = bl(name)
+        # SAME SIDE ONLY.
+        #
+        # The legs are 0.15 m apart and each is about 0.10 m across, so a vertex
+        # on the INNER face of one thigh is nearly as close to the other thigh's
+        # axis as to its own. Whichever won, scaling that vertex's offset pulled it
+        # towards that axis — and for the shins, whose factor is 0.75, that dragged
+        # both inner faces across the gap until the two legs merged into a single
+        # column. It reads as one leg missing, not as a leg in the wrong place.
+        if abs(c.y) > 0.02 and (c.y > 0) != (p.y > 0):
+            continue
         half = SEGMENTS[name]['h'] / 2
         z = max(c.z - half, min(c.z + half, p.z))          # clamp onto the axis
         near = Vector((c.x, c.y, z))
         d = (p - near).length
         if d < best_d:
             best_d, best = d, near
+    if best is None:
+        return Vector((0, 0, 0)), 0.0
     return p - best, best_d
 
 
@@ -572,7 +584,14 @@ def add_girth(body, stretch):
             # applied and thickening is not.
             num += w * min(1.0, stretch.get(name, 1.0))
             den += w
-        f = (num / den) * GIRTH
+        # Applied at HALF strength. The blended factor is a blunt instrument —
+        # it moves every vertex along its own offset from a ten-segment stick
+        # skeleton — and at full strength the step between the thigh's 0.79 and
+        # the torso's 1.00 carved a visible notch out of the inner thigh. Half
+        # keeps most of the de-stocking and stops the deformation from cutting
+        # into the silhouette.
+        f = 1.0 + ((num / den) - 1.0) * 0.5
+        f *= GIRTH
         v.co = p + off * (f - 1.0)
         n += 1
     lo, hi = min(stretch.values()), max(stretch.values())
@@ -911,10 +930,10 @@ def displace_suit(mesh):
                 outward = math.pi / 2 * out
                 dphi = abs(math.atan2(math.sin(azim - outward), math.cos(azim - outward)))
                 d -= 0.0016 * math.exp(-((dphi / 0.13) ** 2))
-                if is_leg and dphi < 0.42:
+                if is_leg and dphi < 0.30:
                     # The blue stripe is a printed panel, very slightly proud of
                     # the fabric — enough for the light to catch its edge.
-                    d += 0.0009 * (1.0 - (dphi / 0.42) ** 6)
+                    d += 0.0009 * (1.0 - (dphi / 0.30) ** 6)
             if name == 'torso':
                 dphi = abs(math.atan2(math.sin(azim - math.pi), math.cos(azim - math.pi)))
                 d -= 0.0014 * math.exp(-((dphi / 0.16) ** 2))
@@ -964,7 +983,10 @@ def paint_suit(mesh):
             azim = math.atan2(ly, lx)
             outward = math.pi / 2 * out
             dphi = abs(math.atan2(math.sin(azim - outward), math.cos(azim - outward)))
-            if dphi < 0.38:
+            # Narrowed from 0.38: at that width the stripe wrapped most of the
+            # way round the shin and the leg read as blue with a white edge
+            # rather than white with a blue stripe.
+            if dphi < 0.26:
                 col, tag = STRIPE, 'stripe'
 
         if bib_mask(name, along, front, ly) > 0.5:

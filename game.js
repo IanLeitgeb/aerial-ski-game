@@ -784,6 +784,12 @@ function _startGame() {
         scene.environmentTexture = null;   // renderer still works, just flatter
     }
 
+    // Asset cache-busting. The scripts in index.html carry ?v=; the binary
+    // assets did not, so a rebuilt athlete or a re-baked map kept rendering from
+    // the browser cache and every change looked like it had not been applied.
+    // Bump this whenever assets/ is regenerated.
+    const ASSET_V = '?v=5';
+
     // ── Baked lighting for the static scenery ───────────────────────────────
     // Blender bakes the two terms this renderer cannot compute, and BOTH are
     // multipliers — which is the property that makes them safe. An additive
@@ -814,7 +820,7 @@ function _startGame() {
     window._bakedApplied = 0;
     (function applyBakedLighting() {
         try {
-            fetch('assets/terrain_uv2.json')
+            fetch('assets/terrain_uv2.json' + ASSET_V)
                 .then(r => r.ok ? r.json() : null)
                 .then(function (data) {
                     if (!data || !data.meshes) { window._bakedApplied = 0; return; }
@@ -829,8 +835,8 @@ function _startGame() {
                         t.wrapU = t.wrapV = BABYLON.Texture.CLAMP_ADDRESSMODE;
                         return t;
                     };
-                    const skyvis = mk(data.skyVisibility || 'assets/terrain_skyvis.png');
-                    const shadow = mk(data.sunShadow || 'assets/terrain_shadow.png');
+                    const skyvis = mk((data.skyVisibility || 'assets/terrain_skyvis.png') + ASSET_V);
+                    const shadow = mk((data.sunShadow || 'assets/terrain_shadow.png') + ASSET_V);
 
                     // The baked material is a CLONE, and that is not an
                     // optimisation detail — it is required for correctness.
@@ -1025,7 +1031,7 @@ function _startGame() {
     (function loadContinuousBody() {
         try {
             if (!BABYLON.SceneLoader || !BABYLON.SceneLoader.ImportMeshAsync) return;
-            BABYLON.SceneLoader.ImportMeshAsync('', 'assets/', 'athlete_body.glb', scene)
+            BABYLON.SceneLoader.ImportMeshAsync('', 'assets/', 'athlete_body.glb' + ASSET_V, scene)
                 .then(function (res) {
                     const skel = res.skeletons && res.skeletons[0];
                     // glTF has no multi-material primitive: Blender's two material
@@ -1119,9 +1125,9 @@ function _startGame() {
                         t.gammaSpace = !!isColour;
                         return t;
                     };
-                    const suitAlbedo = map('assets/athlete_albedo.png', true);
-                    const suitNormal = map('assets/athlete_normal.png', false);
-                    const suitAO = map('assets/athlete_ao.png', false);
+                    const suitAlbedo = map('assets/athlete_albedo.png' + ASSET_V, true);
+                    const suitNormal = map('assets/athlete_normal.png' + ASSET_V, false);
+                    const suitAO = map('assets/athlete_ao.png' + ASSET_V, false);
 
                     const helmetMat = makePBR('athleteHelmet_mat', scene);
                     helmetMat.albedoTexture = suitAlbedo;
@@ -1194,7 +1200,7 @@ function _startGame() {
     (function upgradeAthleteGeometry() {
         try {
             if (!BABYLON.SceneLoader || !BABYLON.SceneLoader.ImportMeshAsync) return;
-            BABYLON.SceneLoader.ImportMeshAsync('', 'assets/', 'athlete.glb', scene)
+            BABYLON.SceneLoader.ImportMeshAsync('', 'assets/', 'athlete.glb' + ASSET_V, scene)
                 .then(function (res) {
                     let swapped = 0;
                     for (const src of res.meshes) {
@@ -1769,7 +1775,18 @@ function _startGame() {
     // That blue scatter is the single most recognisable cue and Blinn-Phong has
     // no way to produce it.
     const snowMat = new BABYLON.PBRMaterial('snowMat', scene);
-    snowMat.albedoColor = new BABYLON.Color3(0.70, 0.76, 0.84); // groomed course snow — not pure white
+    // Snow is one of the brightest natural surfaces there is: fresh snow reflects
+    // 80-90% of the light hitting it, and groomed piste is not far behind. This
+    // was 0.70, 0.76, 0.84 — a blue-grey with a 14-point spread between red and
+    // blue, which is a rain cloud, not snow. Under an already-cool sky and a
+    // multiplying sky-visibility map the ramp came out distinctly grey while the
+    // background read white, because the background is washed towards the fog
+    // colour and the foreground is not.
+    //
+    // The slight blue bias stays — snow really is faintly blue in shade, and the
+    // subsurface tint below leans on it — but it is now a couple of points, not
+    // fourteen.
+    snowMat.albedoColor = new BABYLON.Color3(0.89, 0.91, 0.94);
     snowMat.metallic    = 0.0;
     snowMat.roughness   = 0.46;   // packed piste, slightly rougher: scatters more, glares less
 
