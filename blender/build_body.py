@@ -101,7 +101,7 @@ OUT = arg('--out', 'assets/athlete_body.glb')
 BASE = arg('--base', 'blender/human_base_male.blend')
 RES = int(arg('--res', '2048'))
 SAMPLES = int(arg('--samples', '128'))
-DECIMATE = float(arg('--decimate', '0.55'))
+DECIMATE = float(arg('--decimate', '0.85'))
 
 ROOT = os.path.dirname(HERE)
 MODEL = json.load(open(os.path.join(HERE, 'body-model.json')))
@@ -211,11 +211,20 @@ def soften(obj):
             t = min(1.0, (v.co.z - jaw) / (height * 0.03))
             grp.add([v.index], t, 'REPLACE')
 
+    # THE BODY IS NOT SMOOTHED ANY MORE, and that was the single biggest
+    # self-inflicted wound in this pipeline.
+    #
+    # It used to run a Laplacian smooth at factor 0.6 for 3 iterations over the
+    # whole figure, to hide anatomical detail a race suit would cover. What it
+    # actually did was erase the deltoid, the collarbone, the calf and the
+    # quadriceps — every landmark that makes a body read as ATHLETIC — and
+    # Laplacian smoothing shrinks volume while it does it. The result was a
+    # figure whose suit looked loose and flowy, because underneath it there was
+    # no longer a body with any shape for the suit to wrap.
+    #
+    # The detail it was hiding is a few millimetres deep on a 1.5 m figure and
+    # sits below one texel of the baked normal map. It was never the problem.
     bpy.context.view_layer.objects.active = obj
-    body = obj.modifiers.new('softenBody', 'SMOOTH')
-    body.factor = 0.6
-    body.iterations = 3
-    bpy.ops.object.modifier_apply(modifier=body.name)
 
     head = obj.modifiers.new('softenHead', 'SMOOTH')
     head.factor = 1.0
@@ -348,8 +357,26 @@ def build_armature(joints):
         bone.head = joints[a]
         bone.tail = joints[b]
         made[name] = bone
-    for c, p in HIERARCHY.items():
-        made[c].parent = made[p]
+    # THE SKELETON IS FLAT. No bone is parented to another, and that is the whole
+    # point rather than an oversight.
+    #
+    # game.js drives each bone with Bone.linkTransformNode, and Babylon applies a
+    # linked node's transform as the bone's LOCAL transform, relative to its
+    # parent bone. But computePose returns ABSOLUTE positions — the driver meshes
+    # are all siblings under one root — so every parented bone added its own
+    # absolute position on top of its parent's. Measured in the running game:
+    #
+    #     upperLegL  node -0.455  ->  runs at -0.455   (parent torso at 0)
+    #     lowerLegL  node -0.815  ->  runs at -1.270   (-0.455 + -0.815)
+    #
+    # The shin was displaced by a whole hip's worth, the boots hung 0.35 m below
+    # the skis, and every limb was stretched between a correct joint and a
+    # doubled one. With no parents, each bone simply takes its driver's transform
+    # and lands exactly where the simulation says it is.
+    #
+    # Nothing else wants the hierarchy: the weights are per-bone, and the pose
+    # transfer below sets each bone's matrix absolutely.
+    for c in HIERARCHY:
         made[c].use_connect = False
         # Do NOT inherit the parent's scale.
         #
@@ -413,7 +440,7 @@ HEAD_SCALE = 0.84
 #
 # UV_SHRINK scales the head and hands during the unwrap only, so they claim
 # UV_SHRINK^2 — about a third — of the atlas area they otherwise would.
-GIRTH = 1.07
+GIRTH = 1.00
 REDUCE_W = 0.60
 BODY_KEEP = 0.30
 UV_SHRINK = 0.55
@@ -539,6 +566,42 @@ def add_girth(body, stretch):
         f'{n} verts')
 
 
+def seat_soles(body):
+    """
+    Put the soles on the skis, by measuring where they ended up.
+
+    Both boots came out 0.337 m below the ski — symmetrically, with about a
+    thousand vertices each below the topsheet, so not a stray weight but the whole
+    boot region. Working out WHY from first principles means tracing a foot
+    through an anatomical rest position, a bone whose head was lifted by the boot
+    height, a non-uniform scale along that bone's own axis, and a girth field: four
+    transforms, each of which I had already got wrong once.
+
+    Measuring the result and correcting it is both shorter and self-correcting —
+    if any of those transforms changes, this still lands the sole on the ski. The
+    lift falls off from sole to ankle so the correction does not dislocate the leg
+    above it.
+    """
+    ski_top = bl('skiL').z + SEGMENTS['skiL']['h'] / 2
+    ankle_z = bl('lowerLegL').z - SEGMENTS['lowerLegL']['h'] / 2 + 0.10
+
+    boot = [v for v in body.data.vertices if v.co.z < ankle_z]
+    if not boot:
+        log('seat soles: no boot vertices found')
+        return
+    sole = min(v.co.z for v in boot)
+    lift = ski_top - sole
+    if abs(lift) < 1e-4:
+        log('seat soles: already seated')
+        return
+    span = max(1e-4, ankle_z - sole)
+    for v in boot:
+        t = min(1.0, max(0.0, (ankle_z - v.co.z) / span))
+        v.co.z += lift * (t * t * (3 - 2 * t))          # smoothstep to the ankle
+    log(f'seat soles: lifted {lift:+.3f} m so the sole meets the ski at '
+        f'z={ski_top:.3f} ({len(boot)} boot verts)')
+
+
 def rigid_boots(body, arm, joints):
     """
     Weight everything below the ankle rigidly to the shin.
@@ -657,6 +720,52 @@ def pose_onto_segments(body, arm, foot_lift):
     bpy.ops.pose.select_all(action='SELECT')
     bpy.ops.pose.armature_apply(selected=False)
     bpy.ops.object.mode_set(mode='OBJECT')
+
+    # After applying the pose as the rest pose, every bone must have a rest LENGTH
+    # equal to the segment it was posed onto, and no residual pose scale. If a
+    # scale survives here it does not show up in Blender at all — the mesh looks
+    # right, because the modifier and the rest pose cancel — but the bind matrices
+    # exported to glTF carry it, and the game skins with the scale applied a second
+    # time. That is invisible in every Blender-side check and puts the boots a
+    # third of a metre below the skis in the browser.
+    # ── Make the BIND match the DRIVER ──────────────────────────────────────
+    # A linked bone is placed at its driver node's transform, and the node sits at
+    # the segment's CENTRE. The bind pose above puts each bone's head at the
+    # segment's BOTTOM, so at runtime every bone jumps by half its own segment and
+    # the mesh goes with it — measured, the soles floated 0.107 m over the skis.
+    #
+    # Moving the bones in EDIT mode does this without disturbing the mesh: the
+    # deformation has already been applied to the vertices and the pose is
+    # identity, so changing the rest changes only the bind matrices the exporter
+    # writes. Bind then equals driver, and the figure renders exactly as built.
+    bpy.context.view_layer.objects.active = arm
+    bpy.ops.object.mode_set(mode='EDIT')
+    for name in ANATOMY:
+        eb = arm.data.edit_bones[name]
+        centre = bl(name)
+        shift = centre - eb.head
+        eb.head = eb.head + shift
+        eb.tail = eb.tail + shift
+    bpy.ops.object.mode_set(mode='OBJECT')
+    log('bind pose shifted onto the driver nodes (segment centres)')
+
+    bad = []
+    for name in ANATOMY:
+        pb = arm.pose.bones[name]
+        want = SEGMENTS[name]['h']
+        if name.startswith('lowerLeg'):
+            want -= foot_lift
+        got = pb.bone.length
+        s = pb.scale
+        if abs(got - want) > 0.005 or max(abs(s.x - 1), abs(s.y - 1), abs(s.z - 1)) > 1e-3:
+            bad.append(f'{name}: rest length {got:.3f} vs {want:.3f}, '
+                       f'pose scale ({s.x:.3f},{s.y:.3f},{s.z:.3f})')
+    if bad:
+        log('REST POSE DID NOT BAKE CLEANLY:')
+        for b in bad:
+            log('  ' + b)
+    else:
+        log('rest pose baked cleanly: every bone at its segment length, scale 1')
 
     me = body.data
     zs = [v.co.z for v in me.vertices]
@@ -1274,6 +1383,7 @@ def main():
     retune_proportions(body)
     build_report(body, 'before girth')
     add_girth(body, stretch)
+    seat_soles(body)
     build_report(body, 'after girth ')
     low = finish_lowpoly(body)
     high = make_highpoly(low)

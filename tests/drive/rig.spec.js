@@ -84,6 +84,132 @@ test('each ski sits under its own boot', async ({ page }) => {
         .toBeLessThan(0.05);
 });
 
+test('both SOLES rest on their skis', async ({ page }) => {
+    // The test above compares the ski to the lowerLeg DRIVER, and passed happily
+    // while a foot was visibly off its ski — because the driver is a bone, and
+    // the boot is skinned geometry hanging below it. Whether a boot lands on a
+    // ski is a question about the deformed MESH, so this skins the vertices by
+    // hand and asks where the soles actually are.
+    await boot(page);
+
+    const r = await page.evaluate(() => {
+        const scene = BABYLON.EngineStore.LastCreatedScene;
+        const parts = scene.meshes.filter(m => m.name && m.name.startsWith('athleteBody'));
+        const out = { sides: {} };
+        const lowest = { L: null, R: null };
+        const all = {};
+
+        // Everything is measured in the CHARACTER ROOT's frame, not the world's.
+        // The skier yaws in the ready state and the whole rig is tilted onto the
+        // slope, so world X is not the athlete's left-right and world Y is not
+        // their up: classifying feet by world X put both of them on one side and
+        // reported a sole 0.337 m "below" its ski.
+        const root = scene.getMeshByName('skierRoot')
+            || (parts[0] && parts[0].parent);
+        root.computeWorldMatrix(true);
+        const toLocal = BABYLON.Matrix.Invert(root.getWorldMatrix());
+
+        for (const mesh of parts) {
+            const pos = mesh.getVerticesData(BABYLON.VertexBuffer.PositionKind);
+            const mi = mesh.getVerticesData(BABYLON.VertexBuffer.MatricesIndicesKind);
+            const mw = mesh.getVerticesData(BABYLON.VertexBuffer.MatricesWeightsKind);
+            const skel = mesh.skeleton;
+            if (!pos || !mi || !mw || !skel) continue;
+            mesh.computeWorldMatrix(true);
+            const world = mesh.getWorldMatrix();
+            const bones = skel.getTransformMatrices(mesh);
+            const tmp = new BABYLON.Vector3();
+            const acc = new BABYLON.Matrix();
+            const bm = new BABYLON.Matrix();
+
+            for (let i = 0; i < pos.length / 3; i++) {
+                acc.copyFrom(BABYLON.Matrix.Zero());
+                for (let k = 0; k < 4; k++) {
+                    const w = mw[i * 4 + k];
+                    if (w <= 0) continue;
+                    BABYLON.Matrix.FromArrayToRef(bones, mi[i * 4 + k] * 16, bm);
+                    for (let e = 0; e < 16; e++) acc.m[e] += bm.m[e] * w;
+                }
+                acc.markAsUpdated();
+                const fin = acc.multiply(world).multiply(toLocal);
+                BABYLON.Vector3.TransformCoordinatesFromFloatsToRef(
+                    pos[i * 3], pos[i * 3 + 1], pos[i * 3 + 2], fin, tmp);
+                const side = tmp.x < 0 ? 'L' : 'R';
+                (all[side] = all[side] || []).push(
+                    { x: tmp.x, y: tmp.y, z: tmp.z });
+                if (!lowest[side] || tmp.y < lowest[side].y) {
+                    lowest[side] = { x: tmp.x, y: tmp.y, z: tmp.z };
+                }
+            }
+        }
+
+        const p = new BABYLON.Vector3();
+        for (const side of ['L', 'R']) {
+            const ski = scene.getMeshByName('ski' + side);
+            const sole = lowest[side];
+            if (!ski || !sole) { out.sides[side] = null; continue; }
+            ski.computeWorldMatrix(true);
+            // The ski in the same root-local frame as the soles.
+            BABYLON.Vector3.TransformCoordinatesToRef(
+                ski.getAbsolutePosition(), toLocal, p);
+            const half = ski.getBoundingInfo().boundingBox.extendSize.y;
+            const top = p.y + half;
+            // A single stray vertex from a bad weight and a whole foot in the
+            // wrong place produce the same minimum, and need opposite fixes. The
+            // 2nd percentile is the SOLE; the count below the ski says which.
+            const ys = all[side].map(v => v.y).sort((a, b) => a - b);
+            const p02 = ys[Math.floor(ys.length * 0.02)];
+            out.sides[side] = {
+                sole: [+sole.x.toFixed(3), +sole.y.toFixed(3), +sole.z.toFixed(3)],
+                p02: +p02.toFixed(3),
+                belowSki: ys.filter(y => y < top - 0.02).length,
+                n: ys.length,
+                skiTop: +top.toFixed(3),
+                // Positive = the sole floats above the ski; negative = it sinks in.
+                gap: +(sole.y - top).toFixed(3),
+                lateral: +Math.abs(sole.x - p.x).toFixed(3),
+            };
+        }
+        // Where each bone's ORIGIN actually is at runtime, against where it was
+        // bound and where its driver node sits. This is the rule the game applies
+        // to a linked bone, measured instead of assumed.
+        out.bones = {};
+        const skel0 = parts[0] && parts[0].skeleton;
+        for (const b of (skel0 ? skel0.bones : [])) {
+            const node = b.getTransformNode && b.getTransformNode();
+            const fin = b.getFinalMatrix ? b.getFinalMatrix() : null;
+            const rest = b.getBindMatrix ? b.getBindMatrix() : null;
+            out.bones[b.name] = {
+                run: fin ? +fin.getTranslation().y.toFixed(3) : null,
+                bind: rest ? +rest.getTranslation().y.toFixed(3) : null,
+                node: node ? +node.position.y.toFixed(3) : null,
+            };
+        }
+        const ys = [].concat(all.L || [], all.R || []).map(v => v.y);
+        out.bounds = { lo: +Math.min(...ys).toFixed(3), hi: +Math.max(...ys).toFixed(3) };
+        return out;
+    });
+
+    console.log('SOLES ' + JSON.stringify(r.sides));
+    console.log('BODY  ' + JSON.stringify(r.bounds));
+    console.log('BONES ' + JSON.stringify(r.bones));
+    for (const side of ['L', 'R']) {
+        const m = r.sides[side];
+        expect(m, `could not skin the ${side} sole`).not.toBeNull();
+        expect(m.lateral, `the ${side} sole is ${m.lateral} m to the side of ski${side}`)
+            .toBeLessThan(0.12);
+        // A boot may sink a little into the topsheet; it must not hover above it
+        // or dangle far below.
+        expect(m.gap, `the ${side} sole floats ${m.gap} m ABOVE ski${side} ` +
+            `(sole y=${m.sole[1]}, ski top y=${m.skiTop})`).toBeLessThan(0.04);
+        expect(m.gap, `the ${side} sole is ${-m.gap} m BELOW ski${side} — the ` +
+            `boot is through the topsheet`).toBeGreaterThan(-0.09);
+    }
+    expect(Math.abs(r.sides.L.gap - r.sides.R.gap),
+        `the two soles sit differently on their skis (L ${r.sides.L.gap}, ` +
+        `R ${r.sides.R.gap}) — one foot is not on its ski`).toBeLessThan(0.05);
+});
+
 test('the athlete is still visible after a crash', async ({ page }) => {
     // The crash detaches the DRIVER solids and disables the character root. The
     // skinned body hid every one of those drivers when it loaded and hangs off
