@@ -403,6 +403,20 @@ def skin(body, arm):
 # game positions. Those need the physics model changed and the traces rebaselined.
 HEAD_SCALE = 0.84
 
+# How hard the helmet and gloves are collapsed and shrunk relative to the suit.
+#
+# The decimate vertex group is FAR from linear in its weight — calibrated on this
+# mesh, weight 1.0 retained 5% of the head's faces while weight 0.30 retained 89%
+# of the suit's. Taking the obvious 1.0 crushed the helmet from 25% of the mesh to
+# 2.2%, which is 133 faces for a whole head and visibly faceted. These two numbers
+# land the head near 12% and the hands near 5%, leaving the suit ~83%.
+#
+# UV_SHRINK scales the head and hands during the unwrap only, so they claim
+# UV_SHRINK^2 — about a third — of the atlas area they otherwise would.
+REDUCE_W = 0.60
+BODY_KEEP = 0.30
+UV_SHRINK = 0.55
+
 
 def retune_proportions(body):
     """Shrink the drawn head about the neck, leaving the physics segment alone."""
@@ -752,18 +766,75 @@ def paint_suit(mesh):
 
 # ── Low / high poly ─────────────────────────────────────────────────────────
 
+def region_of(co):
+    """'head', 'hand' or 'body' — the three budgets that get different shares."""
+    name, along, radial, out, front, local = segment_frame(co)
+    if name == 'head':
+        return 'head'
+    if name.startswith('lowerArm') and along > 0.78:
+        return 'hand'
+    return 'body'
+
+
+def region_shares(body):
+    """What fraction of the faces each region holds."""
+    counts = {'head': 0, 'hand': 0, 'body': 0}
+    vs = body.data.vertices
+    for poly in body.data.polygons:
+        c = Vector((0, 0, 0))
+        for vi in poly.vertices:
+            c = c + vs[vi].co
+        counts[region_of(c / len(poly.vertices))] += 1
+    total = max(1, sum(counts.values()))
+    return {k: v / total for k, v in counts.items()}, counts
+
+
 def finish_lowpoly(body):
-    """Decimate, smooth-shade and split the helmet into its own material slot."""
+    """
+    Decimate, unwrap and split the helmet into its own material slot — spending
+    both budgets on the SUIT rather than on the head and hands.
+
+    A human base mesh puts its topology where a human needs it: the face and the
+    knuckles. This athlete wears a helmet and gloves, so those are precisely the
+    two regions with the least detail to carry, and they were taking ~40% of the
+    triangles and a matching share of the texture atlas. The suit — where the
+    seams, the bib and the leg stripe actually live — got what was left.
+
+    Two independent corrections, because triangles and texels are allocated by
+    different mechanisms:
+      * DECIMATION is steered by a vertex group, so the helmet and gloves collapse
+        harder than the suit.
+      * THE UNWRAP is steered by temporarily shrinking those regions in 3D.
+        smart_project allocates island area from world area, so a head scaled down
+        before unwrapping claims proportionally fewer texels; the geometry is put
+        straight back afterwards and only the UVs keep the change.
+    """
     bpy.ops.object.select_all(action='DESELECT')
     body.select_set(True)
     bpy.context.view_layer.objects.active = body
     body.name = 'athleteBody'
 
+    before, _ = region_shares(body)
+    log(f'faces before: head {before["head"]:.1%}, hand {before["hand"]:.1%}, '
+        f'suit {before["body"]:.1%}')
+
     if DECIMATE < 0.999:
+        # Weight 1 where the collapse should bite hardest. The suit keeps a floor
+        # so it is still reduced, just far less.
+        grp = body.vertex_groups.new(name='reduce')
+        for v in body.data.vertices:
+            r = region_of(v.co)
+            grp.add([v.index], REDUCE_W if r in ('head', 'hand') else BODY_KEEP, 'REPLACE')
         dec = body.modifiers.new('decimate', 'DECIMATE')
         dec.ratio = DECIMATE
+        dec.vertex_group = 'reduce'
+        dec.vertex_group_factor = 1.0
         bpy.ops.object.modifier_apply(modifier=dec.name)
     bpy.ops.object.shade_smooth()
+
+    after, counts = region_shares(body)
+    log(f'faces after:  head {after["head"]:.1%}, hand {after["hand"]:.1%}, '
+        f'suit {after["body"]:.1%}  ({counts})')
 
     # UNWRAP FRESH, into 0-1.
     #
@@ -775,6 +846,27 @@ def finish_lowpoly(body):
     # whatever was there, which rendered as dark blotches scattered over the suit.
     # Decimation has already discarded the artist topology those seams were placed
     # for, so there is little left to preserve.
+    # Shrink the head and hands in 3D for the duration of the projection only.
+    # smart_project sizes each island from the world area of the faces it covers,
+    # so this is the lever that decides how many texels a region gets. Scaling by
+    # UV_SHRINK claims UV_SHRINK^2 of the area it otherwise would.
+    saved = [v.co.copy() for v in body.data.vertices]
+    pivots, groups = {}, {'head': [], 'hand': []}
+    for i, v in enumerate(body.data.vertices):
+        r = region_of(v.co)
+        if r != 'body':
+            groups[r].append(i)
+    for r, idxs in groups.items():
+        if not idxs:
+            continue
+        p = Vector((0, 0, 0))
+        for i in idxs:
+            p = p + body.data.vertices[i].co
+        pivots[r] = p / len(idxs)
+        for i in idxs:
+            v = body.data.vertices[i]
+            v.co = pivots[r] + (v.co - pivots[r]) * UV_SHRINK
+
     bpy.context.scene.tool_settings.use_uv_select_sync = True
     bpy.ops.object.mode_set(mode='EDIT')
     bpy.ops.mesh.select_all(action='SELECT')
@@ -785,6 +877,31 @@ def finish_lowpoly(body):
                             margin_method='FRACTION', margin=0.004,
                             shape_method='AABB')
     bpy.ops.object.mode_set(mode='OBJECT')
+
+    # Put the geometry back. Only the UVs keep the reweighting.
+    for i, co in enumerate(saved):
+        body.data.vertices[i].co = co
+    # The share of the ATLAS each region ended up with. This is the number the
+    # unwrap weighting exists to move, and it is not the same as the face share —
+    # texels are allocated by island area, triangles by the decimator.
+    uvl = body.data.uv_layers.active.data
+    area = {'head': 0.0, 'hand': 0.0, 'body': 0.0}
+    vs = body.data.vertices
+    for poly in body.data.polygons:
+        uvs = [uvl[i].uv for i in poly.loop_indices]
+        a = 0.0
+        for i in range(len(uvs)):
+            x1, y1 = uvs[i]
+            x2, y2 = uvs[(i + 1) % len(uvs)]
+            a += x1 * y2 - x2 * y1
+        c = Vector((0, 0, 0))
+        for vi in poly.vertices:
+            c = c + vs[vi].co
+        area[region_of(c / len(poly.vertices))] += abs(a) * 0.5
+    total = max(1e-9, sum(area.values()))
+    log(f'unwrap weighted (head/hands x{UV_SHRINK:.2f}): atlas share — '
+        f'head {area["head"] / total:.1%}, hand {area["hand"] / total:.1%}, '
+        f'suit {area["body"] / total:.1%}')
 
     uvs = body.data.uv_layers.active.data
     us = [d.uv[0] for d in uvs]
