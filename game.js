@@ -3077,6 +3077,22 @@ function _startGame() {
                 }
                 crashPieces = [];
                 character.root.setEnabled(true);
+
+                // Put the skinned body back and re-hide the drivers it replaced.
+                // Skis are equipment and stay visible either way.
+                for (const nm of Object.keys(character.meshes)) {
+                    if (nm === 'skiL' || nm === 'skiR') continue;
+                    const e = character.meshes[nm];
+                    const m = (e && e.mesh) ? e.mesh : e;
+                    if (m) m.isVisible = !window._bodyLinked;
+                }
+                for (const m of scene.meshes) {
+                    if (!m.name) continue;
+                    if (m.name.startsWith('athleteBody')) m.isVisible = true;
+                    else if (/_shoulder$|_elbow$|_knee$|_hip$|_glove$|_boot|_buckle$|^neck$|^nose$|^visor$/.test(m.name)) {
+                        m.isVisible = !window._bodyLinked;
+                    }
+                }
             }
             leftDown = false; rightDown = false;
             autoSpinActive = false; armSwapPhase = false;
@@ -4417,6 +4433,27 @@ function _startGame() {
             for (const { name, mesh } of ragdollParts) {
                 mesh.computeWorldMatrix(true);
                 worldPositions[name] = mesh.getAbsolutePosition().clone();
+            }
+
+            // ── Make the ragdoll VISIBLE ────────────────────────────────────
+            // The pieces that tumble are the DRIVER solids, and the continuous
+            // skinned body hid every one of them when it loaded — they are the
+            // articulation now, not the thing you see. So the crash detached a
+            // dozen invisible objects, disabled the root the visible body hangs
+            // off, and the athlete vanished mid-air leaving only the skis, which
+            // survived because they are equipment and were never hidden.
+            //
+            // The skinned body cannot come apart: its bones follow the drivers,
+            // so flinging the drivers in twelve directions would stretch one
+            // continuous skin between them. The parts ARE the crash, so they are
+            // shown and the skinned body is hidden for its duration.
+            for (const { mesh } of ragdollParts) mesh.isVisible = true;
+            for (const m of scene.meshes) {
+                if (!m.name) continue;
+                if (m.name.startsWith('athleteBody')) m.isVisible = false;
+                else if (/_shoulder$|_elbow$|_knee$|_hip$|_glove$|_boot|_buckle$|^neck$|^nose$|^visor$/.test(m.name)) {
+                    m.isVisible = true;      // detail parented to a tumbling piece
+                }
             }
 
             // Pass 2: detach and launch each piece independently.

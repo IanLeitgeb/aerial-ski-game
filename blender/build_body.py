@@ -413,6 +413,7 @@ HEAD_SCALE = 0.84
 #
 # UV_SHRINK scales the head and hands during the unwrap only, so they claim
 # UV_SHRINK^2 — about a third — of the atlas area they otherwise would.
+GIRTH = 1.07
 REDUCE_W = 0.60
 BODY_KEEP = 0.30
 UV_SHRINK = 0.55
@@ -434,6 +435,108 @@ def retune_proportions(body):
     log(f'head scaled {HEAD_SCALE:.2f} about the neck ({n} verts): '
         f'{stand / (seg["h"] * HEAD_SCALE):.2f} head-heights drawn, '
         f'{stand / seg["h"]:.2f} by the physics model')
+
+
+def skeleton_offset(co):
+    """
+    Vector from the nearest point on the SKELETON to this point.
+
+    Distance to the union of the segment axes, which is continuous everywhere —
+    including across joints. That continuity is the whole reason for computing it
+    this way: scaling each vertex's offset from its own segment's axis would jump
+    wherever the nearest segment changes, tearing a seam around every hip and
+    shoulder.
+    """
+    p = Vector(co)
+    best, best_d = None, 1e9
+    for name in BODY_SEGMENTS:
+        c = bl(name)
+        half = SEGMENTS[name]['h'] / 2
+        z = max(c.z - half, min(c.z + half, p.z))          # clamp onto the axis
+        near = Vector((c.x, c.y, z))
+        d = (p - near).length
+        if d < best_d:
+            best_d, best = d, near
+    return p - best, best_d
+
+
+def build_report(body, tag):
+    """
+    Measure the figure against adult proportions.
+
+    "Stringy" is a judgement; these are the numbers behind it. Shoulder breadth
+    runs about 25% of standing height on an adult male and hip breadth about 19%,
+    so a figure whose limbs and trunk fall well under that reads as a stick
+    regardless of how good its topology is.
+    """
+    zs = [v.co.z for v in body.data.vertices]
+    lo = bl('lowerLegL').z - SEGMENTS['lowerLegL']['h'] / 2
+    hi = bl('head').z + SEGMENTS['head']['h'] / 2
+    stand = hi - lo
+
+    def width_at(z, band=0.03):
+        ys = [v.co.y for v in body.data.vertices if abs(v.co.z - z) < band]
+        return (max(ys) - min(ys)) if ys else 0.0
+
+    shoulder = width_at(bl('torso').z + SEGMENTS['torso']['h'] / 2 * 0.72)
+    chest = width_at(bl('torso').z + SEGMENTS['torso']['h'] / 2 * 0.30)
+    hip = width_at(bl('torso').z - SEGMENTS['torso']['h'] / 2 * 0.80)
+    thigh = width_at(bl('upperLegL').z)
+    log(f'{tag}: standing {stand:.3f} m | shoulder {shoulder:.3f} '
+        f'({shoulder / stand:.1%} of height, adult ~25%) | chest {chest:.3f} '
+        f'({chest / stand:.1%}) | hip {hip:.3f} ({hip / stand:.1%}, adult ~19%) '
+        f'| thighs {thigh:.3f}')
+    return {'stand': stand, 'shoulder': shoulder, 'hip': hip}
+
+
+def add_girth(body, stretch):
+    """
+    Give every limb back the width:length ratio it was built with.
+
+    The figure read as "stringy" and the trunk measurements said it was not thin —
+    hip breadth came out at 19.3% of standing height against an adult's 19%. The
+    fault was not girth, it was that fitting a human to the game's segment lengths
+    stretches each limb by a DIFFERENT amount and leaves every cross-section
+    alone. Measured against the anatomical rig:
+
+        upper arm  x1.22      thigh  x0.79
+        forearm    x1.12      shin   x0.93
+        torso      x1.00
+
+    So the arms were pulled 22% longer at their original thickness — which is
+    exactly what a stringy arm is — while the thighs were squashed 21% shorter and
+    went stocky. The mismatch between the two is what reads as wrong; neither one
+    alone would.
+
+    Scaling each vertex's offset from the skeleton by its own segment's stretch
+    restores the ratio: the arms thicken by the same factor they were lengthened,
+    the thighs slim by the same factor they were shortened. No joint moves, no
+    segment length changes, and the physics model is untouched.
+
+    The factor is blended between segments by inverse-square distance rather than
+    taken from the nearest one, so it varies smoothly across every joint instead
+    of stepping at the hip and shoulder.
+    """
+    axes = {n: (bl(n), SEGMENTS[n]['h'] / 2) for n in BODY_SEGMENTS}
+    n = 0
+    for v in body.data.vertices:
+        off, dist = skeleton_offset(v.co)
+        if dist < 1e-6:
+            continue
+        p = Vector(v.co)
+        num = den = 0.0
+        for name, (c, half) in axes.items():
+            z = max(c.z - half, min(c.z + half, p.z))
+            d2 = (p - Vector((c.x, c.y, z))).length_squared + 1e-4
+            w = 1.0 / (d2 * d2)
+            num += w * stretch.get(name, 1.0)
+            den += w
+        f = (num / den) * GIRTH
+        v.co = p + off * (f - 1.0)
+        n += 1
+    lo, hi = min(stretch.values()), max(stretch.values())
+    log(f'girth matched to stretch ({lo:.2f}..{hi:.2f}) x global {GIRTH:.2f}, '
+        f'{n} verts')
 
 
 def rigid_boots(body, arm, joints):
@@ -480,6 +583,7 @@ def pose_onto_segments(body, arm, foot_lift):
 
     order = ['torso'] + [n for n in ANATOMY if n != 'torso']
     order.sort(key=lambda n: 0 if n == 'torso' else (1 if HIERARCHY.get(n) == 'torso' else 2))
+    stretch = {}
 
     for name in order:
         pb = arm.pose.bones[name]
@@ -517,6 +621,7 @@ def pose_onto_segments(body, arm, foot_lift):
         basis = (turn @ rest_basis).to_4x4()
         scale = Matrix.Scale(length / rest_len, 4, Vector((0, 1, 0)))
         pb.matrix = Matrix.Translation(head) @ basis @ scale
+        stretch[name] = length / rest_len
         bpy.context.view_layer.update()
 
     # Did the BONES land where they were told? Separating this from where the
@@ -558,6 +663,8 @@ def pose_onto_segments(body, arm, foot_lift):
     ys = [v.co.y for v in me.vertices]
     log(f'posed onto segments: height {max(zs) - min(zs):.3f}, '
         f'lateral span {max(ys) - min(ys):.3f}')
+    log('stretch per segment: ' + ', '.join(
+        f'{k} x{v:.2f}' for k, v in sorted(stretch.items())))
 
     # Where each segment's geometry ACTUALLY landed, against where the rig put the
     # bone. "The figure looks wrong" is not a diagnosis; this says which limb is
@@ -581,6 +688,7 @@ def pose_onto_segments(body, arm, foot_lift):
             f'z={min(p.z for p in pts):+.3f}..{max(p.z for p in pts):+.3f} '
             f'(target {head.z:+.3f}..{tail.z:+.3f}) '
             f'y_mean={cy:+.3f} (target {head.y:+.3f})')
+    return stretch
 
 
 # ── Suit detail ─────────────────────────────────────────────────────────────
@@ -1130,6 +1238,11 @@ def add_equipment():
         bpy.ops.mesh.primitive_cube_add(size=1.0, location=c)
         o = bpy.context.active_object
         o.name = name
+        # (w, d, h) is correct and was briefly "fixed" to something else. bl()
+        # maps POSITIONS through the exporter's yup conversion, but a scale is
+        # local: Blender Y becomes Babylon Z, so the ski's 1.20 m depth lands on
+        # the fall line. The apparent bug was a world-space bounding box being
+        # read while the skier was yawed — see tests/drive/rig.spec.js.
         o.scale = (seg['w'], seg['d'], seg['h'])
         bpy.ops.object.transform_apply(scale=True)
         m = o.modifiers.new('bevel', 'BEVEL')
@@ -1157,8 +1270,11 @@ def main():
     foot_lift = (joints['ankleL'].z - sole) * (SEGMENTS['lowerLegL']['h'] / rest_shin)
     log(f'boot height {foot_lift:.3f} m (ankle {joints["ankleL"].z:.3f}, sole {sole:.3f})')
 
-    pose_onto_segments(body, arm, foot_lift)
+    stretch = pose_onto_segments(body, arm, foot_lift)
     retune_proportions(body)
+    build_report(body, 'before girth')
+    add_girth(body, stretch)
+    build_report(body, 'after girth ')
     low = finish_lowpoly(body)
     high = make_highpoly(low)
 
