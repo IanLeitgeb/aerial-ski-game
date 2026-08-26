@@ -556,7 +556,21 @@ def add_girth(body, stretch):
             z = max(c.z - half, min(c.z + half, p.z))
             d2 = (p - Vector((c.x, c.y, z))).length_squared + 1e-4
             w = 1.0 / (d2 * d2)
-            num += w * stretch.get(name, 1.0)
+            # ONLY EVER SLIM, NEVER THICKEN.
+            #
+            # Matching girth to stretch in both directions was wrong, and it is
+            # where the oversized biceps and shoulders came from: the upper arm is
+            # posed 1.23x longer than the mesh's own anatomy, so it was thickened
+            # 23% to match, and the shoulder next to it came along through the
+            # blend. But a limb held at a longer reach does not get FATTER — its
+            # girth is set by the body it belongs to. Stretching a limb and leaving
+            # its cross-section alone is correct.
+            #
+            # Compression is the asymmetric case: the thigh is posed at 0.79 of
+            # its anatomical length, and a thigh squashed to four-fifths while
+            # keeping its full width really does read as stocky. So slimming is
+            # applied and thickening is not.
+            num += w * min(1.0, stretch.get(name, 1.0))
             den += w
         f = (num / den) * GIRTH
         v.co = p + off * (f - 1.0)
