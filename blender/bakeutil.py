@@ -39,6 +39,21 @@ def write_png(path, rgb8, w, h):
         f.write(png)
 
 
+def fill_image(img, rgba):
+    """
+    Fill a float image with an exact RGBA value.
+
+    Deliberately not image.generated_color, which runs the value through Blender's
+    colour management: a (0.5, 0.5, 1.0) normal-map background came back as
+    (0.21, 0.21, 1.0). For DATA images the numbers have to survive unchanged, so
+    they go straight into the pixel buffer.
+    """
+    w, h = img.size
+    buf = np.tile(np.array(rgba, dtype=np.float32), w * h)
+    img.pixels.foreach_set(buf)
+    return img
+
+
 def save_bake(img, out_png, srgb, normalise=False, log=print):
     """
     Read a baked float image back and write it to disk.

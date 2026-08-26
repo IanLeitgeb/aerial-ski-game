@@ -1,71 +1,76 @@
 """
-Build the athlete: a low-poly skinned body carrying baked high-poly detail.
+Build the athlete from a real human base mesh, rigged to the physics segments.
 
     ~/opt/blender-5.2.1-linux-x64/blender -b --factory-startup \
         --python blender/build_body.py -- --out assets/athlete_body.glb --res 2048
 
-WHY THIS EXISTS
----------------
-The athlete was separate solids, then capsules, then one continuous metaball
-body. Each step helped and none of them fixed the real problem: the figure had no
-SURFACE. A person in a race suit reads as a person because of seams, panels,
-fabric creasing at the joints, a stripe down the leg, a bib over the chest — and
-a smooth blended isosurface has none of that, so it stays a mannequin no matter
-how good the lighting gets.
+WHY THE METABALL BODY IS GONE
+-----------------------------
+The previous three athletes were separate solids, then capsules, then one
+continuous metaball isosurface. The last of those was the closest and still read
+as an alien, for a reason no amount of parameter tuning could reach: a metaball
+body has no TOPOLOGY. It is a field, sampled. A shoulder is wherever two blobs
+happen to overlap, so it is a bulge rather than a deltoid; there is no edge loop
+at the elbow, so the elbow is a smooth tube; the arms do not attach to the torso,
+they merge into it. Human silhouettes are read by exactly those features, and
+none of them exist in an isosurface.
 
-Adding that detail as geometry is not an option: it would be hundreds of
-thousands of triangles for a figure that is often sixty pixels tall. The standard
-answer is to build it at high resolution, BAKE it into maps, and put the maps on
-a low-poly mesh. That is what this script does, and it is the reason the mesh is
-built in Blender at all rather than in game.js.
+So the base is now a real human mesh: Blender Studio's CC0 Human Base Meshes
+bundle, 10,582 vertices, 99.8% quads, already UV unwrapped, with proper edge
+loops at every joint. blender/extract_base_mesh.py vendors the one body from the
+50 MB bundle; blender/human_base_male.blend is the result.
 
-REFERENCE
----------
-Matched to a World Cup aerials clip supplied by the author (IMG_7841.MOV, a
-Canadian venue). What that footage actually shows, and what the suit design below
-reproduces:
+FITTING IT TO A RIG THAT IS NOT ANATOMICAL
+------------------------------------------
+The game's body-model.json is a PHYSICS model — ten segments with masses and
+inertias — and its segment centres are not where a human's joints are. Binding
+the mesh directly to bones placed at those centres reproduces the original
+problem: the "shoulder" lands mid-torso and the arms attach to the ribs.
 
-  * a white / pale-grey race suit, slim and tight — the silhouette is long and
-    thin, never bulky
-  * a royal-blue stripe running the FULL outside of each leg, hip to ankle
-  * a powder-blue competition bib over the torso, with a white number patch
-  * dark navy at the waist, dark gloves, dark helmet
-  * short aerial skis, pale topsheet
+The fix is to separate the two jobs the rig does:
+
+  1. WEIGHTS need anatomically-correct bones, or the deformation is nonsense.
+     Blender's Rigify ships a human metarig whose joint positions are real human
+     proportions, so the shoulder, elbow, wrist, hip, knee and ankle are read off
+     it and scaled to this mesh rather than guessed.
+
+  2. THE BIND POSE needs to be the game's POSE_UNTUCKED, because that is the
+     layout the physics drivers write to every frame.
+
+So the rig is built anatomically, the mesh is bound to it, and THEN each bone is
+posed onto its game segment and the pose is applied as the new rest pose. The
+mesh reshapes to the game's proportions while keeping human topology and sane
+weights.
 
 PIPELINE
 --------
-  base      metaballs grown along the physics segments  (proportions come from
-            body-model.json, so the body cannot drift from the simulation)
+  human_base_male.blend  (CC0, A-pose, anatomical)
     |
-    +-- low     decimated, UV unwrapped, skinned, EXPORTED
+    +- align axes, soften anatomy, round the head into a helmet
+    +- rig at ANATOMICAL joints (from the Rigify metarig, scaled)
+    +- bind with heat-map weights
+    +- pose each bone onto its game segment; apply as rest pose
     |
-    +-- high    subdivided, then displaced with suit detail and painted with
-                vertex colours; never exported, exists only to be baked
+    +-- low     the result, UV'd and material-split, EXPORTED
+    |
+    +-- high    subdivided, displaced with suit detail, painted with vertex
+                colours; never exported, exists only to be baked
 
   bake high -> low:  normal (tangent), ambient occlusion, albedo
 
+REFERENCE
+---------
+Suit design matched to a World Cup aerials clip supplied by the author
+(IMG_7841.MOV, a Canadian venue): white race suit, royal-blue stripe down the
+full outside of each leg, powder-blue competition bib with a white number patch,
+navy waist, dark gloves, dark helmet.
+
 OUTPUT
 ------
-assets/athlete_body.glb     low-poly skinned body + skis
+assets/athlete_body.glb     skinned body + skis
 assets/athlete_normal.png   tangent-space normals   (DATA: linear, not sRGB)
 assets/athlete_ao.png       ambient occlusion       (DATA: linear, not sRGB)
 assets/athlete_albedo.png   suit colours            (COLOUR: sRGB)
-
-HONEST LIMITATION
------------------
-This bakes SUIT detail onto procedurally-grown proportions. It gives fabric,
-seams, panels, the stripe and the bib — the things that actually read at game
-distance and in a close render. It does not give anatomy or a face: no procedure
-sculpts a convincing human, and pretending otherwise would just produce a
-lumpier mannequin. If the figure ever needs to hold up in a portrait-scale
-render, the base has to come from a real sculpt; everything downstream of `base`
-here would still apply unchanged.
-
-BUILT IN THE REFERENCE POSE
----------------------------
-The body is built in POSE_UNTUCKED. A skinned mesh has to be bound in a real
-pose — the bind pose is what the skinning weights are relative to — and the game
-then deforms it by driving the bones.
 """
 
 import bpy
@@ -73,6 +78,8 @@ import json
 import math
 import os
 import sys
+
+from mathutils import Matrix, Vector
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 if HERE not in sys.path:
@@ -91,8 +98,10 @@ def arg(name, default):
 
 
 OUT = arg('--out', 'assets/athlete_body.glb')
+BASE = arg('--base', 'blender/human_base_male.blend')
 RES = int(arg('--res', '2048'))
 SAMPLES = int(arg('--samples', '128'))
+DECIMATE = float(arg('--decimate', '0.55'))
 
 ROOT = os.path.dirname(HERE)
 MODEL = json.load(open(os.path.join(HERE, 'body-model.json')))
@@ -100,7 +109,6 @@ SEGMENTS = {s['name']: s for s in MODEL['SEGMENTS']}
 BASE_Z = MODEL['BASE_Z']
 POSE = MODEL['POSE_UNTUCKED']
 
-# Skis are rigid equipment, not body. They stay separate objects.
 BODY_SEGMENTS = [n for n in SEGMENTS if n not in ('skiL', 'skiR')]
 
 # ── Suit palette, read off the reference footage ────────────────────────────
@@ -121,100 +129,279 @@ def bl(name):
     """
     Segment centre in BLENDER axes.
 
-    Determined empirically, not from first principles: the glTF exporter's
-    export_yup conversion combines with Blender's own axes such that the round
-    trip lands as Babylon (x, y, z) = Blender (y, z, x). Measured by building the
-    body, printing the Blender-side bounding box, and comparing it to what Babylon
-    reported — the first version pre-swapped in the same direction the exporter
-    already does, producing a figure 0.18 wide instead of 0.51 (the arms ended up
-    along the depth axis, so it read as a vertical column).
-
-    So, in Blender: X is fore/aft (chest faces +X), Y is left/right, Z is up.
-    The suit detail below depends on that mapping.
+    Determined empirically: the glTF exporter's export_yup conversion combines
+    with Blender's own axes such that the round trip lands as Babylon (x, y, z) =
+    Blender (y, z, x). So in Blender, X is fore/aft (chest faces +X), Y is
+    left/right, and Z is up. The suit detail below depends on that mapping.
     """
     p = POSE.get(name, {})
     x_babylon = p.get('x', 0.0)
     y_babylon = p.get('y', 0.0)
     z_babylon = BASE_Z.get(name, 0.0) + p.get('dz', 0.0)
-    return (z_babylon, x_babylon, y_babylon)
+    return Vector((z_babylon, x_babylon, y_babylon))
+
+
+def seg_ends(name):
+    """The game's segment as a (head, tail) pair in Blender axes."""
+    c = bl(name)
+    half = SEGMENTS[name]['h'] / 2
+    return c - Vector((0, 0, half)), c + Vector((0, 0, half))
 
 
 def clear():
     bpy.ops.wm.read_factory_settings(use_empty=True)
 
 
-# ── Base body ───────────────────────────────────────────────────────────────
+# ── The base mesh ───────────────────────────────────────────────────────────
 
-def build_base():
+def load_base():
     """
-    Grow the torso, head and limbs as one blended isosurface.
+    Bring in the CC0 human body and put it in the rig's axes.
 
-    Metaballs rather than a hand-modelled humanoid: they blend into one continuous
-    surface, so shoulders, hips, elbows and knees fuse organically instead of
-    butting together, and the placement is driven by body-model.json so it cannot
-    drift from the physics.
+    The bundle's figure stands with its arm span along X and its fore/aft along
+    Y; bl() expects the opposite. Rotating 90 degrees about Z lines them up, and
+    which way the chest ends up facing is checked afterwards from the mesh's own
+    asymmetry rather than assumed — the base mesh's front is its -Y side, so a
+    +90 rotation puts the chest on +X, which is what bl() wants.
     """
-    mball = bpy.data.metaballs.new('AthleteBody')
-    # Lower = finer isosurface. 0.035 gave ~400 verts for a whole body, which
-    # reads blocky; 0.02 lands nearer 3k after decimation, which a browser skins
-    # comfortably — and gives the high-poly something to subdivide from.
-    mball.resolution = 0.02
-    mball.render_resolution = 0.02
-    obj = bpy.data.objects.new('AthleteBody', mball)
+    path = BASE if os.path.isabs(BASE) else os.path.join(ROOT, BASE)
+    with bpy.data.libraries.load(path, link=False) as (src, dst):
+        dst.objects = [n for n in src.objects if n == 'humanBase'] or list(src.objects)
+    obj = dst.objects[0]
     bpy.context.collection.objects.link(obj)
-
-    def strand(name, count, radius_scale=1.0, stiffness=2.0):
-        """
-        Place metaball elements along a segment's axis.
-
-        A metaball's isosurface sits WELL INSIDE its stated radius — the field
-        falls below threshold before reaching it. Measuring showed the torso
-        coming out ~0.18 across where the segment is 0.30x0.28, i.e. everything
-        was roughly 40% too thin and the figure read as a cardboard cutout.
-
-        (Blender's ELLIPSOID element type was tried first, to control depth
-        separately; its size_x/y/z are expansion BEYOND the radius rather than the
-        radius itself, which produced a 58-vertex speck. Spheres with honest radii
-        are the simpler correct answer, since these segments are close to round
-        anyway.)
-        """
-        # Calibrated, not guessed. Measuring the built mesh against the stated
-        # radii showed the isosurface lands at ~0.72x the radius, so a segment
-        # whose real half-width is W needs radius W/0.72 = 1.39*W. At 1.75 the
-        # torso was 25% too wide and swallowed the arms, which is why the figure
-        # kept reading as a blob with a bulge rather than a body with limbs.
-        RADIUS_COMPENSATION = 1.40
-        seg = SEGMENTS[name]
-        cx, cy, cz = bl(name)
-        half = seg['h'] / 2
-        r = (seg['w'] + seg['d']) / 4 * radius_scale * RADIUS_COMPENSATION
-        for i in range(count):
-            t = (i / max(1, count - 1)) * 2 - 1
-            el = mball.elements.new()
-            el.co = (cx, cy, cz + t * half * 0.9)
-            el.radius = r
-            el.stiffness = stiffness
-
-    strand('torso', 11, radius_scale=1.00, stiffness=2.0)
-    # A slightly smaller head radius keeps the helmet from swallowing the
-    # shoulders.
-    strand('head', 5, radius_scale=1.10, stiffness=2.4)
-
-    for side in ('L', 'R'):
-        strand(f'upperArm{side}', 11, radius_scale=1.00, stiffness=1.9)
-        strand(f'lowerArm{side}', 11, radius_scale=0.92, stiffness=1.9)
-        strand(f'upperLeg{side}', 11, radius_scale=0.66, stiffness=1.5)
-        strand(f'lowerLeg{side}', 11, radius_scale=0.62, stiffness=1.5)
-
-    log(f'{len(mball.elements)} metaball elements placed')
-
     bpy.context.view_layer.objects.active = obj
     obj.select_set(True)
-    bpy.ops.object.convert(target='MESH')
-    base = bpy.context.active_object
-    base.name = 'athleteBase'
-    log(f'base isosurface: {len(base.data.vertices)} verts')
-    return base
+
+    obj.rotation_euler = (0, 0, math.radians(90))
+    bpy.ops.object.transform_apply(rotation=True)
+
+    me = obj.data
+    zs = [v.co.z for v in me.vertices]
+    ys = [v.co.y for v in me.vertices]
+    xs = [v.co.x for v in me.vertices]
+    log(f'base mesh: {len(me.vertices)} verts, {len(me.polygons)} faces, '
+        f'height {max(zs) - min(zs):.3f}, span y={min(ys):+.3f}..{max(ys):+.3f}, '
+        f'x={min(xs):+.3f}..{max(xs):+.3f}')
+    return obj
+
+
+def soften(obj):
+    """
+    Remove the detail a race suit would hide, and round the head into a helmet.
+
+    Two different problems. Over the body, the base mesh carries anatomical
+    detail — nipples, navel, genitals, knuckles — that a skin-tight lycra suit
+    covers; a light smoothing pass keeps the form and drops the detail. Over the
+    head the problem is bigger: an aerials athlete wears a close-fitting helmet,
+    and a head with a nose, ears and eye sockets reads unmistakably as a FACE no
+    matter what colour it is painted. Smoothing hard above the jaw turns it into
+    the dome it needs to be.
+    """
+    me = obj.data
+    zs = [v.co.z for v in me.vertices]
+    top = max(zs)
+    height = top - min(zs)
+    # The jaw sits at about 0.87 of standing height on a human figure.
+    jaw = min(zs) + height * 0.86
+
+    grp = obj.vertex_groups.new(name='headMask')
+    for v in me.vertices:
+        if v.co.z >= jaw:
+            # Ramp in over the last few centimetres so the neck does not step.
+            t = min(1.0, (v.co.z - jaw) / (height * 0.03))
+            grp.add([v.index], t, 'REPLACE')
+
+    bpy.context.view_layer.objects.active = obj
+    body = obj.modifiers.new('softenBody', 'SMOOTH')
+    body.factor = 0.6
+    body.iterations = 3
+    bpy.ops.object.modifier_apply(modifier=body.name)
+
+    head = obj.modifiers.new('softenHead', 'SMOOTH')
+    head.factor = 1.0
+    head.iterations = 26
+    head.vertex_group = 'headMask'
+    bpy.ops.object.modifier_apply(modifier=head.name)
+    log(f'softened: body pass + {head.iterations} head iterations above z={jaw:.3f}')
+
+
+# ── Anatomical joints ───────────────────────────────────────────────────────
+
+def anatomical_joints(obj):
+    """
+    Real human joint positions, scaled onto this mesh.
+
+    Read off Rigify's human metarig rather than guessed from fractions of the
+    figure's height. Guessing is what produced an athlete whose arms grew out of
+    its ribcage: the game's segment centres are a mass model, not a skeleton, and
+    a shoulder placed at the centre of the "upperArm" segment is nowhere near
+    where a shoulder is.
+
+    Returned in the rig's axes — X fore/aft, Y lateral, Z up — which is the
+    metarig's own axes rotated the same 90 degrees as the mesh.
+    """
+    bpy.ops.preferences.addon_enable(module='rigify')
+    bpy.ops.object.armature_human_metarig_add()
+    meta = bpy.context.active_object
+
+    bones = meta.data.bones
+    zs = [b.head_local.z for b in bones] + [b.tail_local.z for b in bones]
+    meta_h = max(zs) - min(zs)
+
+    me = obj.data
+    mesh_zs = [v.co.z for v in me.vertices]
+    mesh_h = max(mesh_zs) - min(mesh_zs)
+    s = mesh_h / meta_h
+
+    def conv(v):
+        # Metarig axes -> rig axes: the same +90 degrees about Z applied to the
+        # mesh, i.e. (x, y, z) -> (-y, x, z), then scaled to this figure.
+        return Vector((-v.y * s, v.x * s, v.z * s))
+
+    def head_of(name):
+        return conv(bones[name].head_local)
+
+    def tail_of(name):
+        return conv(bones[name].tail_local)
+
+    j = {
+        'hipL': head_of('thigh.L'), 'kneeL': tail_of('thigh.L'),
+        'ankleL': tail_of('shin.L'),
+        'hipR': head_of('thigh.R'), 'kneeR': tail_of('thigh.R'),
+        'ankleR': tail_of('shin.R'),
+        'shoulderL': head_of('upper_arm.L'), 'elbowL': head_of('forearm.L'),
+        'wristL': head_of('hand.L'),
+        'shoulderR': head_of('upper_arm.R'), 'elbowR': head_of('forearm.R'),
+        'wristR': head_of('hand.R'),
+        'pelvis': head_of('spine'), 'neck': tail_of('spine.003'),
+        'crown': Vector((0.0, 0.0, max(mesh_zs))),
+    }
+    bpy.data.objects.remove(meta, do_unlink=True)
+    log(f'anatomical joints from metarig (scale {s:.4f}): '
+        f'shoulder z={j["shoulderL"].z:.3f} hip z={j["hipL"].z:.3f} '
+        f'knee z={j["kneeL"].z:.3f}')
+    return j
+
+
+ANATOMY = {
+    'torso':     ('pelvis', 'neck'),
+    'head':      ('neck', 'crown'),
+    'upperArmL': ('shoulderL', 'elbowL'), 'lowerArmL': ('elbowL', 'wristL'),
+    'upperArmR': ('shoulderR', 'elbowR'), 'lowerArmR': ('elbowR', 'wristR'),
+    'upperLegL': ('hipL', 'kneeL'),       'lowerLegL': ('kneeL', 'ankleL'),
+    'upperLegR': ('hipR', 'kneeR'),       'lowerLegR': ('kneeR', 'ankleR'),
+}
+
+HIERARCHY = {
+    'head': 'torso',
+    'upperArmL': 'torso', 'upperArmR': 'torso',
+    'lowerArmL': 'upperArmL', 'lowerArmR': 'upperArmR',
+    'upperLegL': 'torso', 'upperLegR': 'torso',
+    'lowerLegL': 'upperLegL', 'lowerLegR': 'upperLegR',
+}
+
+
+def build_armature(joints):
+    """Ten bones, named for the physics segments, placed at real joints."""
+    bpy.ops.object.armature_add(location=(0, 0, 0))
+    arm = bpy.context.active_object
+    arm.name = 'AthleteRig'
+    bpy.ops.object.mode_set(mode='EDIT')
+    eb = arm.data.edit_bones
+    for b in list(eb):
+        eb.remove(b)
+
+    made = {}
+    for name, (a, b) in ANATOMY.items():
+        bone = eb.new(name)
+        bone.head = joints[a]
+        bone.tail = joints[b]
+        made[name] = bone
+    for c, p in HIERARCHY.items():
+        made[c].parent = made[p]
+        made[c].use_connect = False
+
+    bpy.ops.object.mode_set(mode='OBJECT')
+    log(f'armature: {len(made)} bones at anatomical joints')
+    return arm
+
+
+def skin(body, arm):
+    """
+    Bind with heat-map weights.
+
+    This is where a real mesh pays off twice over. Automatic weights work by
+    diffusing influence across the SURFACE, so they need topology that follows
+    the anatomy — which the metaball body did not have, and which is why its
+    elbows and shoulders deformed like putty.
+    """
+    bpy.ops.object.select_all(action='DESELECT')
+    body.select_set(True)
+    arm.select_set(True)
+    bpy.context.view_layer.objects.active = arm
+    bpy.ops.object.parent_set(type='ARMATURE_AUTO')
+    log('skinned with automatic (heat map) weights')
+
+
+def pose_onto_segments(body, arm):
+    """
+    Move every bone from its anatomical position onto its game segment, then make
+    that the rest pose.
+
+    This is the step that reconciles a human skeleton with a ten-box physics
+    model. Each bone is posed so its head and tail land exactly on the segment's
+    ends, which translates, rotates and stretches the limb; the mesh follows
+    through the armature modifier. Applying the deformation to the mesh and the
+    pose to the armature then makes the whole thing the new rest state, so the
+    game receives a body already in POSE_UNTUCKED with human topology.
+
+    Parents are posed before children: a child's target is absolute, so it has to
+    be set after the parent has already moved or the parent's transform is
+    applied on top of it.
+    """
+    bpy.context.view_layer.objects.active = arm
+    bpy.ops.object.mode_set(mode='POSE')
+
+    order = ['torso'] + [n for n in ANATOMY if n != 'torso']
+    order.sort(key=lambda n: 0 if n == 'torso' else (1 if HIERARCHY.get(n) == 'torso' else 2))
+
+    for name in order:
+        pb = arm.pose.bones[name]
+        head, tail = seg_ends(name)
+        d = tail - head
+        length = d.length
+        rest = pb.bone.length
+        if rest < 1e-6 or length < 1e-6:
+            continue
+        # A Blender bone points along its own +Y, from head to tail.
+        rot = Vector((0, 1, 0)).rotation_difference(d.normalized()).to_matrix().to_4x4()
+        scale = Matrix.Scale(length / rest, 4, Vector((0, 1, 0)))
+        pb.matrix = Matrix.Translation(head) @ rot @ scale
+        bpy.context.view_layer.update()
+
+    bpy.ops.object.mode_set(mode='OBJECT')
+
+    # Bake the deformation into the mesh, THEN make the pose the rest pose. Doing
+    # only the second leaves the mesh in its old shape with a new rest pose, i.e.
+    # exactly the deformation applied in reverse.
+    bpy.context.view_layer.objects.active = body
+    mod = next((m for m in body.modifiers if m.type == 'ARMATURE'), None)
+    if mod:
+        bpy.ops.object.modifier_copy(modifier=mod.name)
+        dup = [m for m in body.modifiers if m.type == 'ARMATURE'][-1]
+        bpy.ops.object.modifier_apply(modifier=dup.name)
+
+    bpy.context.view_layer.objects.active = arm
+    bpy.ops.object.mode_set(mode='POSE')
+    bpy.ops.pose.select_all(action='SELECT')
+    bpy.ops.pose.armature_apply(selected=False)
+    bpy.ops.object.mode_set(mode='OBJECT')
+
+    me = body.data
+    zs = [v.co.z for v in me.vertices]
+    ys = [v.co.y for v in me.vertices]
+    log(f'posed onto segments: height {max(zs) - min(zs):.3f}, '
+        f'lateral span {max(ys) - min(ys):.3f}')
 
 
 # ── Suit detail ─────────────────────────────────────────────────────────────
@@ -226,45 +413,54 @@ def segment_frame(co):
     Returns (name, along, radial, out, front, local) where `along` is -1..1 up the
     segment, `radial` is distance from its axis, `out` is +1/-1 naming the OUTBOARD
     direction along the lateral axis, and `front` is +1 towards the chest.
-    Everything the suit design needs is expressed in these terms rather than in raw
-    coordinates, so the detail follows the body instead of being projected onto it
-    from outside.
 
     `out` is a property of the SEGMENT, not of the vertex: it is which way is
-    away-from-the-midline for this limb. The first version computed instead which
+    away-from-the-midline for this limb. An earlier version computed instead which
     side the vertex was on and then used that as the outboard direction, which
     inverts it — so the blue stripe and the panel seam were both painted down the
     INSIDE of each leg, where they are invisible between the athlete's knees.
-    Nothing failed; the figure just came out plain white.
     """
     x, y, z = co
     best, best_d = None, 1e9
     for name in BODY_SEGMENTS:
         seg = SEGMENTS[name]
-        cx, cy, cz = bl(name)
+        c = bl(name)
         half = seg['h'] / 2
         r = (seg['w'] + seg['d']) / 4
-        dz = z - cz
-        axial = max(0.0, abs(dz) - half)
-        radial = math.hypot(x - cx, y - cy)
+        axial = max(0.0, abs(z - c.z) - half)
+        radial = math.hypot(x - c.x, y - c.y)
         d = math.hypot(radial, axial) - r
         if d < best_d:
-            best_d = d
-            best = (name, cx, cy, cz, half, radial)
-    name, cx, cy, cz, half, radial = best
-    along = max(-1.0, min(1.0, (z - cz) / half)) if half > 0 else 0.0
-    # Outboard is away from the body's midline, which is Blender Y — so it is
-    # simply the sign of the segment's own lateral offset.
-    out = 1.0 if cy >= 0 else -1.0
-    front = 1.0 if (x - cx) > 0 else -1.0
-    return name, along, radial, out, front, (x - cx, y - cy, z - cz)
+            best_d, best = d, (name, c, half, radial)
+    name, c, half, radial = best
+    along = max(-1.0, min(1.0, (z - c.z) / half)) if half > 0 else 0.0
+    out = 1.0 if c.y >= 0 else -1.0
+    front = 1.0 if (x - c.x) > 0 else -1.0
+    return name, along, radial, out, front, (x - c.x, y - c.y, z - c.z)
+
+
+def bib_mask(name, along, front, ly):
+    """
+    1 inside the competition bib, 0 outside, with a short ramp at the border.
+
+    The bib in the reference covers the chest from just under the arms to the
+    waist and wraps a little way round the ribs; it is a front garment, so the
+    back of the torso is bare suit.
+    """
+    if name != 'torso' or front < 0:
+        return 0.0
+    if not (-0.68 < along < 0.52):
+        return 0.0
+    edge = min(along + 0.68, 0.52 - along) / 0.12
+    wrap = 1.0 - max(0.0, (abs(ly) - 0.09) / 0.05)
+    return max(0.0, min(1.0, edge)) * max(0.0, min(1.0, wrap))
 
 
 def displace_suit(mesh):
     """
     Push the high-poly surface around to make it read as a suit.
 
-    Every amplitude here is in METRES on a figure about 1.8 m tall, so they look
+    Every amplitude here is in METRES on a figure about 1.7 m tall, so they look
     absurdly small written down — a 1.5 mm seam, a 0.5 mm weave. That is the right
     order: baked into a 2048 map over a 2 m figure, one texel is about a
     millimetre, and relief any deeper than this stops looking like fabric and
@@ -287,99 +483,60 @@ def displace_suit(mesh):
             # Helmet: hard, smooth, with a shallow crown ridge and the goggle
             # strap. No fabric weave — a woven helmet reads as a knitted hat.
             d += 0.0012 * math.exp(-((ly / 0.03) ** 2))          # crown ridge
-            strap = math.exp(-(((lz - 0.02) / 0.022) ** 2))
-            d += 0.0022 * strap                                   # goggle strap
+            d += 0.0022 * math.exp(-(((lz - 0.02) / 0.022) ** 2))  # goggle strap
         else:
-            # Fabric weave: fine, isotropic, everywhere on the suit.
             d += (bakeutil.fbm(x * 420, y * 420, z * 420, octaves=2) - 0.5) * 0.0011
 
-            # Creasing at the joints. Fabric bunches where a limb bends, so the
-            # wrinkles concentrate near the ends of each segment and run around
-            # it rather than along it.
+            # Fabric bunches where a limb bends, so the wrinkles concentrate near
+            # the ends of each segment and run around it rather than along it.
             joint = max(0.0, abs(along) - 0.55) / 0.45
             if joint > 0:
                 band = bakeutil.fbm(z * 90, x * 26, y * 26, octaves=3)
                 d -= joint * joint * (band - 0.45) * 0.010
 
             # Panel seams: a groove up the outboard side of every limb and one up
-            # the spine. This is the single strongest "this is a garment" cue.
+            # the spine. The single strongest "this is a garment" cue.
+            azim = math.atan2(ly, lx)
             if is_leg or is_arm:
-                azim = math.atan2(ly, lx)
                 outward = math.pi / 2 * out
-                dphi = abs(math.atan2(math.sin(azim - outward),
-                                      math.cos(azim - outward)))
+                dphi = abs(math.atan2(math.sin(azim - outward), math.cos(azim - outward)))
                 d -= 0.0016 * math.exp(-((dphi / 0.13) ** 2))
+                if is_leg and dphi < 0.42:
+                    # The blue stripe is a printed panel, very slightly proud of
+                    # the fabric — enough for the light to catch its edge.
+                    d += 0.0009 * (1.0 - (dphi / 0.42) ** 6)
             if name == 'torso':
-                azim = math.atan2(ly, lx)
-                dphi = abs(math.atan2(math.sin(azim - math.pi),
-                                      math.cos(azim - math.pi)))
+                dphi = abs(math.atan2(math.sin(azim - math.pi), math.cos(azim - math.pi)))
                 d -= 0.0014 * math.exp(-((dphi / 0.16) ** 2))
 
-            # The blue leg stripe is a printed panel, very slightly proud of the
-            # surrounding fabric — enough for the light to catch its edge.
-            if is_leg:
-                azim = math.atan2(ly, lx)
-                outward = math.pi / 2 * out
-                dphi = abs(math.atan2(math.sin(azim - outward),
-                                      math.cos(azim - outward)))
-                if dphi < 0.42:
-                    d += 0.0009 * (1.0 - (dphi / 0.42) ** 6)
-
-            # The bib is a separate garment hanging over the suit, so it gets a
-            # real lip all the way round rather than a printed edge.
-            b = bib_mask(name, along, front, ly)
-            d += 0.0026 * b
+            # The bib is a separate garment over the suit, so it gets a real lip.
+            d += 0.0026 * bib_mask(name, along, front, ly)
 
             # Waistband, glove cuffs, boot cuffs: hard steps, not soft blends.
+            # The glove is at along = +1, not -1: POSE_UNTUCKED holds the arms UP,
+            # so the hand is at the TOP of the forearm segment.
             if name == 'torso' and -0.95 < along < -0.72:
                 d += 0.0016
-            # The glove is at along = +1, not -1: POSE_UNTUCKED holds the arms
-            # UP, so the forearm runs upward from the elbow and the hand is at the
-            # top of the segment. The first version tested for the bottom and
-            # silently painted no gloves at all — the paint census (which counts
-            # every tag) is what caught it, since a missing region looks like
-            # nothing rather than like an error.
             if name.startswith('lowerArm') and along > 0.80:
                 d += 0.0022
             if name.startswith('lowerLeg') and along < -0.74:
                 d += 0.0030
 
         if d:
-            v.co = (x + normals[i].x * d,
-                    y + normals[i].y * d,
-                    z + normals[i].z * d)
+            v.co = (x + normals[i].x * d, y + normals[i].y * d, z + normals[i].z * d)
             moved += 1
     log(f'suit displacement applied to {moved}/{len(verts)} high-poly verts')
-
-
-def bib_mask(name, along, front, ly):
-    """
-    1 inside the competition bib, 0 outside, with a short ramp at the border.
-
-    The bib in the reference covers the chest from just under the arms to the
-    waist and wraps a little way round the ribs; it is a front garment, so the
-    back of the torso is bare suit.
-    """
-    if name != 'torso' or front < 0:
-        return 0.0
-    if not (-0.68 < along < 0.52):
-        return 0.0
-    edge = min(along + 0.68, 0.52 - along) / 0.12
-    wrap = 1.0 - max(0.0, (abs(ly) - 0.09) / 0.05)
-    return max(0.0, min(1.0, edge)) * max(0.0, min(1.0, wrap))
 
 
 def paint_suit(mesh):
     """
     Vertex colours for the suit design, baked to the albedo map afterwards.
 
-    Painting in 3D and baking is far more robust than trying to draw into UV
-    space: the unwrap can change without any of this needing to move, and a region
-    defined by "the outboard side of the leg" cannot land on the wrong island the
-    way a hand-placed rectangle can.
+    Painting in 3D and baking is far more robust than drawing into UV space: the
+    unwrap can change without any of this moving, and a region defined by "the
+    outboard side of the leg" cannot land on the wrong island.
     """
-    attr = mesh.color_attributes.new(name='suit', type='FLOAT_COLOR',
-                                     domain='POINT')
+    attr = mesh.color_attributes.new(name='suit', type='FLOAT_COLOR', domain='POINT')
     counts = {}
     for i, v in enumerate(mesh.vertices):
         x, y, z = v.co
@@ -396,17 +553,15 @@ def paint_suit(mesh):
         elif name.startswith(('upperLeg', 'lowerLeg')):
             azim = math.atan2(ly, lx)
             outward = math.pi / 2 * out
-            dphi = abs(math.atan2(math.sin(azim - outward),
-                                  math.cos(azim - outward)))
+            dphi = abs(math.atan2(math.sin(azim - outward), math.cos(azim - outward)))
             if dphi < 0.38:
                 col, tag = STRIPE, 'stripe'
 
         if bib_mask(name, along, front, ly) > 0.5:
-            # The number patch sits in the middle of the bib. It is a plain block
-            # rather than a legible numeral: at any distance the game or a render
-            # ever shows this figure, a white patch and a white "15" are the same
-            # number of pixels, and a procedurally drawn digit would be the one
-            # detail that looks obviously synthetic up close.
+            # A plain block rather than a legible numeral: at any distance this
+            # figure is ever shown, a white patch and a white "15" are the same
+            # number of pixels, and a drawn digit would be the one detail that
+            # looks obviously synthetic up close.
             if -0.34 < along < 0.06 and abs(ly) < 0.062:
                 col, tag = BIB_NUMBER, 'number'
             else:
@@ -416,70 +571,100 @@ def paint_suit(mesh):
         counts[tag] = counts.get(tag, 0) + 1
     log(f'suit painted: {counts}')
 
-    # Every region of the design must have actually landed somewhere. A region
-    # whose condition never fires produces no error and no warning — the bake
-    # simply comes out without it, which is indistinguishable from a design that
-    # never included it. That is exactly how the gloves went missing.
+    # Every region of the design must have landed somewhere. A region whose
+    # condition never fires produces no error and no warning — the bake simply
+    # comes out without it, which is indistinguishable from a design that never
+    # included it. That is exactly how the gloves went missing.
     missing = [t for t in ('suit', 'helmet', 'waist', 'bib', 'number',
                            'stripe', 'glove') if counts.get(t, 0) == 0]
     if missing:
         raise SystemExit(
-            f'[body] these suit regions matched no vertices: {missing}. '
-            f'Their conditions are wrong for the reference pose, and the bake '
-            f'would silently omit them.')
+            f'[body] these suit regions matched no vertices: {missing}. Their '
+            f'conditions are wrong for the reference pose, and the bake would '
+            f'silently omit them.')
     return counts
 
 
 # ── Low / high poly ─────────────────────────────────────────────────────────
 
-def make_lowpoly(base):
-    """Decimate, smooth, unwrap, and split the helmet into its own material."""
+def finish_lowpoly(body):
+    """Decimate, smooth-shade and split the helmet into its own material slot."""
     bpy.ops.object.select_all(action='DESELECT')
-    base.select_set(True)
-    bpy.context.view_layer.objects.active = base
+    body.select_set(True)
+    bpy.context.view_layer.objects.active = body
+    body.name = 'athleteBody'
 
-    dec = base.modifiers.new('decimate', 'DECIMATE')
-    dec.ratio = 0.55
-    bpy.ops.object.modifier_apply(modifier=dec.name)
+    if DECIMATE < 0.999:
+        dec = body.modifiers.new('decimate', 'DECIMATE')
+        dec.ratio = DECIMATE
+        bpy.ops.object.modifier_apply(modifier=dec.name)
     bpy.ops.object.shade_smooth()
-    base.name = 'athleteBody'
 
-    # The maps have nowhere to live without a UV set, and the metaball conversion
-    # produces none at all.
+    # UNWRAP FRESH, into 0-1.
+    #
+    # The base mesh arrives already unwrapped, and the temptation is to keep that
+    # layout — it is a proper human one with the seams where an artist put them.
+    # But it is spread across UDIM tiles: measured in the running game, its UVs
+    # spanned 11.9 rather than 1. A bake writes into a single 0-1 image, so all
+    # but one tile's worth of the body sampled outside the atlas and wrapped onto
+    # whatever was there, which rendered as dark blotches scattered over the suit.
+    # Decimation has already discarded the artist topology those seams were placed
+    # for, so there is little left to preserve.
+    bpy.context.scene.tool_settings.use_uv_select_sync = True
     bpy.ops.object.mode_set(mode='EDIT')
     bpy.ops.mesh.select_all(action='SELECT')
-    bpy.ops.uv.smart_project(angle_limit=math.radians(66.0), island_margin=0.006,
+    bpy.ops.uv.smart_project(angle_limit=math.radians(66.0), island_margin=0.0,
                              area_weight=1.0, correct_aspect=True,
                              scale_to_bounds=False)
+    bpy.ops.uv.pack_islands(rotate=True, scale=True, merge_overlap=False,
+                            margin_method='FRACTION', margin=0.004,
+                            shape_method='AABB')
     bpy.ops.object.mode_set(mode='OBJECT')
+
+    uvs = body.data.uv_layers.active.data
+    us = [d.uv[0] for d in uvs]
+    vs = [d.uv[1] for d in uvs]
+    span = max(max(us) - min(us), max(vs) - min(vs))
+    log(f'unwrapped: uv span {span:.3f}, '
+        f'u={min(us):+.3f}..{max(us):+.3f} v={min(vs):+.3f}..{max(vs):+.3f}')
+    if span > 1.02 or min(us) < -0.02 or min(vs) < -0.02:
+        raise SystemExit(
+            f'[body] UVs are outside 0-1 (span {span:.3f}). Everything beyond the '
+            f'first tile would sample outside the baked atlas.')
 
     suit = bpy.data.materials.new('suitMat')
     helmet = bpy.data.materials.new('helmetMat')
-    base.data.materials.append(suit)
-    base.data.materials.append(helmet)
+    body.data.materials.clear()
+    body.data.materials.append(suit)
+    body.data.materials.append(helmet)
 
     # Two material slots — suit (0) and helmet (1) — so Babylon receives two
     # submeshes and can give the helmet its own roughness. They SHARE the baked
     # maps and the single UV layout; the split is about shading, not texturing.
-    head_seg = SEGMENTS['head']
-    hx, hy, hz = bl('head')
-    neck_z = hz - head_seg['h'] / 2 * 0.85
+    #
+    # Assigned by SEGMENT, not by height. A bare "above the neckline" threshold
+    # works on a standing figure and fails completely here: POSE_UNTUCKED holds
+    # the arms overhead, so the forearms and gloves sit well above the neck and
+    # 47% of the mesh came back classified as helmet. segment_frame already knows
+    # which segment a point belongs to, so ask it.
     n_head = 0
-    for poly in base.data.polygons:
-        cz = sum(base.data.vertices[v].co.z for v in poly.vertices) / len(poly.vertices)
-        if cz >= neck_z:
+    for poly in body.data.polygons:
+        cx = sum(body.data.vertices[v].co.x for v in poly.vertices) / len(poly.vertices)
+        cy = sum(body.data.vertices[v].co.y for v in poly.vertices) / len(poly.vertices)
+        cz = sum(body.data.vertices[v].co.z for v in poly.vertices) / len(poly.vertices)
+        if segment_frame((cx, cy, cz))[0] == 'head':
             poly.material_index = 1
             n_head += 1
-    log(f'low-poly: {len(base.data.vertices)} verts, {len(base.data.polygons)} '
-        f'faces, {n_head} helmet faces above z={neck_z:.3f}')
-    return base
+    log(f'low-poly: {len(body.data.vertices)} verts, {len(body.data.polygons)} '
+        f'faces, {n_head} helmet faces ({n_head / max(1, len(body.data.polygons)):.0%})')
+    return body
 
 
 def make_highpoly(low):
     """
-    The detail source. Subdivided from the SAME base, then displaced and painted.
+    The detail source: subdivided from the SAME mesh, then displaced and painted.
 
-    Sharing the base matters: a high-poly built independently would not sit on the
+    Sharing the base matters. A high-poly built independently would not sit on the
     low-poly surface, and every baked normal would carry that mismatch as a
     smeared, wobbling error across the whole body.
     """
@@ -487,12 +672,27 @@ def make_highpoly(low):
     high.data = low.data.copy()
     high.name = 'athleteHigh'
     bpy.context.collection.objects.link(high)
+    # It must not be deformed by the rig while it is being baked from.
+    for m in list(high.modifiers):
+        high.modifiers.remove(m)
 
     bpy.ops.object.select_all(action='DESELECT')
     high.select_set(True)
     bpy.context.view_layer.objects.active = high
 
     sub = high.modifiers.new('subsurf', 'SUBSURF')
+    # SIMPLE, not Catmull-Clark. Catmull-Clark SMOOTHS as it subdivides, so the
+    # high-poly ends up a different SHAPE from the low-poly — and a normal bake
+    # records exactly the difference between the two. On a decimated human that
+    # difference is centimetres of whole-body reshaping, which swamps the
+    # millimetre suit detail this bake exists for and renders as grey mottling
+    # crawling over the figure. (It went unnoticed on the metaball body, which was
+    # already smooth enough that Catmull-Clark barely moved it.)
+    #
+    # Simple subdivision adds vertices without moving the surface, so the only
+    # difference left between high and low is the displacement applied below —
+    # which is precisely what should end up in the map.
+    sub.subdivision_type = 'SIMPLE'
     sub.levels = sub.render_levels = 2
     bpy.ops.object.modifier_apply(modifier=sub.name)
     log(f'high-poly: {len(high.data.vertices)} verts before displacement')
@@ -500,8 +700,6 @@ def make_highpoly(low):
     displace_suit(high.data)
     paint_suit(high.data)
 
-    # One emission-free material driven by the colour attribute, so the albedo
-    # bake picks up the paint and nothing else.
     high.data.materials.clear()
     mat = bpy.data.materials.new('highSuit')
     mat.use_nodes = True
@@ -565,16 +763,36 @@ def bake_maps(low, high, out_dir):
 
     selected_to_active with a cage: rays are fired from just outside the low-poly
     surface, hit the high-poly, and record what they found. cage_extrusion has to
-    clear the deepest displacement above — too small and the rays start inside the
+    clear the deepest displacement — too small and the rays start inside the
     high-poly and the map fills with black speckle.
     """
     bake = bpy.context.scene.render.bake
     bake.use_selected_to_active = True
     bake.cage_extrusion = 0.02
-    bake.margin = 8
+    bake.margin = 16
+    # use_clear wipes the target image to black before baking, which would undo
+    # the background fill below — the whole point of which is that the atlas must
+    # NOT be black where nothing is baked.
+    bake.use_clear = False
 
-    def run(kind, name, srgb, setup=None):
+    def run(kind, name, srgb, fill, setup=None):
+        # FILL THE BACKGROUND FIRST, and not with black.
+        #
+        # Unwrapping a decimated human produces a lot of small islands, and only
+        # about 40% of the atlas ends up covered. A bake leaves the rest at the
+        # image's initial colour, which defaults to black — and then bilinear
+        # filtering and every mip level pull that black in across each island's
+        # edge. On the figure it read as dark blotches scattered over the suit, as
+        # if the texture were camouflage. Starting from a neutral value (suit
+        # colour, white occlusion, flat normal) makes the bleed invisible, because
+        # what bleeds in is what should be there anyway.
         img = bpy.data.images.new(name, width=RES, height=RES, float_buffer=True)
+        # Written straight into the pixel buffer rather than through
+        # generated_color, which puts the value through colour management: a
+        # normal-map fill of (0.5, 0.5, 1.0) came back as (0.21, 0.21, 1.0), i.e.
+        # a background normal tilted hard to one side instead of flat. foreach_set
+        # writes the numbers as given.
+        bakeutil.fill_image(img, fill)
         target_image(low, img)
         bpy.ops.object.select_all(action='DESELECT')
         high.select_set(True)
@@ -589,74 +807,36 @@ def bake_maps(low, high, out_dir):
 
     stats = {}
     bpy.context.scene.render.bake.normal_space = 'TANGENT'
-    stats['normal'] = run('NORMAL', 'athlete_normal', srgb=False)
-    stats['ao'] = run('AO', 'athlete_ao', srgb=False)
+    # A tangent-space normal pointing straight out is (0.5, 0.5, 1.0); occlusion
+    # with nothing occluding is 1.0; unpainted suit is the suit's own colour.
+    stats['normal'] = run('NORMAL', 'athlete_normal', srgb=False,
+                          fill=(0.5, 0.5, 1.0, 1.0))
+    # AO IS LIMITED TO A SHORT DISTANCE, on purpose.
+    #
+    # An unlimited AO bake sees the whole body, and the body is baked in
+    # POSE_UNTUCKED with its arms overhead — so it records the shadow the arms
+    # cast into the shoulders and the gap between them, and freezes it into the
+    # texture. At runtime the arms MOVE, and that occlusion stays behind on the
+    # chest wherever the athlete puts them. It renders as grey blotching that
+    # follows the body around.
+    #
+    # What is worth baking is only what the low-poly cannot express: the seams,
+    # the fold at a joint, the lip around the bib. Those are all within a few
+    # centimetres. The pose-dependent part is SSAO2's job, and SSAO2 is already
+    # in the pipeline — it is computed per frame from the actual pose, which is
+    # exactly what a baked map cannot be.
+    if bpy.context.scene.world is None:
+        bpy.context.scene.world = bpy.data.worlds.new('bakeWorld')
+    bpy.context.scene.world.light_settings.distance = 0.04
+    stats['ao'] = run('AO', 'athlete_ao', srgb=False, fill=(1.0, 1.0, 1.0, 1.0))
 
     def albedo_only(b):
         b.use_pass_direct = False
         b.use_pass_indirect = False
         b.use_pass_color = True
-    stats['albedo'] = run('DIFFUSE', 'athlete_albedo', srgb=True, setup=albedo_only)
+    stats['albedo'] = run('DIFFUSE', 'athlete_albedo', srgb=True,
+                          fill=(SUIT[0], SUIT[1], SUIT[2], 1.0), setup=albedo_only)
     return stats
-
-
-# ── Rig ─────────────────────────────────────────────────────────────────────
-
-def build_armature():
-    """
-    Bones named after the physics segments, positioned in the reference pose.
-    The names ARE the interface between simulation and rig.
-    """
-    bpy.ops.object.armature_add(location=(0, 0, 0))
-    arm = bpy.context.active_object
-    arm.name = 'AthleteRig'
-    bpy.ops.object.mode_set(mode='EDIT')
-    eb = arm.data.edit_bones
-    for b in list(eb):
-        eb.remove(b)
-
-    made = {}
-    for name in BODY_SEGMENTS:
-        seg = SEGMENTS[name]
-        cx, cy, cz = bl(name)
-        half = seg['h'] / 2
-        b = eb.new(name)
-        b.head = (cx, cy, cz - half)
-        b.tail = (cx, cy, cz + half)
-        made[name] = b
-
-    hierarchy = {
-        'head': 'torso',
-        'upperArmL': 'torso', 'upperArmR': 'torso',
-        'lowerArmL': 'upperArmL', 'lowerArmR': 'upperArmR',
-        'upperLegL': 'torso', 'upperLegR': 'torso',
-        'lowerLegL': 'upperLegL', 'lowerLegR': 'upperLegR',
-    }
-    for c, p in hierarchy.items():
-        if c in made and p in made:
-            made[c].parent = made[p]
-            made[c].use_connect = False
-
-    bpy.ops.object.mode_set(mode='OBJECT')
-    log(f'armature: {len(made)} bones')
-    return arm
-
-
-def skin(body, arm):
-    """
-    Bind with AUTOMATIC WEIGHTS — the whole point of a continuous body.
-
-    Rigid one-bone-per-part binding (what the old separate-solids athlete used) is
-    correct when the parts are separate objects, but on a continuous mesh it tears
-    the surface at every joint. Heat-map weights blend influence across the joint
-    so the elbow and knee bend as skin rather than snapping.
-    """
-    bpy.ops.object.select_all(action='DESELECT')
-    body.select_set(True)
-    arm.select_set(True)
-    bpy.context.view_layer.objects.active = arm
-    bpy.ops.object.parent_set(type='ARMATURE_AUTO')
-    log('skinned with automatic (heat map) weights')
 
 
 def add_equipment():
@@ -664,8 +844,8 @@ def add_equipment():
     made = []
     for name in ('skiL', 'skiR'):
         seg = SEGMENTS[name]
-        cx, cy, cz = bl(name)
-        bpy.ops.mesh.primitive_cube_add(size=1.0, location=(cx, cy, cz))
+        c = bl(name)
+        bpy.ops.mesh.primitive_cube_add(size=1.0, location=c)
         o = bpy.context.active_object
         o.name = name
         o.scale = (seg['w'], seg['d'], seg['h'])
@@ -681,8 +861,13 @@ def add_equipment():
 
 def main():
     clear()
-    base = build_base()
-    low = make_lowpoly(base)
+    body = load_base()
+    soften(body)
+    joints = anatomical_joints(body)
+    arm = build_armature(joints)
+    skin(body, arm)
+    pose_onto_segments(body, arm)
+    low = finish_lowpoly(body)
     high = make_highpoly(low)
 
     device = configure_cycles()
@@ -693,8 +878,6 @@ def main():
     # The high-poly has done its job. Leaving it in would export a second body.
     bpy.data.objects.remove(high, do_unlink=True)
 
-    arm = build_armature()
-    skin(low, arm)
     equip = add_equipment()
 
     with open(os.path.join(out_dir, 'athlete_maps.json'), 'w') as f:
@@ -702,8 +885,7 @@ def main():
             'normal': 'assets/athlete_normal.png',
             'ao': 'assets/athlete_ao.png',
             'albedo': 'assets/athlete_albedo.png',
-            'res': RES,
-            'stats': stats,
+            'res': RES, 'stats': stats,
         }, f, indent=1)
 
     out = OUT if os.path.isabs(OUT) else os.path.join(ROOT, OUT)
