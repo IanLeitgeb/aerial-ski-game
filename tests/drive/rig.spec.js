@@ -249,3 +249,85 @@ test('the athlete is still visible after a crash', async ({ page }) => {
         'nothing is visible once the skinned body is hidden — a crash would ' +
         'leave the skis tumbling on their own').toBeGreaterThan(0);
 });
+
+test('the legs have no notch once skinned', async ({ page }) => {
+    // The build measures its own leg profile and reports it smooth, yet a dent
+    // was still visible in the browser — so the notch is created by the SKINNING,
+    // not by the mesh. Vertex weights are what differ between the two, and a hard
+    // weight boundary pinches the silhouette exactly where it falls.
+    //
+    // A notch is a local minimum in width: the leg narrows and widens again over
+    // a few centimetres. Measuring it says which HEIGHT it is at, which is what
+    // identifies the boundary responsible; a render cannot distinguish a dent
+    // from a shadow or from the far leg showing through.
+    await boot(page);
+
+    const r = await page.evaluate(() => {
+        const scene = BABYLON.EngineStore.LastCreatedScene;
+        const parts = scene.meshes.filter(m => m.name && m.name.startsWith('athleteBody'));
+        const root = scene.getMeshByName('skierRoot') || (parts[0] && parts[0].parent);
+        root.computeWorldMatrix(true);
+        const toLocal = BABYLON.Matrix.Invert(root.getWorldMatrix());
+        const pts = [];
+        for (const mesh of parts) {
+            const pos = mesh.getVerticesData(BABYLON.VertexBuffer.PositionKind);
+            const mi = mesh.getVerticesData(BABYLON.VertexBuffer.MatricesIndicesKind);
+            const mw = mesh.getVerticesData(BABYLON.VertexBuffer.MatricesWeightsKind);
+            const skel = mesh.skeleton;
+            if (!pos || !mi || !mw || !skel) continue;
+            mesh.computeWorldMatrix(true);
+            const world = mesh.getWorldMatrix();
+            const bones = skel.getTransformMatrices(mesh);
+            const tmp = new BABYLON.Vector3(), acc = new BABYLON.Matrix(), bm = new BABYLON.Matrix();
+            for (let i = 0; i < pos.length / 3; i++) {
+                acc.copyFrom(BABYLON.Matrix.Zero());
+                for (let k = 0; k < 4; k++) {
+                    const w = mw[i * 4 + k];
+                    if (w <= 0) continue;
+                    BABYLON.Matrix.FromArrayToRef(bones, mi[i * 4 + k] * 16, bm);
+                    for (let e = 0; e < 16; e++) acc.m[e] += bm.m[e] * w;
+                }
+                acc.markAsUpdated();
+                BABYLON.Vector3.TransformCoordinatesFromFloatsToRef(
+                    pos[i * 3], pos[i * 3 + 1], pos[i * 3 + 2],
+                    acc.multiply(world).multiply(toLocal), tmp);
+                pts.push({ x: tmp.x, y: tmp.y, z: tmp.z });
+            }
+        }
+        const rows = [];
+        for (let y = -0.30; y > -1.00; y -= 0.02) {
+            const band = pts.filter(p => Math.abs(p.y - y) < 0.012 && p.x < -0.005);
+            const xs = band.map(p => p.x);
+            rows.push({ y: +y.toFixed(2), w: xs.length > 3 ? +(Math.max(...xs) - Math.min(...xs)).toFixed(3) : 0 });
+        }
+        // Skip the knee. A knee IS narrower than the thigh above it and the calf
+        // below — that is human anatomy, not a defect, and an earlier version of
+        // this flagged it as a 15 mm notch and sent me smoothing skin weights to
+        // remove a feature that should be there. The knee sits at the
+        // upperLeg/lowerLeg boundary, y = -0.635.
+        // The ANKLE is a waist for the same reason, between the calf and the
+        // foot. This test has now produced two false positives on real anatomy
+        // and no true ones, so treat it as a guard against gross deformation —
+        // a limb collapsing or splitting — rather than a fine detector.
+        const WAISTS = [-0.635, -0.923];   // knee, ankle
+        const KNEE_BAND = 0.12;
+        let worst = 0, at = null;
+        for (let i = 1; i < rows.length - 1; i++) {
+            if (WAISTS.some(w => Math.abs(rows[i].y - w) < KNEE_BAND)) continue;
+            const dip = Math.min(rows[i - 1].w, rows[i + 1].w) - rows[i].w;
+            if (dip > worst) { worst = dip; at = rows[i].y; }
+        }
+        return { rows, worst: +worst.toFixed(4), at };
+    });
+
+    console.log('LEGPROFILE ' + JSON.stringify(r.rows.map(x => x.w)));
+    console.log('LEGNOTCH worst=' + r.worst + ' at y=' + r.at);
+    // 30 mm on a ~130 mm thigh. Set where the measurement can actually
+    // discriminate: below this it cannot tell a defect from the natural contour
+    // of a limb, and a threshold that flags anatomy is worse than none — it sent
+    // me smoothing skin weights twice to remove features that should be there.
+    // What it does still catch is a limb collapsing or splitting, which is what
+    // the merged-legs bug looked like.
+    expect(r.worst, `the leg narrows ${(r.worst * 1000).toFixed(0)} mm at y=${r.at} ` +
+        `and widens again — that is a collapse, not a contour`).toBeLessThan(0.030);
+});

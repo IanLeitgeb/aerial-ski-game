@@ -2089,7 +2089,11 @@ function _startGame() {
     {
     // Natural ungroomed snow — slightly darker and less specular than the prepared course
     const lsMat = makePBR('lsMat', scene);
-    lsMat.diffuseColor  = new BABYLON.Color3(0.71, 0.78, 0.87);
+    // The wide flanking snowfields. Brightened alongside snowMat for the same
+    // reason — 0.71, 0.78, 0.87 is a grey-blue, and snow is one of the brightest
+    // surfaces there is. Leaving this behind made the run surface and the ground
+    // beside it two visibly different materials.
+    lsMat.diffuseColor  = new BABYLON.Color3(0.90, 0.92, 0.95);
     lsMat.specularColor = new BABYLON.Color3(0.09, 0.12, 0.18);
     lsMat.specularPower = 7;
 

@@ -125,6 +125,29 @@ def log(m):
     print(f'[body] {m}', flush=True)
 
 
+# The arms are bound HANGING DOWN, not overhead.
+#
+# POSE_UNTUCKED holds them up beside the head, and binding there was wrong in the
+# way that matters most: the game's resting pose has them down. engine/core/pose.js
+# sweeps the arm about a shoulder pivot at y = 0.150 by phi = pi * armDrop, so
+# between bind and rest every arm bone rotated a full pi AND its origin fell
+# 0.48 m. Linear blend skinning bunches whatever is caught between, which is what
+# produced the hump over each shoulder blade and the long thin neck — the shoulder
+# was being dragged downwards away from the head.
+#
+# Binding where the figure spends its time makes the deformation there identity.
+# It is also closer to the base mesh's own A-pose, so less violence is done to it.
+# armSweep at armDrop = 1: phi = pi, so cos = -1 and sin = 0.
+ARM_BIND = {
+    'upperArmL': (-0.205, 0.150 - 0.150), 'upperArmR': (0.205, 0.150 - 0.150),
+    'lowerArmL': (-0.205, 0.150 - 0.425), 'lowerArmR': (0.205, 0.150 - 0.425),
+}
+
+
+def is_arm(name):
+    return name in ARM_BIND
+
+
 def bl(name):
     """
     Segment centre in BLENDER axes.
@@ -135,17 +158,29 @@ def bl(name):
     left/right, and Z is up. The suit detail below depends on that mapping.
     """
     p = POSE.get(name, {})
-    x_babylon = p.get('x', 0.0)
-    y_babylon = p.get('y', 0.0)
-    z_babylon = BASE_Z.get(name, 0.0) + p.get('dz', 0.0)
+    if is_arm(name):
+        x_babylon, y_babylon = ARM_BIND[name]
+        z_babylon = BASE_Z.get(name, 0.0)
+    else:
+        x_babylon = p.get('x', 0.0)
+        y_babylon = p.get('y', 0.0)
+        z_babylon = BASE_Z.get(name, 0.0) + p.get('dz', 0.0)
     return Vector((z_babylon, x_babylon, y_babylon))
 
 
 def seg_ends(name):
-    """The game's segment as a (head, tail) pair in Blender axes."""
+    """
+    The game's segment as a (head, tail) pair in Blender axes.
+
+    A bone runs head -> tail, and for a hanging arm that is shoulder -> hand, so
+    the arms run DOWNWARD while everything else runs up. That matches the driver's
+    own rotation in the resting pose (rx = -pi), which is what makes the bind
+    deformation identity there.
+    """
     c = bl(name)
     half = SEGMENTS[name]['h'] / 2
-    return c - Vector((0, 0, half)), c + Vector((0, 0, half))
+    up = Vector((0, 0, half))
+    return (c + up, c - up) if is_arm(name) else (c - up, c + up)
 
 
 def clear():
@@ -226,9 +261,13 @@ def soften(obj):
     # sits below one texel of the baked normal map. It was never the problem.
     bpy.context.view_layer.objects.active = obj
 
+    # Only a light pass here to take the sharpest facial detail off. The head is
+    # given its real helmet shape later by shape_helmet(), once it has been posed
+    # onto the head segment — projecting onto an ellipsoid needs to happen in the
+    # frame the ellipsoid is defined in.
     head = obj.modifiers.new('softenHead', 'SMOOTH')
-    head.factor = 1.0
-    head.iterations = 26
+    head.factor = 0.8
+    head.iterations = 4
     head.vertex_group = 'headMask'
     bpy.ops.object.modifier_apply(modifier=head.name)
     log(f'softened: body pass + {head.iterations} head iterations above z={jaw:.3f}')
@@ -408,7 +447,34 @@ def skin(body, arm):
     arm.select_set(True)
     bpy.context.view_layer.objects.active = arm
     bpy.ops.object.parent_set(type='ARMATURE_AUTO')
-    log('skinned with automatic (heat map) weights')
+
+    # SMOOTH THE WEIGHTS ACROSS THE JOINTS.
+    #
+    # The game holds an inrun stance at rest: the thigh sits at +0.85 rad and the
+    # shin at -0.40, a 72-degree knee bend. Linear blend skinning collapses a bend
+    # that sharp — the classic candy-wrapper pinch — and heat-map weights hand it
+    # a tight falloff to do it in. Measured in the browser, the leg narrowed from
+    # 0.195 m to 0.113 m and back over ten centimetres just above the knee: a
+    # 42% dent, which is the notch.
+    #
+    # With ten bones and no corrective shapes there is no way to remove LBS
+    # pinching outright, but spreading each bone's influence over a slightly wider
+    # band distributes a bend along the limb instead of concentrating it in one
+    # ring of vertices.
+    #
+    # Kept DELIBERATELY LIGHT. At factor 0.5 for 6 repeats it blurred influence so
+    # far that the head's own group grew from 16% of the mesh to 26% — vertices
+    # halfway down the neck and across the shoulders were being pulled by the head
+    # bone, which bulges them rather than smoothing anything.
+    bpy.ops.object.select_all(action='DESELECT')
+    body.select_set(True)
+    bpy.context.view_layer.objects.active = body
+    # The operator polls for an edit or weight-paint context with a selection.
+    bpy.ops.object.mode_set(mode='EDIT')
+    bpy.ops.mesh.select_all(action='SELECT')
+    bpy.ops.object.vertex_group_smooth(group_select_mode='ALL', factor=0.35, repeat=2)
+    bpy.ops.object.mode_set(mode='OBJECT')
+    log('skinned with automatic (heat map) weights, smoothed across the joints')
 
 
 # ── Visual proportion correction ────────────────────────────────────────────
@@ -453,8 +519,9 @@ def retune_proportions(body):
     neck_z = c.z - seg['h'] / 2
     pivot = Vector((c.x, c.y, neck_z))
     n = 0
+    own5 = dominant_segments(body)
     for v in body.data.vertices:
-        if segment_frame(v.co)[0] != 'head':
+        if own5[v.index] != 'head':
             continue
         v.co = pivot + (Vector(v.co) - pivot) * HEAD_SCALE
         n += 1
@@ -599,6 +666,56 @@ def add_girth(body, stretch):
         f'{n} verts')
 
 
+
+def shape_helmet(body):
+    """
+    Make the head an actual HELMET, instead of smoothing a face until it stops
+    looking like one.
+
+    The previous approach ran 26 Laplacian smoothing iterations over everything
+    above the jaw. Laplacian smoothing does not converge on a sphere — it
+    converges on whatever the mesh's own connectivity pulls it towards, shrinking
+    as it goes — so the result was an irregular teardrop swept back off a long
+    thin neck, which is exactly what a misshapen head looks like.
+
+    A helmet is a known shape, so it is built rather than approximated: every
+    vertex above the jaw is projected onto an ellipsoid sized from the head
+    segment. The projection fades out over the last few centimetres above the
+    neck so the join stays continuous, and the ellipsoid is slightly deeper than
+    it is wide, which is the proportion of a real helmet.
+    """
+    seg = SEGMENTS['head']
+    c = bl('head')
+    jaw = c.z - seg['h'] / 2 * 0.55
+
+    # Fore/aft, lateral, vertical radii. A helmet is longer front-to-back than it
+    # is wide, and its crown sits above the head's own centre.
+    rx, ry, rz = seg['d'] / 2 * 1.02, seg['w'] / 2 * 1.00, seg['h'] / 2 * 1.06
+    top = c.z + rz
+    moved = 0
+    own4 = dominant_segments(body)
+    for v in body.data.vertices:
+        # By SEGMENT, never by height. POSE_UNTUCKED holds the arms overhead, so
+        # a bare "above the jaw" test sweeps in both forearms and both hands — the
+        # first version projected them onto the helmet ellipsoid and the gloves
+        # vanished entirely. The paint census caught it; nothing else would have.
+        if own4[v.index] != 'head' or v.co.z < jaw:
+            continue
+        d = Vector((v.co.x - c.x, v.co.y - c.y, v.co.z - c.z))
+        n = math.sqrt((d.x / rx) ** 2 + (d.y / ry) ** 2 + (d.z / rz) ** 2)
+        if n < 1e-6:
+            continue
+        target = Vector((c.x + d.x / n, c.y + d.y / n, c.z + d.z / n))
+        # Full strength at the crown, fading to nothing at the jaw so the neck
+        # is not pulled sideways.
+        t = min(1.0, (v.co.z - jaw) / max(1e-4, (top - jaw) * 0.45))
+        w = t * t * (3 - 2 * t)
+        v.co = Vector(v.co) * (1 - w) + target * w
+        moved += 1
+    log(f'helmet shaped: {moved} verts projected onto a '
+        f'{rx * 2:.3f}x{ry * 2:.3f}x{rz * 2:.3f} m shell above z={jaw:.3f}')
+
+
 def seat_soles(body):
     """
     Put the soles on the skis, by measuring where they ended up.
@@ -635,6 +752,41 @@ def seat_soles(body):
         f'z={ski_top:.3f} ({len(boot)} boot verts)')
 
 
+
+def leg_profile(body, tag):
+    """
+    Width of one leg every 2 cm from hip to sole.
+
+    A "notch" is a local minimum in this profile: the leg narrows and widens
+    again over a few centimetres. Eyeballing a render cannot tell that from a
+    shadow, a seam in the texture, or the far leg showing through — this can, and
+    it says exactly which height it is at so the step that caused it is findable.
+    """
+    hip = bl('upperLegL').z + SEGMENTS['upperLegL']['h'] / 2
+    sole = bl('skiL').z + SEGMENTS['skiL']['h'] / 2
+    rows, prev = [], None
+    z = hip
+    while z > sole:
+        ys = [v.co.y for v in body.data.vertices
+              if abs(v.co.z - z) < 0.012 and v.co.y < -0.005]
+        w = (max(ys) - min(ys)) if len(ys) > 3 else 0.0
+        rows.append((z, w))
+        z -= 0.02
+    widths = [w for _, w in rows]
+    worst, worst_z = 0.0, None
+    for i in range(1, len(rows) - 1):
+        dip = min(widths[i - 1], widths[i + 1]) - widths[i]
+        if dip > worst:
+            worst, worst_z = dip, rows[i][0]
+    log(f'{tag} leg profile: ' + ' '.join(f'{w:.3f}' for w in widths))
+    if worst > 0.012:
+        log(f'{tag} NOTCH: leg narrows {worst * 1000:.0f} mm at z={worst_z:+.3f} '
+            f'and widens again — that is a dent in the silhouette')
+    else:
+        log(f'{tag} leg profile smooth (largest dip {worst * 1000:.1f} mm)')
+    return worst
+
+
 def rigid_boots(body, arm, joints):
     """
     Weight everything below the ankle rigidly to the shin.
@@ -646,16 +798,31 @@ def rigid_boots(body, arm, joints):
     behave like the moulded shell it is.
     """
     ankle_z = min(joints['ankleL'].z, joints['ankleR'].z)
+    # RAMPED, not a hard step.
+    #
+    # Pinning everything below the ankle to weight 1.0 and stripping the other
+    # groups leaves a 0-to-1 discontinuity in one ring of vertices, and linear
+    # blend skinning pinches wherever weights jump. Measured in the browser, the
+    # leg necked in by 29 mm in a single 2 cm band at exactly the ankle. Blending
+    # the pin in over a few centimetres keeps the boot rigid where it matters —
+    # the sole and the shell — without leaving a crease at the top of it.
+    BAND = 0.045
     fixed = 0
     for v in body.data.vertices:
-        if v.co.z > ankle_z:
+        if v.co.z > ankle_z + BAND:
             continue
+        t = min(1.0, max(0.0, (ankle_z + BAND - v.co.z) / BAND))
+        t = t * t * (3 - 2 * t)                       # smoothstep
         side = 'L' if v.co.y < 0 else 'R'
         for g in list(v.groups):
-            body.vertex_groups[g.group].remove([v.index])
-        body.vertex_groups[f'lowerLeg{side}'].add([v.index], 1.0, 'REPLACE')
+            nm = body.vertex_groups[g.group].name
+            if nm == f'lowerLeg{side}':
+                continue
+            body.vertex_groups[g.group].add([v.index], g.weight * (1 - t), 'REPLACE')
+        body.vertex_groups[f'lowerLeg{side}'].add([v.index], t, 'ADD')
         fixed += 1
-    log(f'boots made rigid: {fixed} vertices pinned to the shins')
+    log(f'boots pinned to the shins over a {BAND * 1000:.0f} mm ramp: '
+        f'{fixed} vertices')
 
 
 def pose_onto_segments(body, arm, foot_lift):
@@ -833,15 +1000,43 @@ def pose_onto_segments(body, arm, foot_lift):
     return stretch
 
 
+
+def dominant_segments(obj):
+    """
+    The segment driving each vertex, from its heaviest skin weight.
+
+    Authoritative where geometry is not: a vertex belongs to the bone that moves
+    it, by definition.
+    """
+    names = {g.index: g.name for g in obj.vertex_groups}
+    out = []
+    for v in obj.data.vertices:
+        best, bw = None, -1.0
+        for g in v.groups:
+            nm = names.get(g.group)
+            if nm in SEGMENTS and g.weight > bw:
+                best, bw = nm, g.weight
+        out.append(best)
+    return out
+
+
 # ── Suit detail ─────────────────────────────────────────────────────────────
 
-def segment_frame(co):
+def segment_frame(co, force=None):
     """
     Which body segment a point belongs to, and where on it.
 
     Returns (name, along, radial, out, front, local) where `along` is -1..1 up the
     segment, `radial` is distance from its axis, `out` is +1/-1 naming the OUTBOARD
     direction along the lateral axis, and `front` is +1 towards the chest.
+
+    `force` names the segment directly and skips the search, and callers that can
+    should use it. Choosing the nearest segment capsule is only a heuristic, and
+    it breaks exactly where it matters: the torso's capsule radius is 0.145 m, so
+    once the arms hang beside the body their vertices sit INSIDE it and get
+    classified as torso. Measured, that left the forearms with 230 vertices and
+    the torso with 49,790, and the gloves disappeared. The mesh is skinned, so the
+    dominant bone weight is an authoritative answer and is used instead.
 
     `out` is a property of the SEGMENT, not of the vertex: it is which way is
     away-from-the-midline for this limb. An earlier version computed instead which
@@ -850,6 +1045,14 @@ def segment_frame(co):
     INSIDE of each leg, where they are invisible between the athlete's knees.
     """
     x, y, z = co
+    if force is not None:
+        c = bl(force)
+        half = SEGMENTS[force]['h'] / 2
+        radial = math.hypot(x - c.x, y - c.y)
+        along = max(-1.0, min(1.0, (z - c.z) / half)) if half > 0 else 0.0
+        out = 1.0 if c.y >= 0 else -1.0
+        front = 1.0 if (x - c.x) > 0 else -1.0
+        return force, along, radial, out, front, (x - c.x, y - c.y, z - c.z)
     best, best_d = None, 1e9
     for name in BODY_SEGMENTS:
         seg = SEGMENTS[name]
@@ -885,7 +1088,7 @@ def bib_mask(name, along, front, ly):
     return max(0.0, min(1.0, edge)) * max(0.0, min(1.0, wrap))
 
 
-def displace_suit(mesh):
+def displace_suit(obj):
     """
     Push the high-poly surface around to make it read as a suit.
 
@@ -895,12 +1098,14 @@ def displace_suit(mesh):
     millimetre, and relief any deeper than this stops looking like fabric and
     starts looking like armour plating.
     """
+    mesh = obj.data
     verts = mesh.vertices
+    owner = dominant_segments(obj)
     normals = [v.normal.copy() for v in verts]
     moved = 0
     for i, v in enumerate(verts):
         x, y, z = v.co
-        name, along, radial, out, front, local = segment_frame((x, y, z))
+        name, along, radial, out, front, local = segment_frame((x, y, z), owner[i])
         lx, ly, lz = local
         d = 0.0
 
@@ -946,7 +1151,9 @@ def displace_suit(mesh):
             # so the hand is at the TOP of the forearm segment.
             if name == 'torso' and -0.95 < along < -0.72:
                 d += 0.0016
-            if name.startswith('lowerArm') and along > 0.80:
+            # The hand is at along = -1 now that the arms hang: the bone runs
+            # shoulder to hand, downward.
+            if name.startswith('lowerArm') and along < -0.80:
                 d += 0.0022
             if name.startswith('lowerLeg') and along < -0.74:
                 d += 0.0030
@@ -957,7 +1164,7 @@ def displace_suit(mesh):
     log(f'suit displacement applied to {moved}/{len(verts)} high-poly verts')
 
 
-def paint_suit(mesh):
+def paint_suit(obj):
     """
     Vertex colours for the suit design, baked to the albedo map afterwards.
 
@@ -965,17 +1172,19 @@ def paint_suit(mesh):
     unwrap can change without any of this moving, and a region defined by "the
     outboard side of the leg" cannot land on the wrong island.
     """
+    mesh = obj.data
+    owner = dominant_segments(obj)
     attr = mesh.color_attributes.new(name='suit', type='FLOAT_COLOR', domain='POINT')
     counts = {}
     for i, v in enumerate(mesh.vertices):
         x, y, z = v.co
-        name, along, radial, out, front, local = segment_frame((x, y, z))
+        name, along, radial, out, front, local = segment_frame((x, y, z), owner[i])
         lx, ly, lz = local
         col, tag = SUIT, 'suit'
 
         if name == 'head':
             col, tag = HELMET, 'helmet'
-        elif name.startswith('lowerArm') and along > 0.78:
+        elif name.startswith('lowerArm') and along < -0.78:
             col, tag = GLOVE, 'glove'
         elif name == 'torso' and -0.95 < along < -0.70:
             col, tag = WAIST, 'waist'
@@ -1002,6 +1211,18 @@ def paint_suit(mesh):
         attr.data[i].color = (col[0], col[1], col[2], 1.0)
         counts[tag] = counts.get(tag, 0) + 1
     log(f'suit painted: {counts}')
+    seg_counts, arm_along = {}, []
+    for i, v in enumerate(mesh.vertices):
+        nm, al, _r, _o, _f, _l = segment_frame(v.co, owner[i])
+        seg_counts[nm] = seg_counts.get(nm, 0) + 1
+        if nm.startswith('lowerArm'):
+            arm_along.append(al)
+    log(f'segment census: {dict(sorted(seg_counts.items()))}')
+    if arm_along:
+        arm_along.sort()
+        log(f'lowerArm along: min={arm_along[0]:.2f} '
+            f'p10={arm_along[len(arm_along) // 10]:.2f} '
+            f'median={arm_along[len(arm_along) // 2]:.2f} max={arm_along[-1]:.2f}')
 
     # Every region of the design must have landed somewhere. A region whose
     # condition never fires produces no error and no warning — the bake simply
@@ -1019,12 +1240,12 @@ def paint_suit(mesh):
 
 # ── Low / high poly ─────────────────────────────────────────────────────────
 
-def region_of(co):
+def region_of(co, force=None):
     """'head', 'hand' or 'body' — the three budgets that get different shares."""
-    name, along, radial, out, front, local = segment_frame(co)
+    name, along, radial, out, front, local = segment_frame(co, force)
     if name == 'head':
         return 'head'
-    if name.startswith('lowerArm') and along > 0.78:
+    if name.startswith('lowerArm') and along < -0.78:
         return 'hand'
     return 'body'
 
@@ -1033,11 +1254,13 @@ def region_shares(body):
     """What fraction of the faces each region holds."""
     counts = {'head': 0, 'hand': 0, 'body': 0}
     vs = body.data.vertices
+    owner = dominant_segments(body)
     for poly in body.data.polygons:
         c = Vector((0, 0, 0))
         for vi in poly.vertices:
             c = c + vs[vi].co
-        counts[region_of(c / len(poly.vertices))] += 1
+        nm = owner[poly.vertices[0]]
+        counts[region_of(c / len(poly.vertices), nm)] += 1
     total = max(1, sum(counts.values()))
     return {k: v / total for k, v in counts.items()}, counts
 
@@ -1075,8 +1298,9 @@ def finish_lowpoly(body):
         # Weight 1 where the collapse should bite hardest. The suit keeps a floor
         # so it is still reduced, just far less.
         grp = body.vertex_groups.new(name='reduce')
+        own = dominant_segments(body)
         for v in body.data.vertices:
-            r = region_of(v.co)
+            r = region_of(v.co, own[v.index])
             grp.add([v.index], REDUCE_W if r in ('head', 'hand') else BODY_KEEP, 'REPLACE')
         dec = body.modifiers.new('decimate', 'DECIMATE')
         dec.ratio = DECIMATE
@@ -1104,9 +1328,10 @@ def finish_lowpoly(body):
     # so this is the lever that decides how many texels a region gets. Scaling by
     # UV_SHRINK claims UV_SHRINK^2 of the area it otherwise would.
     saved = [v.co.copy() for v in body.data.vertices]
+    own2 = dominant_segments(body)
     pivots, groups = {}, {'head': [], 'hand': []}
     for i, v in enumerate(body.data.vertices):
-        r = region_of(v.co)
+        r = region_of(v.co, own2[i])
         if r != 'body':
             groups[r].append(i)
     for r, idxs in groups.items():
@@ -1183,11 +1408,12 @@ def finish_lowpoly(body):
     # 47% of the mesh came back classified as helmet. segment_frame already knows
     # which segment a point belongs to, so ask it.
     n_head = 0
+    own3 = dominant_segments(body)
     for poly in body.data.polygons:
         cx = sum(body.data.vertices[v].co.x for v in poly.vertices) / len(poly.vertices)
         cy = sum(body.data.vertices[v].co.y for v in poly.vertices) / len(poly.vertices)
         cz = sum(body.data.vertices[v].co.z for v in poly.vertices) / len(poly.vertices)
-        if segment_frame((cx, cy, cz))[0] == 'head':
+        if own3[poly.vertices[0]] == 'head':
             poly.material_index = 1
             n_head += 1
     log(f'low-poly: {len(body.data.vertices)} verts, {len(body.data.polygons)} '
@@ -1232,8 +1458,8 @@ def make_highpoly(low):
     bpy.ops.object.modifier_apply(modifier=sub.name)
     log(f'high-poly: {len(high.data.vertices)} verts before displacement')
 
-    displace_suit(high.data)
-    paint_suit(high.data)
+    displace_suit(high)
+    paint_suit(high)
 
     high.data.materials.clear()
     mat = bpy.data.materials.new('highSuit')
@@ -1416,10 +1642,13 @@ def main():
     log(f'boot height {foot_lift:.3f} m (ankle {joints["ankleL"].z:.3f}, sole {sole:.3f})')
 
     stretch = pose_onto_segments(body, arm, foot_lift)
+    shape_helmet(body)
     retune_proportions(body)
+    leg_profile(body, 'pre-girth')
     build_report(body, 'before girth')
     add_girth(body, stretch)
     seat_soles(body)
+    leg_profile(body, 'final')
     build_report(body, 'after girth ')
     low = finish_lowpoly(body)
     high = make_highpoly(low)

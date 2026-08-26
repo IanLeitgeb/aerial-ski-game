@@ -154,7 +154,21 @@ function makeSurface(BABYLON, scene, recipe, size, opts) {
         { width: size, height: size }, scene, true);
     const actx = albTex.getContext();
     const alb = actx.createImageData(size, size);
-    const base = o.baseColor || [1, 1, 1];
+    // ENCODE TO sRGB ON THE WAY IN.
+    //
+    // albedoColor is LINEAR, and this canvas becomes a texture Babylon decodes as
+    // sRGB. Writing the linear number straight into the bytes therefore puts it
+    // through a decode it was never encoded for: snow at linear 0.89 came back as
+    // 0.89^2.2 = 0.77, so every surface lost about 13% of its brightness at the
+    // moment _applySurfaces ran — a second after load, which reads as the ramp
+    // "going grey when the run starts" rather than as a colour-space bug.
+    //
+    // It applied to every textured surface in the scene, not just the snow, which
+    // is a good part of why the whole thing looked washed and grey.
+    const toSRGB = (v) => (v <= 0.0031308
+        ? v * 12.92
+        : 1.055 * Math.pow(v, 1 / 2.4) - 0.055);
+    const base = (o.baseColor || [1, 1, 1]).map(toSRGB);
     for (let i = 0; i < size * size; i++) {
         const t = Math.min(1.4, Math.max(0.4, tint[i]));
         alb.data[i * 4]     = Math.min(255, base[0] * 255 * t);
