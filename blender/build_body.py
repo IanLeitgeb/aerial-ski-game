@@ -258,6 +258,25 @@ def anatomical_joints(obj):
         # mesh, i.e. (x, y, z) -> (-y, x, z), then scaled to this figure.
         return Vector((-v.y * s, v.x * s, v.z * s))
 
+    # WHICH METARIG SIDE IS THE GAME'S "L"?
+    #
+    # The game's L and R are LABELS, not anatomy. In this frame — X forward, Z up
+    # — the figure's left is +Y, but bl('upperArmL').y is NEGATIVE. So the game's
+    # "L" segments live on the anatomical right, and taking Rigify's .L for them
+    # builds every limb on one side of the body and then poses it across to the
+    # other. Measured, upperArmL was created at y = +0.165 and dragged to
+    # -0.205: the limbs crossed the midline, the legs splayed, and the feet
+    # missed the skis entirely.
+    #
+    # Derived from the sign rather than hardcoded, so it stays correct if the
+    # pose tables are ever mirrored.
+    probe = conv(bones['upper_arm.L'].head_local)
+    game_left_is_metarig_L = (probe.y < 0) == (bl('upperArmL').y < 0)
+    sideL = '.L' if game_left_is_metarig_L else '.R'
+    sideR = '.R' if game_left_is_metarig_L else '.L'
+    log(f'game "L" maps to metarig {sideL} '
+        f'(metarig .L converts to y={probe.y:+.3f}, game wants {bl("upperArmL").y:+.3f})')
+
     def head_of(name):
         return conv(bones[name].head_local)
 
@@ -265,14 +284,14 @@ def anatomical_joints(obj):
         return conv(bones[name].tail_local)
 
     j = {
-        'hipL': head_of('thigh.L'), 'kneeL': tail_of('thigh.L'),
-        'ankleL': tail_of('shin.L'),
-        'hipR': head_of('thigh.R'), 'kneeR': tail_of('thigh.R'),
-        'ankleR': tail_of('shin.R'),
-        'shoulderL': head_of('upper_arm.L'), 'elbowL': head_of('forearm.L'),
-        'wristL': head_of('hand.L'),
-        'shoulderR': head_of('upper_arm.R'), 'elbowR': head_of('forearm.R'),
-        'wristR': head_of('hand.R'),
+        'hipL': head_of('thigh' + sideL), 'kneeL': tail_of('thigh' + sideL),
+        'ankleL': tail_of('shin' + sideL),
+        'hipR': head_of('thigh' + sideR), 'kneeR': tail_of('thigh' + sideR),
+        'ankleR': tail_of('shin' + sideR),
+        'shoulderL': head_of('upper_arm' + sideL), 'elbowL': head_of('forearm' + sideL),
+        'wristL': head_of('hand' + sideL),
+        'shoulderR': head_of('upper_arm' + sideR), 'elbowR': head_of('forearm' + sideR),
+        'wristR': head_of('hand' + sideR),
         'pelvis': head_of('spine'), 'neck': tail_of('spine.003'),
         'crown': Vector((0.0, 0.0, max(mesh_zs))),
     }
@@ -283,13 +302,25 @@ def anatomical_joints(obj):
     return j
 
 
+# Which anatomical joints each physics segment runs between, as (HEAD, TAIL).
+#
+# The order is not free: the game places a bone's HEAD at the segment's BOTTOM
+# and its TAIL at the top (bone.head = centre - half), and every driver in the
+# game is built on that convention. For the arms that matches anatomy directly,
+# because POSE_UNTUCKED holds them overhead — the shoulder really is the lower
+# end of the upper arm. For the LEGS it is the other way round: the hip is the
+# TOP of the thigh and the ankle is the BOTTOM of the shin.
+#
+# Listing the legs anatomically (hip, knee) built them upside down — hips down at
+# the knees, ankles up at the knees, feet halfway up the shin. It did not look
+# like an inverted bone, it looked like a lumpy leg.
 ANATOMY = {
     'torso':     ('pelvis', 'neck'),
     'head':      ('neck', 'crown'),
     'upperArmL': ('shoulderL', 'elbowL'), 'lowerArmL': ('elbowL', 'wristL'),
     'upperArmR': ('shoulderR', 'elbowR'), 'lowerArmR': ('elbowR', 'wristR'),
-    'upperLegL': ('hipL', 'kneeL'),       'lowerLegL': ('kneeL', 'ankleL'),
-    'upperLegR': ('hipR', 'kneeR'),       'lowerLegR': ('kneeR', 'ankleR'),
+    'upperLegL': ('kneeL', 'hipL'),       'lowerLegL': ('ankleL', 'kneeL'),
+    'upperLegR': ('kneeR', 'hipR'),       'lowerLegR': ('ankleR', 'kneeR'),
 }
 
 HIERARCHY = {
@@ -320,6 +351,16 @@ def build_armature(joints):
     for c, p in HIERARCHY.items():
         made[c].parent = made[p]
         made[c].use_connect = False
+        # Do NOT inherit the parent's scale.
+        #
+        # Fitting a human to the game's segment lengths scales every bone along
+        # its own axis, and that scale is non-uniform by construction. A child
+        # inheriting it gets sheared in the parent's frame rather than stretched
+        # in its own: measured, the shins ended up at y = -0.278 against a target
+        # of -0.075, nearly four times too far out, while their Z placement was
+        # exactly right. On screen that reads as splayed legs missing the skis,
+        # which points at the skis rather than at scale inheritance.
+        made[c].inherit_scale = 'NONE'
 
     bpy.ops.object.mode_set(mode='OBJECT')
     log(f'armature: {len(made)} bones at anatomical joints')
@@ -343,7 +384,68 @@ def skin(body, arm):
     log('skinned with automatic (heat map) weights')
 
 
-def pose_onto_segments(body, arm):
+# ── Visual proportion correction ────────────────────────────────────────────
+# How much smaller to draw the head than its physics segment.
+#
+# body-model.json is a MASS model and its head segment is 0.24 m against a
+# 1.515 m standing figure — 6.3 head-heights, where a real adult is about 7.5.
+# That single ratio is most of why the athlete reads as a cartoon: an oversized
+# head is the strongest "not a real person" cue there is, and it survives any
+# amount of work on the suit.
+#
+# Corrected in the MESH only. Changing the segment would change its mass
+# distribution and therefore the rotational inertia the whole simulation is
+# tuned around, and every golden trace with it. The head is the one segment
+# where a visual-only change is clean: nothing is attached below it, so shrinking
+# what is drawn moves no other joint. The arms (36% of height against a real 44%)
+# and the torso (36% against 30%) are wrong in the same way and CANNOT be fixed
+# this way — a shorter drawn arm would part company with the wrist driver the
+# game positions. Those need the physics model changed and the traces rebaselined.
+HEAD_SCALE = 0.84
+
+
+def retune_proportions(body):
+    """Shrink the drawn head about the neck, leaving the physics segment alone."""
+    seg = SEGMENTS['head']
+    c = bl('head')
+    neck_z = c.z - seg['h'] / 2
+    pivot = Vector((c.x, c.y, neck_z))
+    n = 0
+    for v in body.data.vertices:
+        if segment_frame(v.co)[0] != 'head':
+            continue
+        v.co = pivot + (Vector(v.co) - pivot) * HEAD_SCALE
+        n += 1
+    stand = (bl('head').z + seg['h'] / 2) - (bl('lowerLegL').z - SEGMENTS['lowerLegL']['h'] / 2)
+    log(f'head scaled {HEAD_SCALE:.2f} about the neck ({n} verts): '
+        f'{stand / (seg["h"] * HEAD_SCALE):.2f} head-heights drawn, '
+        f'{stand / seg["h"]:.2f} by the physics model')
+
+
+def rigid_boots(body, arm, joints):
+    """
+    Weight everything below the ankle rigidly to the shin.
+
+    A ski boot does not flex, and heat-map weights do not know that: they blend
+    influence smoothly across the ankle, so the foot bends and shears with the
+    shin and the ski — which is parented to the same segment — appears to pivot
+    against the sole. Pinning the foot to one bone at full weight makes the boot
+    behave like the moulded shell it is.
+    """
+    ankle_z = min(joints['ankleL'].z, joints['ankleR'].z)
+    fixed = 0
+    for v in body.data.vertices:
+        if v.co.z > ankle_z:
+            continue
+        side = 'L' if v.co.y < 0 else 'R'
+        for g in list(v.groups):
+            body.vertex_groups[g.group].remove([v.index])
+        body.vertex_groups[f'lowerLeg{side}'].add([v.index], 1.0, 'REPLACE')
+        fixed += 1
+    log(f'boots made rigid: {fixed} vertices pinned to the shins')
+
+
+def pose_onto_segments(body, arm, foot_lift):
     """
     Move every bone from its anatomical position onto its game segment, then make
     that the rest pose.
@@ -368,16 +470,56 @@ def pose_onto_segments(body, arm):
     for name in order:
         pb = arm.pose.bones[name]
         head, tail = seg_ends(name)
+        # Leave room for the boot. The shin segment ends exactly where the ski
+        # begins, so a foot posed onto it hangs straight through the ski. Lifting
+        # the ankle by the foot's own height puts the sole on the ski instead,
+        # which is what a ski boot does, and costs the shin the same length the
+        # boot occupies — as on a real leg.
+        if name.startswith('lowerLeg'):
+            head = head + Vector((0, 0, foot_lift))
         d = tail - head
         length = d.length
-        rest = pb.bone.length
-        if rest < 1e-6 or length < 1e-6:
+        rest_len = pb.bone.length
+        if rest_len < 1e-6 or length < 1e-6:
             continue
-        # A Blender bone points along its own +Y, from head to tail.
-        rot = Vector((0, 1, 0)).rotation_difference(d.normalized()).to_matrix().to_4x4()
-        scale = Matrix.Scale(length / rest, 4, Vector((0, 1, 0)))
-        pb.matrix = Matrix.Translation(head) @ rot @ scale
+
+        # PRESERVE THE REST ROLL.
+        #
+        # The obvious construction — rotation_difference from (0, 1, 0) to the
+        # target direction — throws the roll away. It finds *a* rotation taking
+        # the Y axis onto d, minimal in angle, with no regard for where the bone's
+        # other two axes end up; the bone's own rest orientation never enters the
+        # calculation. Every limb therefore came out twisted about its own axis by
+        # an arbitrary amount, which is invisible on a smooth tube and glaring the
+        # moment the limb ends in something with a direction: the feet pointed off
+        # sideways and took the skis with them, and the hands splayed at random.
+        #
+        # Rotating the bone's REST basis onto the target keeps the roll it was
+        # built with, so a foot that pointed forwards in the A-pose still points
+        # forwards afterwards.
+        rest_basis = pb.bone.matrix_local.to_3x3()
+        rest_y = rest_basis.col[1].normalized()
+        turn = rest_y.rotation_difference(d.normalized()).to_matrix()
+        basis = (turn @ rest_basis).to_4x4()
+        scale = Matrix.Scale(length / rest_len, 4, Vector((0, 1, 0)))
+        pb.matrix = Matrix.Translation(head) @ basis @ scale
         bpy.context.view_layer.update()
+
+    # Did the BONES land where they were told? Separating this from where the
+    # mesh landed is the only way to tell a rig fault from a weighting fault —
+    # they look identical on screen and have nothing in common as fixes.
+    worst = 0.0
+    for name in ANATOMY:
+        pb = arm.pose.bones[name]
+        head, tail = seg_ends(name)
+        if name.startswith('lowerLeg'):
+            head = head + Vector((0, 0, foot_lift))
+        err = (pb.matrix.translation - head).length
+        worst = max(worst, err)
+        if err > 0.005:
+            log(f'  BONE {name:11s} landed {err:.3f} m from its target '
+                f'({pb.matrix.translation.y:+.3f} vs {head.y:+.3f} lateral)')
+    log(f'bone placement: worst error {worst * 1000:.1f} mm')
 
     bpy.ops.object.mode_set(mode='OBJECT')
 
@@ -402,6 +544,29 @@ def pose_onto_segments(body, arm):
     ys = [v.co.y for v in me.vertices]
     log(f'posed onto segments: height {max(zs) - min(zs):.3f}, '
         f'lateral span {max(ys) - min(ys):.3f}')
+
+    # Where each segment's geometry ACTUALLY landed, against where the rig put the
+    # bone. "The figure looks wrong" is not a diagnosis; this says which limb is
+    # wrong and by how much, and it is the only way to tell a bad weight from a
+    # bad bone from a bad target.
+    gi = {g.name: g.index for g in body.vertex_groups}
+    for name in ('upperLegL', 'upperLegR', 'lowerLegL', 'lowerLegR',
+                 'upperArmL', 'upperArmR', 'torso'):
+        if name not in gi:
+            continue
+        idx = gi[name]
+        pts = [v.co for v in me.vertices
+               if any(g.group == idx and g.weight > 0.5 for g in v.groups)]
+        if not pts:
+            log(f'  {name:11s} NO vertices weighted above 0.5 — this limb is '
+                f'not driven by its own bone')
+            continue
+        head, tail = seg_ends(name)
+        cy = sum(p.y for p in pts) / len(pts)
+        log(f'  {name:11s} n={len(pts):5d} '
+            f'z={min(p.z for p in pts):+.3f}..{max(p.z for p in pts):+.3f} '
+            f'(target {head.z:+.3f}..{tail.z:+.3f}) '
+            f'y_mean={cy:+.3f} (target {head.y:+.3f})')
 
 
 # ── Suit detail ─────────────────────────────────────────────────────────────
@@ -866,7 +1031,17 @@ def main():
     joints = anatomical_joints(body)
     arm = build_armature(joints)
     skin(body, arm)
-    pose_onto_segments(body, arm)
+    rigid_boots(body, arm, joints)
+
+    # How tall the boot is: ankle joint down to the sole, expressed in the shin's
+    # own scale so it survives the stretch onto the game's segment length.
+    sole = min(v.co.z for v in body.data.vertices)
+    rest_shin = (joints['kneeL'] - joints['ankleL']).length
+    foot_lift = (joints['ankleL'].z - sole) * (SEGMENTS['lowerLegL']['h'] / rest_shin)
+    log(f'boot height {foot_lift:.3f} m (ankle {joints["ankleL"].z:.3f}, sole {sole:.3f})')
+
+    pose_onto_segments(body, arm, foot_lift)
+    retune_proportions(body)
     low = finish_lowpoly(body)
     high = make_highpoly(low)
 
